@@ -1,48 +1,62 @@
-import { useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
-import { Bouton, Carte, Champ, EtatVide, Selecteur } from "../components/ui";
+import { Fragment, useEffect, useState } from "react";
+import { History, Image as ImageIcon, Trash2 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { Bouton, Carte, Champ, EtatVide, Kpi, Selecteur } from "../components/ui";
 import RepartitionSites, { partsCentsDepuisSaisie } from "../components/RepartitionSites";
 import {
   ajouterAbonnement,
+  ajouterTarif,
   basculerAbonnement,
   listerAbonnements,
   listerFournisseurs,
   listerSites,
+  listerTarifs,
+  majFaviconFournisseur,
   supprimerAbonnement,
+  supprimerTarif,
   trouverOuCreerFournisseur,
 } from "../lib/queries";
-import { coutMensuelEquivalent, formatMontant, parseMontant } from "../lib/format";
+import { coutMensuelEquivalent, totalPaye } from "../lib/abonnements";
+import { aujourdhuiIso, formatMontant, parseMontant } from "../lib/format";
 
 const FORMULAIRE_VIDE = {
   siteIds: [],
   parts: null,
   fournisseur: "",
+  fournisseurUrl: "",
   libelle: "",
   montant: "",
   periodicite: "mensuel",
+  debut: aujourdhuiIso(),
   prochaineEcheance: "",
 };
+
+const TARIF_VIDE = { debut: aujourdhuiIso(), montant: "" };
 
 export default function Abonnements({ onModification }) {
   const [sites, setSites] = useState([]);
   const [fournisseurs, setFournisseurs] = useState([]);
   const [abonnements, setAbonnements] = useState([]);
+  const [tarifs, setTarifs] = useState([]);
   const [formulaire, setFormulaire] = useState(FORMULAIRE_VIDE);
   const [erreur, setErreur] = useState("");
+  const [historiqueOuvert, setHistoriqueOuvert] = useState(null);
+  const [nouveauTarif, setNouveauTarif] = useState(TARIF_VIDE);
 
   async function recharger() {
-    const [s, f, a] = await Promise.all([
+    const [s, f, a, t] = await Promise.all([
       listerSites(),
       listerFournisseurs(),
       listerAbonnements(),
+      listerTarifs(),
     ]);
     setSites(s);
     setFournisseurs(f);
     setAbonnements(a);
+    setTarifs(t);
   }
 
   useEffect(() => {
-    // recharger() est async: les setState ont lieu apres await, pas pendant le rendu
     // oxlint-disable-next-line react/set-state-in-effect
     recharger();
   }, []);
@@ -61,8 +75,9 @@ export default function Abonnements({ onModification }) {
     }));
   }
 
-  // Cas typique: un hebergement mutualise a 11 EUR partage entre deux sites.
   const montantSaisiCents = parseMontant(formulaire.montant);
+  const aujourdhui = aujourdhuiIso();
+  const tarifsDe = (id) => tarifs.filter((t) => t.abonnement_id === id);
 
   async function enregistrer(evenement) {
     evenement.preventDefault();
@@ -77,8 +92,16 @@ export default function Abonnements({ onModification }) {
       setErreur("Donne un libelle a cet abonnement.");
       return;
     }
+    if (!formulaire.debut) {
+      setErreur("Indique depuis quand tu paies cet abonnement.");
+      return;
+    }
 
-    const fournisseurId = await trouverOuCreerFournisseur(formulaire.fournisseur);
+    const fournisseurId = await trouverOuCreerFournisseur(
+      formulaire.fournisseur,
+      "saas",
+      formulaire.fournisseurUrl.trim() || null,
+    );
 
     try {
       await ajouterAbonnement({
@@ -88,6 +111,7 @@ export default function Abonnements({ onModification }) {
         libelle: formulaire.libelle.trim(),
         montantCents,
         periodicite: formulaire.periodicite,
+        debut: formulaire.debut,
         prochaineEcheance: formulaire.prochaineEcheance || null,
       });
     } catch (e) {
@@ -95,7 +119,59 @@ export default function Abonnements({ onModification }) {
       return;
     }
 
+    // L'icone est rattachee au fournisseur: deux abonnements du meme
+    // fournisseur la partagent, inutile de la retelecharger.
+    const url = formulaire.fournisseurUrl.trim();
+    if (fournisseurId && url) {
+      const deja = fournisseurs.find((f) => f.id === fournisseurId)?.favicon;
+      if (!deja) {
+        const favicon = await invoke("recuperer_favicon", { url }).catch(() => null);
+        if (favicon) await majFaviconFournisseur(fournisseurId, favicon);
+      }
+    }
+
     setFormulaire(FORMULAIRE_VIDE);
+    await recharger();
+    onModification?.();
+  }
+
+  async function enregistrerTarif(abonnementId) {
+    setErreur("");
+    const montantCents = parseMontant(nouveauTarif.montant);
+    if (montantCents === null || montantCents <= 0) {
+      setErreur("Nouveau tarif invalide.");
+      return;
+    }
+    await ajouterTarif(abonnementId, { debut: nouveauTarif.debut, montantCents });
+    setNouveauTarif(TARIF_VIDE);
+    await recharger();
+    onModification?.();
+  }
+
+  async function retirerTarif(abonnementId, tarifId) {
+    if (tarifsDe(abonnementId).length <= 1) {
+      setErreur("Un abonnement doit garder au moins un tarif.");
+      return;
+    }
+    await supprimerTarif(tarifId);
+    await recharger();
+    onModification?.();
+  }
+
+  async function recupererIconeFournisseur(abonnement) {
+    setErreur("");
+    if (!abonnement.fournisseur_url) {
+      setErreur(`Aucune URL connue pour ${abonnement.fournisseur_nom ?? "ce fournisseur"}.`);
+      return;
+    }
+    const favicon = await invoke("recuperer_favicon", {
+      url: abonnement.fournisseur_url,
+    }).catch(() => null);
+    if (!favicon) {
+      setErreur(`Aucune icone trouvee sur ${abonnement.fournisseur_url}.`);
+      return;
+    }
+    await majFaviconFournisseur(abonnement.fournisseur_id, favicon);
     await recharger();
     onModification?.();
   }
@@ -112,18 +188,36 @@ export default function Abonnements({ onModification }) {
     onModification?.();
   }
 
-  const totalMensuel = abonnements
-    .filter((a) => a.actif)
-    .reduce((total, a) => total + coutMensuelEquivalent(a), 0);
+  const actifs = abonnements.filter((a) => a.actif);
+  const totalMensuel = actifs.reduce((total, a) => total + coutMensuelEquivalent(a), 0);
+  // Cumul sur TOUS les abonnements, y compris resilies: ce qui a ete paye l'a ete
+  const totalDepuisToujours = abonnements.reduce(
+    (total, a) => total + totalPaye(a, tarifsDe(a.id), aujourdhui),
+    0,
+  );
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-lg font-semibold">Abonnements</h1>
-        <p className="text-sm text-texte-doux">
-          Cout recurrent :{" "}
-          <span className="font-semibold text-texte">{formatMontant(totalMensuel)}</span> / mois
-        </p>
+      <h1 className="text-lg font-semibold">Abonnements</h1>
+
+      <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <Kpi
+          libelle="Recurrent / mois"
+          valeur={formatMontant(totalMensuel)}
+          detail={`${actifs.length} actif(s)`}
+        />
+        <Kpi
+          libelle="Recurrent / an"
+          valeur={formatMontant(totalMensuel * 12)}
+          detail="projection au tarif actuel"
+        />
+        <Kpi
+          libelle="Total deja paye"
+          valeur={formatMontant(totalDepuisToujours)}
+          detail="depuis la premiere echeance"
+          ton="depense"
+        />
+        <Kpi libelle="Abonnements suivis" valeur={String(abonnements.length)} />
       </div>
 
       <Carte titre="Nouvel abonnement">
@@ -141,6 +235,7 @@ export default function Abonnements({ onModification }) {
           <Champ
             label="Fournisseur"
             list="liste-fournisseurs-abo"
+            placeholder="OpenAI, Ionos, ..."
             value={formulaire.fournisseur}
             onChange={(e) => maj("fournisseur", e.target.value)}
             className="w-40"
@@ -150,6 +245,14 @@ export default function Abonnements({ onModification }) {
               <option key={f.id} value={f.nom} />
             ))}
           </datalist>
+
+          <Champ
+            label="Site du fournisseur"
+            placeholder="https://chatgpt.com"
+            value={formulaire.fournisseurUrl}
+            onChange={(e) => maj("fournisseurUrl", e.target.value)}
+            className="w-52"
+          />
 
           <Champ
             label="Libelle"
@@ -179,6 +282,14 @@ export default function Abonnements({ onModification }) {
           </Selecteur>
 
           <Champ
+            label="Paye depuis le"
+            type="date"
+            value={formulaire.debut}
+            onChange={(e) => maj("debut", e.target.value)}
+            className="w-40"
+          />
+
+          <Champ
             label="Prochaine echeance"
             type="date"
             value={formulaire.prochaineEcheance}
@@ -199,63 +310,160 @@ export default function Abonnements({ onModification }) {
             <thead>
               <tr className="border-b border-bord text-left text-xs uppercase text-texte-doux">
                 <th className="py-2 font-medium">Actif</th>
-                <th className="py-2 font-medium">Sites</th>
-                <th className="py-2 font-medium">Libelle</th>
                 <th className="py-2 font-medium">Fournisseur</th>
+                <th className="py-2 font-medium">Libelle</th>
+                <th className="py-2 font-medium">Sites</th>
+                <th className="py-2 font-medium">Depuis</th>
                 <th className="py-2 font-medium">Echeance</th>
-                <th className="py-2 text-right font-medium">Montant</th>
+                <th className="py-2 text-right font-medium">Tarif actuel</th>
                 <th className="py-2 text-right font-medium">≈ / mois</th>
+                <th className="py-2 text-right font-medium">Total paye</th>
                 <th />
               </tr>
             </thead>
             <tbody>
-              {abonnements.map((a) => (
-                <tr
-                  key={a.id}
-                  className={`border-b border-bord/50 last:border-0 ${a.actif ? "" : "opacity-50"}`}
-                >
-                  <td className="py-2">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(a.actif)}
-                      onChange={() => basculer(a)}
-                    />
-                  </td>
-                  <td className="py-2">
-                    {a.sites_noms ?? <span className="text-texte-doux">transverse</span>}
-                    {a.nb_sites > 1 && (
-                      <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-texte-doux">
-                        partage
-                      </span>
+              {abonnements.map((a) => {
+                const sesTarifs = tarifsDe(a.id);
+                const ouvert = historiqueOuvert === a.id;
+                return (
+                  <Fragment key={a.id}>
+                    <tr className={`border-b border-bord/50 ${a.actif ? "" : "opacity-50"}`}>
+                      <td className="py-2">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(a.actif)}
+                          onChange={() => basculer(a)}
+                        />
+                      </td>
+                      <td className="py-2">
+                        <span className="flex items-center gap-2">
+                          {a.fournisseur_favicon && (
+                            <img
+                              src={a.fournisseur_favicon}
+                              alt=""
+                              className="size-4 rounded"
+                              aria-hidden="true"
+                            />
+                          )}
+                          {a.fournisseur_nom ?? "—"}
+                        </span>
+                      </td>
+                      <td className="py-2">{a.libelle}</td>
+                      <td className="py-2 text-texte-doux">
+                        {a.sites_noms ?? "transverse"}
+                        {a.nb_sites > 1 && (
+                          <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px]">
+                            partage
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 tabular-nums text-texte-doux">{a.debut ?? "—"}</td>
+                      <td className="py-2 tabular-nums text-texte-doux">
+                        {a.prochaine_echeance ?? "—"}
+                      </td>
+                      <td className="py-2 text-right tabular-nums">
+                        {formatMontant(a.montant_cents, a.devise)}
+                        <span className="text-texte-doux">
+                          {" "}
+                          /{a.periodicite === "annuel" ? "an" : "mois"}
+                        </span>
+                      </td>
+                      <td className="py-2 text-right tabular-nums text-texte-doux">
+                        {formatMontant(coutMensuelEquivalent(a))}
+                      </td>
+                      <td className="py-2 text-right tabular-nums">
+                        {formatMontant(totalPaye(a, sesTarifs, aujourdhui))}
+                        <span className="block text-[11px] text-texte-doux">
+                          {sesTarifs.length > 1 ? `${sesTarifs.length} tarifs` : ""}
+                        </span>
+                      </td>
+                      <td className="py-2 pl-2 text-right whitespace-nowrap">
+                        {a.fournisseur_url && !a.fournisseur_favicon && (
+                          <Bouton
+                            variante="fantome"
+                            className="mr-1 px-1.5 py-1"
+                            title="Recuperer l'icone du fournisseur"
+                            onClick={() => recupererIconeFournisseur(a)}
+                          >
+                            <ImageIcon size={14} />
+                          </Bouton>
+                        )}
+                        <Bouton
+                          variante="fantome"
+                          className="mr-1 px-1.5 py-1"
+                          title="Historique des tarifs"
+                          onClick={() => setHistoriqueOuvert(ouvert ? null : a.id)}
+                        >
+                          <History size={14} />
+                        </Bouton>
+                        <Bouton
+                          variante="danger"
+                          className="px-1.5 py-1"
+                          title="Supprimer"
+                          onClick={() => retirer(a.id)}
+                        >
+                          <Trash2 size={14} />
+                        </Bouton>
+                      </td>
+                    </tr>
+
+                    {ouvert && (
+                      <tr className="border-b border-bord/50">
+                        <td colSpan={10} className="bg-surface-2/40 px-3 py-3">
+                          <p className="mb-2 text-xs font-medium text-texte-doux">
+                            Historique des tarifs — chaque ligne s&apos;applique a partir de sa
+                            date, les echeances anterieures gardent l&apos;ancien prix
+                          </p>
+                          <ul className="mb-3 flex flex-col gap-1">
+                            {sesTarifs.map((t) => (
+                              <li key={t.id} className="flex items-center gap-3 text-sm">
+                                <span className="w-24 tabular-nums text-texte-doux">
+                                  {t.debut}
+                                </span>
+                                <span className="tabular-nums">
+                                  {formatMontant(t.montant_cents, a.devise)}
+                                </span>
+                                <Bouton
+                                  variante="danger"
+                                  className="px-1.5 py-0.5"
+                                  title="Supprimer ce tarif"
+                                  onClick={() => retirerTarif(a.id, t.id)}
+                                >
+                                  <Trash2 size={12} />
+                                </Bouton>
+                              </li>
+                            ))}
+                          </ul>
+                          <div className="flex flex-wrap items-end gap-3">
+                            <Champ
+                              label="A partir du"
+                              type="date"
+                              value={nouveauTarif.debut}
+                              onChange={(e) =>
+                                setNouveauTarif((t) => ({ ...t, debut: e.target.value }))
+                              }
+                              className="w-40"
+                            />
+                            <Champ
+                              label="Nouveau montant (€)"
+                              inputMode="decimal"
+                              placeholder="11,00"
+                              value={nouveauTarif.montant}
+                              onChange={(e) =>
+                                setNouveauTarif((t) => ({ ...t, montant: e.target.value }))
+                              }
+                              className="w-36"
+                            />
+                            <Bouton onClick={() => enregistrerTarif(a.id)}>
+                              Ajouter ce tarif
+                            </Bouton>
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td className="py-2">{a.libelle}</td>
-                  <td className="py-2 text-texte-doux">{a.fournisseur_nom ?? "—"}</td>
-                  <td className="py-2 tabular-nums text-texte-doux">
-                    {a.prochaine_echeance ?? "—"}
-                  </td>
-                  <td className="py-2 text-right tabular-nums">
-                    {formatMontant(a.montant_cents, a.devise)}
-                    <span className="text-texte-doux">
-                      {" "}
-                      /{a.periodicite === "annuel" ? "an" : "mois"}
-                    </span>
-                  </td>
-                  <td className="py-2 text-right tabular-nums text-texte-doux">
-                    {formatMontant(coutMensuelEquivalent(a))}
-                  </td>
-                  <td className="py-2 pl-2 text-right">
-                    <Bouton
-                      variante="danger"
-                      className="px-1.5 py-1"
-                      title="Supprimer"
-                      onClick={() => retirer(a.id)}
-                    >
-                      <Trash2 size={14} />
-                    </Bouton>
-                  </td>
-                </tr>
-              ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         )}

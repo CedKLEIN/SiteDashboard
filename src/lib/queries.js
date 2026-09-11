@@ -1,5 +1,5 @@
 import { execute, select } from "./db";
-import { partsPourSites } from "./repartition";
+import { partsPourSites, redistribuer } from "./repartition";
 
 /* ---------------------------------------------------------------- sites */
 
@@ -43,19 +43,32 @@ export function listerFournisseurs() {
   return select("SELECT * FROM fournisseurs ORDER BY nom");
 }
 
-/** Cree le fournisseur s'il n'existe pas, et renvoie son id dans tous les cas. */
-export async function trouverOuCreerFournisseur(nom, categorie = "autre") {
+/**
+ * Cree le fournisseur s'il n'existe pas, et renvoie son id dans tous les cas.
+ * L'URL fournie complete un fournisseur qui n'en avait pas encore, sans jamais
+ * ecraser celle deja enregistree.
+ */
+export async function trouverOuCreerFournisseur(nom, categorie = "autre", url = null) {
   const propre = String(nom || "").trim();
   if (!propre) return null;
 
-  const existant = await select("SELECT id FROM fournisseurs WHERE nom = $1", [propre]);
-  if (existant.length > 0) return existant[0].id;
+  const existant = await select("SELECT id, url FROM fournisseurs WHERE nom = $1", [propre]);
+  if (existant.length > 0) {
+    if (url && !existant[0].url) {
+      await execute("UPDATE fournisseurs SET url = $1 WHERE id = $2", [url, existant[0].id]);
+    }
+    return existant[0].id;
+  }
 
   const res = await execute(
-    "INSERT INTO fournisseurs (nom, categorie) VALUES ($1, $2)",
-    [propre, categorie],
+    "INSERT INTO fournisseurs (nom, categorie, url) VALUES ($1, $2, $3)",
+    [propre, categorie, url || null],
   );
   return res.lastInsertId;
+}
+
+export function majFaviconFournisseur(id, favicon) {
+  return execute("UPDATE fournisseurs SET favicon = $1 WHERE id = $2", [favicon, id]);
 }
 
 /* ------------------------------------------------------------- depenses */
@@ -179,13 +192,65 @@ const SITES_DE_L_ABONNEMENT = `
     WHERE x.abonnement_id = a.id) AS sites_noms,
   (SELECT COUNT(*) FROM abonnement_sites WHERE abonnement_id = a.id) AS nb_sites`;
 
+/**
+ * Tarif en vigueur aujourd'hui: le dernier dont la date d'entree en vigueur est
+ * passee. C'est la seule source de verite du prix courant, `montant_cents`
+ * ayant ete supprime de la table pour eviter deux verites concurrentes.
+ */
+const TARIF_COURANT = `
+  (SELECT t.montant_cents FROM abonnement_tarifs t
+    WHERE t.abonnement_id = a.id AND t.debut <= date('now', 'localtime')
+    ORDER BY t.debut DESC, t.id DESC LIMIT 1) AS montant_cents`;
+
 export function listerAbonnements() {
   return select(
-    `SELECT a.*, f.nom AS fournisseur_nom, ${SITES_DE_L_ABONNEMENT}
+    `SELECT a.*, f.nom AS fournisseur_nom, f.url AS fournisseur_url,
+            f.favicon AS fournisseur_favicon,
+            ${TARIF_COURANT}, ${SITES_DE_L_ABONNEMENT}
      FROM abonnements a
      LEFT JOIN fournisseurs f ON f.id = a.fournisseur_id
      ORDER BY a.actif DESC, a.prochaine_echeance IS NULL, a.prochaine_echeance`,
   );
+}
+
+/** Tous les tarifs, a regrouper par abonnement pour calculer les cumuls. */
+export function listerTarifs() {
+  return select("SELECT * FROM abonnement_tarifs ORDER BY abonnement_id, debut, id");
+}
+
+/**
+ * Ajoute un tarif et reajuste les parts entre sites.
+ *
+ * Sans ce reajustement, les parts resteraient calculees sur l'ancien prix et la
+ * somme des parts ne ferait plus le montant - les totaux par site deviendraient
+ * silencieusement faux.
+ */
+export async function ajouterTarif(abonnementId, { debut, montantCents }) {
+  await execute(
+    "INSERT INTO abonnement_tarifs (abonnement_id, debut, montant_cents) VALUES ($1, $2, $3)",
+    [abonnementId, debut, montantCents],
+  );
+
+  const parts = await select(
+    "SELECT site_id, part_cents FROM abonnement_sites WHERE abonnement_id = $1 ORDER BY site_id",
+    [abonnementId],
+  );
+  if (parts.length === 0) return;
+
+  const nouvelles = redistribuer(
+    parts.map((p) => p.part_cents),
+    montantCents,
+  );
+  for (const [i, part] of parts.entries()) {
+    await execute(
+      "UPDATE abonnement_sites SET part_cents = $1 WHERE abonnement_id = $2 AND site_id = $3",
+      [nouvelles[i], abonnementId, part.site_id],
+    );
+  }
+}
+
+export function supprimerTarif(id) {
+  return execute("DELETE FROM abonnement_tarifs WHERE id = $1", [id]);
 }
 
 export async function ajouterAbonnement({
@@ -196,15 +261,22 @@ export async function ajouterAbonnement({
   montantCents,
   devise = "EUR",
   periodicite = "mensuel",
+  debut,
   prochaineEcheance = null,
 }) {
   const parts = partsPourSites(montantCents, siteIds, partsCents);
 
   const res = await execute(
     `INSERT INTO abonnements
-       (fournisseur_id, libelle, montant_cents, devise, periodicite, prochaine_echeance)
+       (fournisseur_id, libelle, devise, periodicite, debut, prochaine_echeance)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [fournisseurId, libelle, montantCents, devise, periodicite, prochaineEcheance],
+    [fournisseurId, libelle, devise, periodicite, debut, prochaineEcheance],
+  );
+
+  // Le prix de depart devient le premier tarif de l'historique
+  await execute(
+    "INSERT INTO abonnement_tarifs (abonnement_id, debut, montant_cents) VALUES ($1, $2, $3)",
+    [res.lastInsertId, debut, montantCents],
   );
 
   for (const { siteId, partCents } of parts) {
@@ -280,7 +352,7 @@ export async function totauxPeriode(depuis, jusqua) {
 /** Abonnements actifs a echeance dans les n prochains jours. */
 export function echeancesProches(jours = 45) {
   return select(
-    `SELECT a.*, f.nom AS fournisseur_nom, ${SITES_DE_L_ABONNEMENT}
+    `SELECT a.*, f.nom AS fournisseur_nom, ${TARIF_COURANT}, ${SITES_DE_L_ABONNEMENT}
      FROM abonnements a
      LEFT JOIN fournisseurs f ON f.id = a.fournisseur_id
      WHERE a.actif = 1

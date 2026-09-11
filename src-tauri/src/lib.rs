@@ -557,6 +557,12 @@ pub fn run() {
             sql: include_str!("../migrations/006_favicon.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "historique de tarifs des abonnements et icone des fournisseurs",
+            sql: include_str!("../migrations/007_tarifs.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

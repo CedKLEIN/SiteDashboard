@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  coutMensuelEquivalent,
   derniersMois,
   aujourdhuiIso,
   moisIso,
@@ -47,12 +46,3 @@ describe("dates", () => {
   });
 });
 
-describe("coutMensuelEquivalent", () => {
-  it("laisse un mensuel tel quel", () => {
-    expect(coutMensuelEquivalent({ montant_cents: 599, periodicite: "mensuel" })).toBe(599);
-  });
-
-  it("divise un annuel par douze", () => {
-    expect(coutMensuelEquivalent({ montant_cents: 1200, periodicite: "annuel" })).toBe(100);
-  });
-});

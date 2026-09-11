@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { repartir, repartirEntreSites } from "./repartition";
+import { redistribuer, repartir, repartirEntreSites } from "./repartition";
 
 describe("repartir", () => {
   it("partage un montant divisible a parts egales", () => {
@@ -42,5 +42,33 @@ describe("repartirEntreSites", () => {
       { siteId: 7, partCents: 367 },
       { siteId: 9, partCents: 366 },
     ]);
+  });
+});
+
+describe("redistribuer", () => {
+  it("conserve des parts egales", () => {
+    expect(redistribuer([540, 540], 2200)).toEqual([1100, 1100]);
+  });
+
+  it("conserve les proportions d'un partage inegal", () => {
+    // 80/20 sur 11 EUR -> 80/20 sur 20 EUR
+    expect(redistribuer([880, 220], 2000)).toEqual([1600, 400]);
+  });
+
+  it("retombe toujours exactement sur le nouveau total", () => {
+    for (const total of [1, 7, 999, 1100, 123457]) {
+      for (const parts of [[1], [1, 1], [880, 220], [1, 2, 3], [500, 500, 100]]) {
+        const somme = redistribuer(parts, total).reduce((t, p) => t + p, 0);
+        expect(somme).toBe(total);
+      }
+    }
+  });
+
+  it("repart a parts egales quand l'ancien total est nul", () => {
+    expect(redistribuer([0, 0], 1100)).toEqual([550, 550]);
+  });
+
+  it("tolere une liste vide", () => {
+    expect(redistribuer([], 1000)).toEqual([]);
   });
 });

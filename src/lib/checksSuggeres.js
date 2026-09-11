@@ -65,6 +65,18 @@ export const CHECKS_SUGGERES = [
 ];
 
 /**
+ * Construit une URL absolue a partir de l'URL de base du site et d'un chemin.
+ *
+ * Un chemin deja absolu (http://, https://) est respecte tel quel: un check
+ * peut viser une API sur un autre domaine, il ne faut pas le prefixer de force.
+ */
+export function urlDepuisChemin(urlSite, chemin) {
+  const saisi = String(chemin ?? "").trim();
+  if (/^https?:\/\//i.test(saisi)) return saisi;
+  return urlSuggestion(urlSite, saisi || "/");
+}
+
+/**
  * Construit l'URL absolue d'une suggestion pour un site donne.
  * Renvoie null si le site n'a pas d'URL exploitable.
  */

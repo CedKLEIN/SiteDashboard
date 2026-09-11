@@ -50,7 +50,8 @@ Deux règles non négociables, qui évitent 90 % des bugs de ce genre d'appli :
 | `fournisseurs` | OVH, Stripe, Anthropic… avec une catégorie |
 | `depenses` | une ligne = une dépense, rattachée à un fournisseur et à un ou plusieurs sites |
 | `revenus` | idem côté recettes, pour calculer la marge par site |
-| `abonnements` | coûts récurrents (partageables aussi), pour projeter le budget et alerter sur les renouvellements |
+| `abonnements` | coûts récurrents (partageables aussi), avec leur date de premier paiement |
+| `abonnement_tarifs` | historique des prix d'un abonnement, chacun avec sa date d'entrée en vigueur |
 | `depense_sites` / `abonnement_sites` | quels sites portent la ligne, et pour quelle part |
 | `checks` | ce qu'on vérifie sur un site : une URL, un statut attendu, un fragment de texte |
 | `verifications` | le résultat de chaque check, horodaté (purgé au-delà de 30 jours) |
@@ -83,6 +84,32 @@ deux fois en entier.
 Un abonnement sans aucun site coché est un **coût transverse** : il compte dans le récurrent
 global, mais n'est imputé à aucun site.
 
+## Abonnements : historique de prix et cumul payé
+
+Un abonnement porte une **date de premier paiement** (`debut`) et un **historique de tarifs**,
+pas un montant unique. Un nom de domaine à 6 € la première année puis 11 € :
+
+| À partir du | Montant |
+|---|---|
+| 2024-03-01 | 6,00 € |
+| 2025-03-01 | 11,00 € |
+
+Le cumul payé additionne chaque échéance **au tarif qui s'appliquait ce jour-là** — ici
+6 + 11 + 11 = 28,00 € au bout de trois ans. Écraser le montant aurait fait disparaître la
+première année et rendu tout cumul faux.
+
+`abonnements.montant_cents` a donc été supprimée : le prix courant se lit dans l'historique
+(le dernier tarif dont la date est passée), pour ne pas laisser deux vérités concurrentes.
+
+**Effet de bord traité** : les parts entre sites sont calculées sur un montant. Quand le
+tarif change, elles sont **redistribuées proportionnellement**
+([`redistribuer`](src/lib/repartition.js)) — un partage 80/20 sur 10 € devient 80/20 sur
+20 € — pour que l'invariant « somme des parts = montant courant » tienne toujours.
+
+L'icône d'un abonnement est celle de son **fournisseur**, récupérée depuis l'URL saisie à la
+création (`https://chatgpt.com` → l'icône d'OpenAI). Deux abonnements du même fournisseur la
+partagent, elle n'est téléchargée qu'une fois.
+
 ## Supervision
 
 Tant que l'appli est ouverte, elle rejoue **tous les checks actifs toutes les 60 secondes**
@@ -100,6 +127,9 @@ liste des checks avec leur dernier résultat, incidents récents et dernières d
 
 Les requêtes HTTP partent **du code Rust**, pas de la WebView : depuis le front, un `fetch`
 vers tes sites serait bloqué par CORS et ne donnerait jamais le vrai code de statut.
+
+Un check ne demande que le **chemin** : l'URL de base vient du site et s'affiche en préfixe
+non modifiable. Une URL absolue reste acceptée, pour viser une API sur un autre domaine.
 
 Un site créé avec une URL reçoit automatiquement un check sur sa page d'accueil. L'écran de
 détail propose ensuite un **catalogue de checks courants en un clic**

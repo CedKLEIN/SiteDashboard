@@ -27,11 +27,11 @@ import {
   SEUIL_CERT_JOURS,
   tauxDisponibilite,
 } from "../lib/statut";
-import { suggestionsRestantes } from "../lib/checksSuggeres";
+import { suggestionsRestantes, urlDepuisChemin } from "../lib/checksSuggeres";
 import Diagnostic from "../components/Diagnostic";
 import { formatMontant } from "../lib/format";
 
-const CHECK_VIDE = { libelle: "", url: "", statutAttendu: "", doitContenir: "" };
+const CHECK_VIDE = { libelle: "", chemin: "", statutAttendu: "", doitContenir: "" };
 
 function heure(horodatage) {
   return String(horodatage ?? "").slice(11, 16);
@@ -77,13 +77,14 @@ export default function DetailSite({
     evenement.preventDefault();
     setErreur("");
 
-    const url = formulaire.url.trim();
+    // L'URL de base vient du site: on ne saisit que ce qui vient apres.
+    const url = urlDepuisChemin(site.url, formulaire.chemin);
     if (!url) {
-      setErreur("L'URL est obligatoire.");
-      return;
-    }
-    if (!/^https?:\/\//i.test(url)) {
-      setErreur("L'URL doit commencer par http:// ou https://");
+      setErreur(
+        site.url
+          ? "Chemin invalide."
+          : "Ce site n'a pas d'URL : renseigne-la d'abord dans l'onglet « Sites ».",
+      );
       return;
     }
 
@@ -373,13 +374,23 @@ export default function DetailSite({
             onChange={(e) => maj("libelle", e.target.value)}
             className="w-40"
           />
-          <Champ
-            label="URL"
-            placeholder="https://..."
-            value={formulaire.url}
-            onChange={(e) => maj("url", e.target.value)}
-            className="min-w-56 flex-1"
-          />
+          <label className="flex min-w-56 flex-1 flex-col gap-1">
+            <span className="text-xs text-texte-doux">Chemin</span>
+            <span className="flex items-stretch overflow-hidden rounded-lg border border-bord bg-surface-2 focus-within:border-accent">
+              <span
+                className="flex shrink-0 items-center bg-surface px-2.5 text-sm text-texte-doux"
+                title="URL de base du site, non modifiable ici"
+              >
+                {site.url?.replace(/\/$/, "") ?? "(site sans URL)"}
+              </span>
+              <input
+                placeholder="/api/health"
+                value={formulaire.chemin}
+                onChange={(e) => maj("chemin", e.target.value)}
+                className="min-w-0 flex-1 bg-transparent px-2.5 py-1.5 text-sm text-texte outline-none"
+              />
+            </span>
+          </label>
           <Champ
             label="Statut attendu"
             placeholder="200"

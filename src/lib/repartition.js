@@ -53,3 +53,34 @@ export function partsPourSites(montantCents, siteIds, partsCents = null) {
 
   return siteIds.map((siteId, i) => ({ siteId, partCents: partsCents[i] }));
 }
+
+/**
+ * Reajuste des parts existantes sur un nouveau montant, en conservant leurs
+ * proportions et en retombant exactement sur le total.
+ *
+ * Sert quand le tarif d'un abonnement change: les parts ont ete calculees sur
+ * l'ancien prix, et les laisser telles quelles casserait l'invariant
+ * "somme des parts = montant".
+ */
+export function redistribuer(anciennesParts, nouveauTotal) {
+  if (anciennesParts.length === 0) return [];
+
+  const ancienTotal = anciennesParts.reduce((total, p) => total + p, 0);
+  // Sans reference proportionnelle exploitable, on repart a parts egales
+  if (ancienTotal <= 0) return repartir(nouveauTotal, anciennesParts.length);
+
+  const exactes = anciennesParts.map((p) => (p * nouveauTotal) / ancienTotal);
+  const parts = exactes.map(Math.floor);
+  const manquant = nouveauTotal - parts.reduce((total, p) => total + p, 0);
+
+  // Methode du plus fort reste: les centimes restants vont aux parts dont
+  // l'arrondi a le plus perdu, ce qui reste au plus pres des proportions.
+  const ordre = exactes
+    .map((valeur, i) => ({ i, reste: valeur - Math.floor(valeur) }))
+    .sort((a, b) => b.reste - a.reste || a.i - b.i);
+
+  for (let k = 0; k < manquant; k += 1) {
+    parts[ordre[k % ordre.length].i] += 1;
+  }
+  return parts;
+}

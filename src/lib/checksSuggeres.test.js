@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { CHECKS_SUGGERES, suggestionsRestantes, urlSuggestion } from "./checksSuggeres";
+import {
+  CHECKS_SUGGERES,
+  suggestionsRestantes,
+  urlDepuisChemin,
+  urlSuggestion,
+} from "./checksSuggeres";
 
 describe("urlSuggestion", () => {
   it("construit une URL absolue", () => {
@@ -47,5 +52,29 @@ describe("suggestionsRestantes", () => {
     expect(parCle.config.doitContenir).toBe("window.");
     expect(parCle.sitemap.doitContenir).toBe("<urlset");
     expect(parCle.robots.doitContenir).toBe("User-agent");
+  });
+});
+
+describe("urlDepuisChemin", () => {
+  it("prefixe un chemin par l'URL du site", () => {
+    expect(urlDepuisChemin("https://denivio.fr", "/api/health")).toBe(
+      "https://denivio.fr/api/health",
+    );
+  });
+
+  it("accepte un chemin sans slash initial", () => {
+    expect(urlDepuisChemin("https://denivio.fr", "config.js")).toBe(
+      "https://denivio.fr/config.js",
+    );
+  });
+
+  it("respecte une URL absolue: un check peut viser un autre domaine", () => {
+    expect(urlDepuisChemin("https://denivio.fr", "https://api.autre.fr/sante")).toBe(
+      "https://api.autre.fr/sante",
+    );
+  });
+
+  it("retombe sur la racine quand le chemin est vide", () => {
+    expect(urlDepuisChemin("https://denivio.fr", "  ")).toBe("https://denivio.fr/");
   });
 });

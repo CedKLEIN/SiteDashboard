@@ -19,12 +19,8 @@ import {
   totauxParMois,
   totauxPeriode,
 } from "../lib/queries";
-import {
-  coutMensuelEquivalent,
-  derniersMois,
-  formatMontant,
-  moisLisible,
-} from "../lib/format";
+import { derniersMois, formatMontant, moisLisible } from "../lib/format";
+import { coutMensuelEquivalent } from "../lib/abonnements";
 
 const NB_MOIS = 12;
 
@@ -180,8 +176,8 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
                   </span>
                   <span className="flex-1 truncate">
                     {e.libelle}
-                    {e.site_nom && (
-                      <span className="text-texte-doux"> · {e.site_nom}</span>
+                    {e.sites_noms && (
+                      <span className="text-texte-doux"> · {e.sites_noms}</span>
                     )}
                   </span>
                   <span className="tabular-nums">{formatMontant(e.montant_cents)}</span>

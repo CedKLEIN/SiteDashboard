@@ -52,6 +52,9 @@ vi.mock("./db", () => ({
 }));
 
 const {
+  ajouterTarif,
+  listerAbonnements,
+  listerTarifs,
   ajouterAbonnement,
   ajouterDepense,
   ajouterRevenu,
@@ -283,6 +286,7 @@ describe("abonnements", () => {
       libelle: "Nom de domaine",
       montantCents: 1500,
       periodicite: "annuel",
+      debut: "2024-03-01",
       prochaineEcheance: dans10Jours,
     });
 
@@ -299,6 +303,7 @@ describe("abonnements", () => {
       siteIds: [denivio],
       libelle: "Loin",
       montantCents: 1500,
+      debut: "2026-01-01",
       prochaineEcheance: dans90Jours,
     });
 
@@ -392,5 +397,81 @@ describe("supervision", () => {
     expect(etat.base.prepare("SELECT COUNT(*) AS n FROM verifications").get().n).toBe(2);
     await purgerVerifications(30);
     expect(etat.base.prepare("SELECT COUNT(*) AS n FROM verifications").get().n).toBe(1);
+  });
+});
+
+describe("tarifs d'abonnement", () => {
+  async function abonnementAvecTarif(montantCents, siteIds, partsCents = null) {
+    await ajouterAbonnement({
+      siteIds,
+      partsCents,
+      libelle: "Nom de domaine",
+      montantCents,
+      periodicite: "annuel",
+      debut: "2024-03-01",
+    });
+    const [abo] = await listerAbonnements();
+    return abo;
+  }
+
+  it("cree un tarif initial a la creation de l'abonnement", async () => {
+    const [denivio] = await creerDeuxSites();
+    await abonnementAvecTarif(600, [denivio]);
+
+    const tarifs = await listerTarifs();
+    expect(tarifs).toHaveLength(1);
+    expect(tarifs[0].montant_cents).toBe(600);
+    expect(tarifs[0].debut).toBe("2024-03-01");
+  });
+
+  it("expose le tarif en vigueur, pas le premier ni un tarif futur", async () => {
+    const [denivio] = await creerDeuxSites();
+    const abo = await abonnementAvecTarif(600, [denivio]);
+
+    await ajouterTarif(abo.id, { debut: "2025-03-01", montantCents: 1100 });
+    await ajouterTarif(abo.id, { debut: "2099-01-01", montantCents: 9900 });
+
+    const [relu] = await listerAbonnements();
+    expect(relu.montant_cents).toBe(1100);
+  });
+
+  it("redistribue les parts quand le tarif change", async () => {
+    const [denivio, histoire] = await creerDeuxSites();
+    const abo = await abonnementAvecTarif(600, [denivio, histoire]);
+
+    await ajouterTarif(abo.id, { debut: "2025-03-01", montantCents: 1100 });
+
+    const parts = etat.base
+      .prepare("SELECT part_cents FROM abonnement_sites WHERE abonnement_id = ? ORDER BY site_id")
+      .all(abo.id)
+      .map((p) => p.part_cents);
+
+    // L'invariant "somme des parts = montant courant" doit tenir apres la hausse
+    expect(parts.reduce((t, p) => t + p, 0)).toBe(1100);
+    expect(parts).toEqual([550, 550]);
+  });
+
+  it("conserve les proportions d'un partage inegal lors d'une hausse", async () => {
+    const [denivio, histoire] = await creerDeuxSites();
+    const abo = await abonnementAvecTarif(1000, [denivio, histoire], [800, 200]);
+
+    await ajouterTarif(abo.id, { debut: "2025-03-01", montantCents: 2000 });
+
+    const parts = etat.base
+      .prepare("SELECT site_id, part_cents FROM abonnement_sites WHERE abonnement_id = ?")
+      .all(abo.id);
+    const parSite = Object.fromEntries(parts.map((p) => [p.site_id, p.part_cents]));
+
+    expect(parSite[denivio]).toBe(1600);
+    expect(parSite[histoire]).toBe(400);
+  });
+
+  it("supprime les tarifs avec l'abonnement", async () => {
+    const [denivio] = await creerDeuxSites();
+    const abo = await abonnementAvecTarif(600, [denivio]);
+    await ajouterTarif(abo.id, { debut: "2025-03-01", montantCents: 1100 });
+
+    etat.base.prepare("DELETE FROM abonnements WHERE id = ?").run(abo.id);
+    expect(await listerTarifs()).toHaveLength(0);
   });
 });

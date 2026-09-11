@@ -65,8 +65,3 @@ export function aujourdhuiIso(date = new Date()) {
   return `${date.getFullYear()}-${mois}-${jour}`;
 }
 
-/** Ramene un abonnement a son cout mensuel equivalent, en centimes. */
-export function coutMensuelEquivalent({ montant_cents, periodicite }) {
-  if (periodicite === "annuel") return Math.round(montant_cents / 12);
-  return montant_cents;
-}
