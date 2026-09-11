@@ -19,7 +19,13 @@ import {
   listerDepenses,
   supprimerCheck,
 } from "../lib/queries";
-import { couleurEtat, etatSite, libelleEtat, tauxDisponibilite } from "../lib/statut";
+import {
+  couleurEtat,
+  etatSite,
+  libelleEtat,
+  SEUIL_CERT_JOURS,
+  tauxDisponibilite,
+} from "../lib/statut";
 import { suggestionsRestantes } from "../lib/checksSuggeres";
 import { formatMontant } from "../lib/format";
 
@@ -96,7 +102,9 @@ export default function DetailSite({
       siteId: site.id,
       libelle: suggestion.libelle,
       url: suggestion.url,
+      type: suggestion.type,
       doitContenir: suggestion.doitContenir,
+      seuilJours: suggestion.type === "tls" ? SEUIL_CERT_JOURS : null,
     });
     await recharger();
   }
@@ -251,7 +259,14 @@ export default function DetailSite({
                       onChange={() => basculer(check)}
                     />
                   </td>
-                  <td className="py-2">{check.libelle}</td>
+                  <td className="py-2">
+                    {check.libelle}
+                    {check.type === "tls" && (
+                      <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-texte-doux">
+                        TLS
+                      </span>
+                    )}
+                  </td>
                   <td className="max-w-64 truncate py-2 text-texte-doux">{check.url}</td>
                   <td className="py-2">
                     {check.derniere_verif ? (
@@ -261,7 +276,9 @@ export default function DetailSite({
                           style={{ background: check.dernier_ok ? "#34d399" : "#f97362" }}
                         />
                         {check.dernier_ok
-                          ? `HTTP ${check.dernier_statut}`
+                          ? check.type === "tls"
+                            ? `valide encore ${check.derniers_jours} jour(s)`
+                            : `HTTP ${check.dernier_statut}`
                           : (check.derniere_erreur ?? "echec")}
                         <span className="text-texte-doux">a {heure(check.derniere_verif)}</span>
                       </span>

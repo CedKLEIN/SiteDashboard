@@ -30,7 +30,7 @@ Prérequis : Node 20+, Rust (`winget install --id Rustlang.Rustup`), les Build T
 MSVC et le runtime WebView2 (déjà présents sur une machine avec Visual Studio).
 
 ```bash
-npm run test       # tests unitaires (vitest)
+npm run test       # tests (vitest) : logique pure + requêtes SQL réelles
 npm run lint       # oxlint
 npm run app:build  # build release : installeur .msi dans src-tauri/target/release/bundle
 ```
@@ -54,6 +54,7 @@ Deux règles non négociables, qui évitent 90 % des bugs de ce genre d'appli :
 | `depense_sites` / `abonnement_sites` | quels sites portent la ligne, et pour quelle part |
 | `checks` | ce qu'on vérifie sur un site : une URL, un statut attendu, un fragment de texte |
 | `verifications` | le résultat de chaque check, horodaté (purgé au-delà de 30 jours) |
+| `revenu_sites` | même partage côté recettes |
 
 ## Coûts partagés entre sites
 
@@ -65,6 +66,13 @@ Cette part est calculée **à l'écriture**, pas à l'affichage, et le reste de 
 distribué un centime à la fois (voir [`src/lib/repartition.js`](src/lib/repartition.js)) :
 
     11,00 € sur 3 sites  ->  3,67 + 3,67 + 3,66  =  11,00 €
+
+Le partage est égal par défaut, mais le formulaire permet de saisir des **parts inégales**
+(un hébergement qui sert surtout à un site). Dans ce cas la somme des parts doit faire
+exactement le montant : la vérification a lieu dans `partsPourSites`, donc au moment de
+l'écriture et pas seulement dans le formulaire — c'est le seul passage obligé. Elle est
+faite **avant** l'`INSERT`, sinon un refus laisserait une ligne orpheline rattachée à
+aucun site.
 
 Un `montant / nb_sites` arrondi à l'affichage donnerait 11,01 € ou 10,98 € selon le sens de
 l'arrondi : les totaux par site ne retomberaient jamais sur le total réel. Les agrégats
@@ -105,6 +113,7 @@ déployé sur Denivio et HistorySite :
 | Sitemap | `/sitemap.xml` | `<urlset` |
 | robots.txt | `/robots.txt` | `User-agent` |
 | Manifest PWA | `/manifest.webmanifest` | — |
+| Certificat TLS | (le domaine) | expiration |
 
 Le `doitContenir` compte autant que le statut. Le cas qui a motivé le catalogue est
 `/config.js` : le conteneur le réécrit à chaque démarrage depuis son `.env`
@@ -114,6 +123,20 @@ sitemap proxyfié qui renvoie 200 avec une page d'erreur HTML.
 
 Une suggestion déjà surveillée disparaît de la liste. Les checks sur mesure s'ajoutent
 toujours par le formulaire en dessous.
+
+### Expiration des certificats
+
+Un check de type `tls` ouvre une connexion, lit le certificat présenté et compte les jours
+restants. En dessous du seuil (**21 jours** par défaut, soit de la marge sur un cycle
+Let's Encrypt de 90 jours), le check **échoue volontairement** : le site passe en orange
+*avant* de tomber, ce qui est tout l'intérêt — un certificat qui expire est l'une des rares
+pannes entièrement prévisibles.
+
+L'inspection utilise un vérificateur TLS permissif, et **uniquement pour cette lecture** :
+un certificat déjà expiré fait échouer une poignée de main normale, on ne pourrait alors
+rien en dire de précis. En acceptant la chaîne sans la valider, on peut toujours annoncer
+« expiré depuis 3 jours ». Aucune donnée n'est envoyée sur cette connexion. Les checks HTTP,
+eux, passent par reqwest avec la validation complète.
 
 ### Deux pièges rencontrés, à ne pas réintroduire
 
@@ -140,8 +163,23 @@ Le chemin du fichier `.db` est affiché en bas de la barre latérale
 (typiquement `%APPDATA%\com.cedklein.sitedashboard\sitedashboard.db`).
 Pour sauvegarder : copier ce fichier.
 
+## Tests
+
+`npm run test` couvre deux niveaux :
+
+- la **logique pure** (répartition au centime, états de supervision, verdict sur certificat,
+  formats) ;
+- les **requêtes SQL réelles** ([`src/lib/queries.test.js`](src/lib/queries.test.js)) : le
+  module `db` est remplacé par un adaptateur vers `node:sqlite`, et les vraies fonctions de
+  `queries.js` tournent sur le schéma produit par les **vraies migrations**, en mémoire. Une
+  jointure cassée ou une colonne renommée fait donc échouer les tests.
+
+Ce qui n'est **pas** couvert : le parcours à la souris dans l'application.
+
 ## Suite envisagée
 
+- **Icône en zone de notification + démarrage automatique** : aujourd'hui la supervision ne
+  tourne que fenêtre ouverte, donc une panne nocturne passe inaperçue
+- Alertes système au changement d'état (et seulement au changement, sinon c'est du bruit)
 - Import CSV par fournisseur (la plupart exportent du CSV) → `source = 'csv'`
 - Connecteurs API là où ça vaut le coup (Stripe, facturation cloud) → `source = 'api'`
-- Parts inégales : aujourd'hui un coût partagé est réparti à parts égales entre les sites cochés

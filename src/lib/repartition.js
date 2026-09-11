@@ -18,8 +18,38 @@ export function repartir(montantCents, nbSites) {
   return Array.from({ length: nbSites }, (_, i) => base + (i < reste ? 1 : 0));
 }
 
-/** Associe a chaque id de site sa part en centimes. */
+/** Associe a chaque id de site sa part en centimes, a parts egales. */
 export function repartirEntreSites(montantCents, siteIds) {
   const parts = repartir(montantCents, siteIds.length);
   return siteIds.map((siteId, i) => ({ siteId, partCents: parts[i] }));
+}
+
+/**
+ * Parts definitives a enregistrer: egales par defaut, ou celles saisies a la main.
+ *
+ * La verification de la somme est faite ICI, au moment de l'ecriture, et pas
+ * seulement dans le formulaire: c'est le seul passage oblige. Une part saisie
+ * de travers qui passerait a travers l'UI donnerait des totaux par site
+ * silencieusement faux, le pire des bugs sur une appli de comptes.
+ */
+export function partsPourSites(montantCents, siteIds, partsCents = null) {
+  if (partsCents == null) return repartirEntreSites(montantCents, siteIds);
+
+  if (partsCents.length !== siteIds.length) {
+    throw new Error(
+      `${partsCents.length} part(s) fournie(s) pour ${siteIds.length} site(s)`,
+    );
+  }
+  if (partsCents.some((p) => !Number.isInteger(p))) {
+    throw new TypeError("les parts doivent etre des centimes entiers");
+  }
+
+  const somme = partsCents.reduce((total, p) => total + p, 0);
+  if (somme !== montantCents) {
+    throw new Error(
+      `la somme des parts (${somme} centimes) doit faire exactement ${montantCents} centimes`,
+    );
+  }
+
+  return siteIds.map((siteId, i) => ({ siteId, partCents: partsCents[i] }));
 }

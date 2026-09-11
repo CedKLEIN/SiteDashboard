@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { Bouton, Carte, Champ, EtatVide, Pastille, Selecteur } from "../components/ui";
+import { Bouton, Carte, Champ, EtatVide } from "../components/ui";
+import RepartitionSites, { partsCentsDepuisSaisie } from "../components/RepartitionSites";
 import { ajouterRevenu, listerRevenus, listerSites } from "../lib/queries";
 import { aujourdhuiIso, formatMontant, parseMontant } from "../lib/format";
 
 const FORMULAIRE_VIDE = {
-  siteId: "",
+  siteIds: [],
+  parts: null,
   date: aujourdhuiIso(),
   montant: "",
   libelle: "",
@@ -32,6 +34,18 @@ export default function Revenus({ onModification }) {
     setFormulaire((f) => ({ ...f, [champ]: valeur }));
   }
 
+  function basculerSite(id) {
+    setFormulaire((f) => ({
+      ...f,
+      siteIds: f.siteIds.includes(id)
+        ? f.siteIds.filter((x) => x !== id)
+        : [...f.siteIds, id],
+      parts: null,
+    }));
+  }
+
+  const montantSaisiCents = parseMontant(formulaire.montant);
+
   async function enregistrer(evenement) {
     evenement.preventDefault();
     setErreur("");
@@ -41,19 +55,25 @@ export default function Revenus({ onModification }) {
       setErreur("Montant invalide.");
       return;
     }
-    if (!formulaire.siteId) {
-      setErreur("Choisis un site.");
+    if (formulaire.siteIds.length === 0) {
+      setErreur("Choisis au moins un site.");
       return;
     }
 
-    await ajouterRevenu({
-      siteId: Number(formulaire.siteId),
-      date: formulaire.date,
-      montantCents,
-      libelle: formulaire.libelle,
-    });
+    try {
+      await ajouterRevenu({
+        siteIds: formulaire.siteIds,
+        partsCents: partsCentsDepuisSaisie(formulaire.siteIds, formulaire.parts),
+        date: formulaire.date,
+        montantCents,
+        libelle: formulaire.libelle,
+      });
+    } catch (e) {
+      setErreur(String(e.message ?? e));
+      return;
+    }
 
-    setFormulaire({ ...FORMULAIRE_VIDE, siteId: formulaire.siteId });
+    setFormulaire({ ...FORMULAIRE_VIDE, siteIds: formulaire.siteIds });
     await recharger();
     onModification?.();
   }
@@ -65,19 +85,14 @@ export default function Revenus({ onModification }) {
       {sites.length > 0 && (
         <Carte titre="Nouveau revenu">
           <form onSubmit={enregistrer} className="flex flex-wrap items-end gap-3">
-            <Selecteur
-              label="Site"
-              value={formulaire.siteId}
-              onChange={(e) => maj("siteId", e.target.value)}
-              className="w-44"
-            >
-              <option value="">—</option>
-              {sites.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.nom}
-                </option>
-              ))}
-            </Selecteur>
+            <RepartitionSites
+              sites={sites}
+              selection={formulaire.siteIds}
+              onBasculerSite={basculerSite}
+              montantCents={montantSaisiCents}
+              parts={formulaire.parts}
+              onChangerParts={(parts) => maj("parts", parts)}
+            />
             <Champ
               label="Date"
               type="date"
@@ -114,7 +129,7 @@ export default function Revenus({ onModification }) {
             <thead>
               <tr className="border-b border-bord text-left text-xs uppercase text-texte-doux">
                 <th className="py-2 font-medium">Date</th>
-                <th className="py-2 font-medium">Site</th>
+                <th className="py-2 font-medium">Sites</th>
                 <th className="py-2 font-medium">Libelle</th>
                 <th className="py-2 text-right font-medium">Montant</th>
               </tr>
@@ -124,10 +139,12 @@ export default function Revenus({ onModification }) {
                 <tr key={r.id} className="border-b border-bord/50 last:border-0">
                   <td className="py-2 tabular-nums text-texte-doux">{r.date}</td>
                   <td className="py-2">
-                    <span className="flex items-center gap-2">
-                      <Pastille couleur={r.site_couleur} />
-                      {r.site_nom ?? "—"}
-                    </span>
+                    {r.sites_noms ?? <span className="text-texte-doux">non rattache</span>}
+                    {r.nb_sites > 1 && (
+                      <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-texte-doux">
+                        partage
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 text-texte-doux">{r.libelle}</td>
                   <td className="py-2 text-right tabular-nums text-revenu">

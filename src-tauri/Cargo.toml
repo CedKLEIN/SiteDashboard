@@ -25,6 +25,13 @@ reqwest = { version = "0.12", default-features = false, features = [
     "charset",
     "gzip",
 ] }
+# Inspection des certificats TLS: rustls pour la poignee de main, x509-parser
+# pour lire la date d'expiration du certificat presente par le serveur.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+tokio = { version = "1", features = ["net", "time"] }
+x509-parser = "0.17"
+url = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

@@ -48,6 +48,14 @@ export const CHECKS_SUGGERES = [
     description: "Le fichier robots est servi et non vide",
   },
   {
+    cle: "certificat",
+    libelle: "Certificat TLS",
+    chemin: "/",
+    type: "tls",
+    doitContenir: null,
+    description: "Alerte avant l'expiration du certificat, pas apres la panne",
+  },
+  {
     cle: "manifest",
     libelle: "Manifest PWA",
     chemin: "/manifest.webmanifest",
@@ -73,7 +81,12 @@ export function urlSuggestion(urlSite, chemin) {
 
 /** Suggestions restantes: on masque celles dont l'URL est deja surveillee. */
 export function suggestionsRestantes(urlSite, checksExistants = []) {
-  const deja = new Set(checksExistants.map((c) => c.url));
-  return CHECKS_SUGGERES.map((s) => ({ ...s, url: urlSuggestion(urlSite, s.chemin) }))
-    .filter((s) => s.url !== null && !deja.has(s.url));
+  // Un check TLS et un check HTTP peuvent viser la meme URL sans faire doublon:
+  // ils ne verifient pas la meme chose. La cle de deduplication est (type, url).
+  const dejaTypes = new Set(checksExistants.map((c) => `${c.type ?? "http"}|${c.url}`));
+  return CHECKS_SUGGERES.map((s) => ({
+    ...s,
+    type: s.type ?? "http",
+    url: urlSuggestion(urlSite, s.chemin),
+  })).filter((s) => s.url !== null && !dejaTypes.has(`${s.type}|${s.url}`));
 }

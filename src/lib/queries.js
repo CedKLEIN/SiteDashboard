@@ -1,5 +1,5 @@
 import { execute, select } from "./db";
-import { repartirEntreSites } from "./repartition";
+import { partsPourSites } from "./repartition";
 
 /* ---------------------------------------------------------------- sites */
 
@@ -90,6 +90,7 @@ export function listerDepenses({ siteId = null, limite = 200 } = {}) {
 
 export async function ajouterDepense({
   siteIds = [],
+  partsCents = null,
   fournisseurId,
   date,
   montantCents,
@@ -99,6 +100,10 @@ export async function ajouterDepense({
   source = "manuel",
   refExterne = null,
 }) {
+  // Les parts sont calculees et validees AVANT d'inserer la depense: sinon une
+  // somme incoherente laisserait une ligne orpheline, rattachee a aucun site.
+  const parts = partsPourSites(montantCents, siteIds, partsCents);
+
   const res = await execute(
     `INSERT INTO depenses
        (fournisseur_id, date, montant_cents, devise, libelle, categorie, source, ref_externe)
@@ -106,7 +111,7 @@ export async function ajouterDepense({
     [fournisseurId, date, montantCents, devise, libelle, categorie, source, refExterne],
   );
 
-  for (const { siteId, partCents } of repartirEntreSites(montantCents, siteIds)) {
+  for (const { siteId, partCents } of parts) {
     await execute(
       "INSERT INTO depense_sites (depense_id, site_id, part_cents) VALUES ($1, $2, $3)",
       [res.lastInsertId, siteId, partCents],
@@ -121,29 +126,45 @@ export function supprimerDepense(id) {
 
 /* -------------------------------------------------------------- revenus */
 
+const SITES_DU_REVENU = `
+  (SELECT group_concat(s.nom, ' + ')
+     FROM revenu_sites x JOIN sites s ON s.id = x.site_id
+    WHERE x.revenu_id = r.id) AS sites_noms,
+  (SELECT COUNT(*) FROM revenu_sites WHERE revenu_id = r.id) AS nb_sites`;
+
 export function listerRevenus({ limite = 200 } = {}) {
   return select(
-    `SELECT r.*, s.nom AS site_nom, s.couleur AS site_couleur
+    `SELECT r.*, ${SITES_DU_REVENU}
      FROM revenus r
-     LEFT JOIN sites s ON s.id = r.site_id
      ORDER BY r.date DESC, r.id DESC LIMIT $1`,
     [limite],
   );
 }
 
-export function ajouterRevenu({
-  siteId,
+export async function ajouterRevenu({
+  siteIds = [],
+  partsCents = null,
   date,
   montantCents,
   devise = "EUR",
   libelle = "",
   source = "manuel",
 }) {
-  return execute(
-    `INSERT INTO revenus (site_id, date, montant_cents, devise, libelle, source)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [siteId, date, montantCents, devise, libelle, source],
+  const parts = partsPourSites(montantCents, siteIds, partsCents);
+
+  const res = await execute(
+    `INSERT INTO revenus (date, montant_cents, devise, libelle, source)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [date, montantCents, devise, libelle, source],
   );
+
+  for (const { siteId, partCents } of parts) {
+    await execute(
+      "INSERT INTO revenu_sites (revenu_id, site_id, part_cents) VALUES ($1, $2, $3)",
+      [res.lastInsertId, siteId, partCents],
+    );
+  }
+  return res;
 }
 
 /* ---------------------------------------------------------- abonnements */
@@ -165,6 +186,7 @@ export function listerAbonnements() {
 
 export async function ajouterAbonnement({
   siteIds = [],
+  partsCents = null,
   fournisseurId,
   libelle,
   montantCents,
@@ -172,6 +194,8 @@ export async function ajouterAbonnement({
   periodicite = "mensuel",
   prochaineEcheance = null,
 }) {
+  const parts = partsPourSites(montantCents, siteIds, partsCents);
+
   const res = await execute(
     `INSERT INTO abonnements
        (fournisseur_id, libelle, montant_cents, devise, periodicite, prochaine_echeance)
@@ -179,7 +203,7 @@ export async function ajouterAbonnement({
     [fournisseurId, libelle, montantCents, devise, periodicite, prochaineEcheance],
   );
 
-  for (const { siteId, partCents } of repartirEntreSites(montantCents, siteIds)) {
+  for (const { siteId, partCents } of parts) {
     await execute(
       "INSERT INTO abonnement_sites (abonnement_id, site_id, part_cents) VALUES ($1, $2, $3)",
       [res.lastInsertId, siteId, partCents],
@@ -235,31 +259,6 @@ export function depensesParSite(depuis, jusqua) {
   );
 }
 
-/** Cout recurrent mensuel porte par un site donne, parts comprises. */
-export async function coutRecurrentDuSite(siteId) {
-  const [ligne] = await select(
-    `SELECT COALESCE(SUM(
-       CASE WHEN a.periodicite = 'annuel' THEN lien.part_cents / 12 ELSE lien.part_cents END
-     ), 0) AS total_cents
-     FROM abonnement_sites lien
-     JOIN abonnements a ON a.id = lien.abonnement_id
-     WHERE lien.site_id = $1 AND a.actif = 1`,
-    [siteId],
-  );
-  return ligne.total_cents;
-}
-
-/** Depenses agregees par categorie sur une periode. */
-export function depensesParCategorie(depuis, jusqua) {
-  return select(
-    `SELECT categorie, SUM(montant_cents) AS total_cents
-     FROM depenses
-     WHERE date >= $1 AND date <= $2
-     GROUP BY categorie
-     ORDER BY total_cents DESC`,
-    [depuis, jusqua],
-  );
-}
 
 /** Totaux bruts sur une periode. */
 export async function totauxPeriode(depuis, jusqua) {
@@ -297,6 +296,7 @@ export function listerChecks(siteId) {
             v.statut_http AS dernier_statut,
             v.latence_ms  AS derniere_latence,
             v.erreur      AS derniere_erreur,
+            v.jours_restants AS derniers_jours,
             v.verifie_le  AS derniere_verif
      FROM checks c
      LEFT JOIN verifications v ON v.id = (
@@ -314,7 +314,8 @@ export function listerChecks(siteId) {
 /** Les checks a executer a chaque cycle de supervision. */
 export function checksActifs() {
   return select(
-    `SELECT c.id, c.url, c.statut_attendu, c.doit_contenir, c.libelle, s.nom AS site_nom
+    `SELECT c.id, c.url, c.type, c.seuil_jours, c.statut_attendu, c.doit_contenir,
+            c.libelle, s.nom AS site_nom
      FROM checks c
      JOIN sites s ON s.id = c.site_id
      WHERE c.actif = 1 AND s.actif = 1
@@ -322,11 +323,19 @@ export function checksActifs() {
   );
 }
 
-export function creerCheck({ siteId, libelle, url, statutAttendu = null, doitContenir = null }) {
+export function creerCheck({
+  siteId,
+  libelle,
+  url,
+  type = "http",
+  statutAttendu = null,
+  doitContenir = null,
+  seuilJours = null,
+}) {
   return execute(
-    `INSERT INTO checks (site_id, libelle, url, statut_attendu, doit_contenir)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [siteId, libelle, url, statutAttendu, doitContenir || null],
+    `INSERT INTO checks (site_id, libelle, url, type, statut_attendu, doit_contenir, seuil_jours)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [siteId, libelle, url, type, statutAttendu, doitContenir || null, seuilJours],
   );
 }
 
@@ -338,11 +347,14 @@ export function basculerCheck(id, actif) {
   return execute("UPDATE checks SET actif = $1 WHERE id = $2", [actif ? 1 : 0, id]);
 }
 
-export function enregistrerVerification(checkId, { ok, statut, latence_ms, erreur }) {
+export function enregistrerVerification(
+  checkId,
+  { ok, statut, latence_ms, erreur, jours_restants = null },
+) {
   return execute(
-    `INSERT INTO verifications (check_id, ok, statut_http, latence_ms, erreur)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [checkId, ok ? 1 : 0, statut ?? null, latence_ms ?? null, erreur ?? null],
+    `INSERT INTO verifications (check_id, ok, statut_http, latence_ms, erreur, jours_restants)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [checkId, ok ? 1 : 0, statut ?? null, latence_ms ?? null, erreur ?? null, jours_restants],
   );
 }
 

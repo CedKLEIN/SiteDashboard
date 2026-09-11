@@ -1,0 +1,393 @@
+// @vitest-environment node
+// Ces tests parlent a SQLite, pas au DOM: l'environnement jsdom refuserait
+// d'importer le module natif node:sqlite.
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * Tests des requetes SQL reelles, jouees sur une base SQLite en memoire.
+ *
+ * On ne teste pas des chaines SQL a la main: le module `./db` est remplace par
+ * un adaptateur vers node:sqlite, et ce sont les VRAIES fonctions de queries.js
+ * qui s'executent, sur le schema produit par les VRAIES migrations. Une erreur
+ * de jointure ou une colonne renommee casse donc ces tests.
+ */
+const etat = vi.hoisted(() => ({ base: null }));
+
+/**
+ * SQLite accepte `?` positionnel; nos requetes utilisent `$1`, `$2`...
+ * On convertit en respectant l'ordre d'apparition, ce qui gere aussi un
+ * parametre reutilise ou des numeros hors sequence.
+ */
+function convertir(sql, params) {
+  const ordre = [];
+  const sqlConverti = sql.replace(/\$(\d+)/g, (_, n) => {
+    ordre.push(Number(n) - 1);
+    return "?";
+  });
+  const valeurs = ordre.map((i) => {
+    const v = params[i];
+    if (v === undefined || v === null) return null;
+    if (typeof v === "boolean") return v ? 1 : 0;
+    return v;
+  });
+  return { sqlConverti, valeurs };
+}
+
+vi.mock("./db", () => ({
+  select: async (sql, params = []) => {
+    const { sqlConverti, valeurs } = convertir(sql, params);
+    return etat.base.prepare(sqlConverti).all(...valeurs);
+  },
+  execute: async (sql, params = []) => {
+    const { sqlConverti, valeurs } = convertir(sql, params);
+    const res = etat.base.prepare(sqlConverti).run(...valeurs);
+    return {
+      rowsAffected: Number(res.changes),
+      lastInsertId: Number(res.lastInsertRowid),
+    };
+  },
+}));
+
+const {
+  ajouterAbonnement,
+  ajouterDepense,
+  ajouterRevenu,
+  checksActifs,
+  creerCheck,
+  creerSite,
+  depensesParSite,
+  echeancesProches,
+  enregistrerVerification,
+  etatsDesSites,
+  listerChecks,
+  listerDepenses,
+  listerRevenus,
+  purgerVerifications,
+  supprimerSite,
+} = await import("./queries");
+
+const DOSSIER_MIGRATIONS = path.resolve(__dirname, "../../src-tauri/migrations");
+const MIGRATIONS = [
+  "001_init.sql",
+  "002_monitoring.sql",
+  "003_partage.sql",
+  "004_revenus_partage.sql",
+  "005_certificat.sql",
+];
+
+beforeEach(() => {
+  etat.base = new DatabaseSync(":memory:");
+  // sqlx active les cles etrangeres par defaut sur SQLite: on reproduit la
+  // meme configuration, sinon les suppressions en cascade ne seraient pas testees.
+  etat.base.exec("PRAGMA foreign_keys = ON");
+  for (const fichier of MIGRATIONS) {
+    etat.base.exec(readFileSync(path.join(DOSSIER_MIGRATIONS, fichier), "utf8"));
+  }
+});
+
+async function creerDeuxSites() {
+  await creerSite({ nom: "Denivio", url: "https://denivio.fr" });
+  await creerSite({ nom: "HistorySite", url: "https://histoire.fr" });
+  const lignes = etat.base.prepare("SELECT id FROM sites ORDER BY nom").all();
+  return lignes.map((l) => l.id);
+}
+
+describe("migrations", () => {
+  it("produisent le schema attendu", () => {
+    const tables = etat.base
+      .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+      .all()
+      .map((t) => t.name);
+    expect(tables).toEqual(
+      expect.arrayContaining([
+        "sites",
+        "depenses",
+        "depense_sites",
+        "revenus",
+        "revenu_sites",
+        "abonnements",
+        "abonnement_sites",
+        "checks",
+        "verifications",
+      ]),
+    );
+  });
+
+  it("ont supprime les colonnes site_id devenues concurrentes", () => {
+    for (const table of ["depenses", "revenus", "abonnements"]) {
+      const colonnes = etat.base.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+      expect(colonnes).not.toContain("site_id");
+    }
+  });
+});
+
+describe("creerSite", () => {
+  it("cree un check d'accueil quand le site a une URL", async () => {
+    await creerSite({ nom: "Denivio", url: "https://denivio.fr" });
+    const checks = etat.base.prepare("SELECT * FROM checks").all();
+    expect(checks).toHaveLength(1);
+    expect(checks[0].url).toBe("https://denivio.fr");
+    expect(checks[0].type).toBe("http");
+  });
+
+  it("ne cree aucun check sans URL", async () => {
+    await creerSite({ nom: "SansUrl", url: "" });
+    expect(etat.base.prepare("SELECT COUNT(*) AS n FROM checks").get().n).toBe(0);
+  });
+});
+
+describe("depenses partagees", () => {
+  it("repartit a parts egales et conserve le total", async () => {
+    const [denivio, histoire] = await creerDeuxSites();
+    await ajouterDepense({
+      siteIds: [denivio, histoire],
+      date: "2026-09-11",
+      montantCents: 1100,
+      libelle: "Ionos",
+    });
+
+    const parts = etat.base.prepare("SELECT part_cents FROM depense_sites ORDER BY site_id").all();
+    expect(parts.map((p) => p.part_cents)).toEqual([550, 550]);
+  });
+
+  it("accepte des parts inegales dont la somme fait le montant", async () => {
+    const [denivio, histoire] = await creerDeuxSites();
+    await ajouterDepense({
+      siteIds: [denivio, histoire],
+      partsCents: [880, 220],
+      date: "2026-09-11",
+      montantCents: 1100,
+      libelle: "Ionos 80/20",
+    });
+
+    const somme = etat.base.prepare("SELECT SUM(part_cents) AS t FROM depense_sites").get().t;
+    expect(somme).toBe(1100);
+  });
+
+  it("refuse des parts dont la somme ne fait pas le montant", async () => {
+    const [denivio, histoire] = await creerDeuxSites();
+    await expect(
+      ajouterDepense({
+        siteIds: [denivio, histoire],
+        partsCents: [800, 200],
+        date: "2026-09-11",
+        montantCents: 1100,
+        libelle: "incoherent",
+      }),
+    ).rejects.toThrow(/somme des parts/);
+  });
+
+  it("n'ecrit aucune depense orpheline quand les parts sont refusees", async () => {
+    const [denivio, histoire] = await creerDeuxSites();
+    await expect(
+      ajouterDepense({
+        siteIds: [denivio, histoire],
+        partsCents: [1, 2],
+        date: "2026-09-11",
+        montantCents: 1100,
+        libelle: "incoherent",
+      }),
+    ).rejects.toThrow();
+
+    // La validation doit avoir lieu avant l'INSERT, pas apres
+    expect(etat.base.prepare("SELECT COUNT(*) AS n FROM depenses").get().n).toBe(0);
+  });
+
+  it("somme les parts et non les montants dans la repartition par site", async () => {
+    const [denivio, histoire] = await creerDeuxSites();
+    await ajouterDepense({
+      siteIds: [denivio, histoire],
+      date: "2026-09-11",
+      montantCents: 1100,
+      libelle: "Ionos",
+    });
+
+    const parSite = await depensesParSite("2026-09-01", "2026-09-30");
+    const total = parSite.reduce((t, s) => t + s.total_cents, 0);
+    expect(total).toBe(1100);
+    expect(parSite.every((s) => s.total_cents === 550)).toBe(true);
+  });
+
+  it("ignore les depenses hors de la periode demandee", async () => {
+    const [denivio] = await creerDeuxSites();
+    await ajouterDepense({
+      siteIds: [denivio],
+      date: "2026-08-15",
+      montantCents: 5000,
+      libelle: "aout",
+    });
+
+    const parSite = await depensesParSite("2026-09-01", "2026-09-30");
+    expect(parSite.reduce((t, s) => t + s.total_cents, 0)).toBe(0);
+  });
+
+  it("renvoie la part du site quand on filtre par site", async () => {
+    const [denivio, histoire] = await creerDeuxSites();
+    await ajouterDepense({
+      siteIds: [denivio, histoire],
+      date: "2026-09-11",
+      montantCents: 1100,
+      libelle: "Ionos",
+    });
+
+    const [ligne] = await listerDepenses({ siteId: denivio });
+    expect(ligne.montant_cents).toBe(1100);
+    expect(ligne.part_cents).toBe(550);
+    expect(ligne.nb_sites).toBe(2);
+    expect(ligne.sites_noms).toContain("Denivio");
+  });
+
+  it("supprime les rattachements quand le site disparait", async () => {
+    const [denivio, histoire] = await creerDeuxSites();
+    await ajouterDepense({
+      siteIds: [denivio, histoire],
+      date: "2026-09-11",
+      montantCents: 1100,
+      libelle: "Ionos",
+    });
+
+    await supprimerSite(denivio);
+    const restants = etat.base.prepare("SELECT site_id FROM depense_sites").all();
+    expect(restants).toEqual([{ site_id: histoire }]);
+  });
+});
+
+describe("revenus partages", () => {
+  it("se rattachent a plusieurs sites comme les depenses", async () => {
+    const [denivio, histoire] = await creerDeuxSites();
+    await ajouterRevenu({
+      siteIds: [denivio, histoire],
+      date: "2026-09-11",
+      montantCents: 4990,
+      libelle: "Soutiens",
+    });
+
+    const [ligne] = await listerRevenus({});
+    expect(ligne.nb_sites).toBe(2);
+    expect(etat.base.prepare("SELECT SUM(part_cents) AS t FROM revenu_sites").get().t).toBe(4990);
+  });
+});
+
+describe("abonnements", () => {
+  it("remontent dans les echeances proches", async () => {
+    const [denivio] = await creerDeuxSites();
+    const dans10Jours = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+    await ajouterAbonnement({
+      siteIds: [denivio],
+      libelle: "Nom de domaine",
+      montantCents: 1500,
+      periodicite: "annuel",
+      prochaineEcheance: dans10Jours,
+    });
+
+    const echeances = await echeancesProches(45);
+    expect(echeances).toHaveLength(1);
+    expect(echeances[0].libelle).toBe("Nom de domaine");
+    expect(echeances[0].sites_noms).toBe("Denivio");
+  });
+
+  it("ignore une echeance au-dela de la fenetre", async () => {
+    const [denivio] = await creerDeuxSites();
+    const dans90Jours = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10);
+    await ajouterAbonnement({
+      siteIds: [denivio],
+      libelle: "Loin",
+      montantCents: 1500,
+      prochaineEcheance: dans90Jours,
+    });
+
+    expect(await echeancesProches(45)).toHaveLength(0);
+  });
+});
+
+describe("supervision", () => {
+  it("agrege l'etat d'un site sur le dernier resultat de chaque check", async () => {
+    const [denivio] = await creerDeuxSites();
+    const [accueil] = await checksActifs();
+    const second = await creerCheck({ siteId: denivio, libelle: "API", url: "https://denivio.fr/api" });
+
+    await enregistrerVerification(accueil.id, { ok: true, statut: 200, latence_ms: 40 });
+    await enregistrerVerification(second.lastInsertId, {
+      ok: false,
+      statut: 500,
+      latence_ms: 12,
+      erreur: "statut HTTP 500",
+    });
+
+    const etats = await etatsDesSites();
+    const denivioEtat = etats.find((e) => e.id === denivio);
+    expect(denivioEtat.nb_checks).toBe(2);
+    expect(denivioEtat.nb_resultats).toBe(2);
+    expect(denivioEtat.nb_ok).toBe(1);
+  });
+
+  it("ne retient que la verification la plus recente d'un check", async () => {
+    await creerDeuxSites();
+    const [accueil] = await checksActifs();
+
+    await enregistrerVerification(accueil.id, { ok: false, statut: 500, latence_ms: 10 });
+    await enregistrerVerification(accueil.id, { ok: true, statut: 200, latence_ms: 10 });
+
+    const [check] = await listerChecks(accueil.id === 1 ? 1 : accueil.id);
+    expect(check.dernier_ok).toBe(1);
+  });
+
+  it("enregistre les jours restants d'un check TLS", async () => {
+    const [denivio] = await creerDeuxSites();
+    const cert = await creerCheck({
+      siteId: denivio,
+      libelle: "Certificat TLS",
+      url: "https://denivio.fr",
+      type: "tls",
+      seuilJours: 21,
+    });
+
+    await enregistrerVerification(cert.lastInsertId, {
+      ok: true,
+      statut: null,
+      latence_ms: null,
+      jours_restants: 68,
+    });
+
+    const checks = await listerChecks(denivio);
+    const ligne = checks.find((c) => c.type === "tls");
+    expect(ligne.derniers_jours).toBe(68);
+    expect(ligne.seuil_jours).toBe(21);
+  });
+
+  it("expose le type et le seuil aux cycles de supervision", async () => {
+    const [denivio] = await creerDeuxSites();
+    await creerCheck({
+      siteId: denivio,
+      libelle: "Certificat TLS",
+      url: "https://denivio.fr",
+      type: "tls",
+      seuilJours: 30,
+    });
+
+    const actifs = await checksActifs();
+    const tls = actifs.find((c) => c.type === "tls");
+    expect(tls.seuil_jours).toBe(30);
+  });
+
+  it("purge les verifications au-dela du delai de retention", async () => {
+    await creerDeuxSites();
+    const [accueil] = await checksActifs();
+    await enregistrerVerification(accueil.id, { ok: true, statut: 200, latence_ms: 10 });
+
+    // Une verification vieille de 60 jours, injectee directement
+    etat.base
+      .prepare(
+        `INSERT INTO verifications (check_id, verifie_le, ok, statut_http)
+         VALUES (?, datetime('now', 'localtime', '-60 days'), 1, 200)`,
+      )
+      .run(accueil.id);
+
+    expect(etat.base.prepare("SELECT COUNT(*) AS n FROM verifications").get().n).toBe(2);
+    await purgerVerifications(30);
+    expect(etat.base.prepare("SELECT COUNT(*) AS n FROM verifications").get().n).toBe(1);
+  });
+});

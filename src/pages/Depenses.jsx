@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { Bouton, Carte, Champ, EtatVide, Selecteur, SelecteurSites } from "../components/ui";
+import { Bouton, Carte, Champ, EtatVide, Selecteur } from "../components/ui";
+import RepartitionSites, { partsCentsDepuisSaisie } from "../components/RepartitionSites";
 import {
   ajouterDepense,
   listerDepenses,
@@ -10,7 +11,6 @@ import {
   trouverOuCreerFournisseur,
 } from "../lib/queries";
 import { aujourdhuiIso, formatMontant, parseMontant } from "../lib/format";
-import { repartir } from "../lib/repartition";
 
 export const CATEGORIES = [
   "hebergement",
@@ -23,6 +23,7 @@ export const CATEGORIES = [
 
 const FORMULAIRE_VIDE = {
   siteIds: [],
+  parts: null,
   fournisseur: "",
   date: aujourdhuiIso(),
   montant: "",
@@ -64,18 +65,13 @@ export default function Depenses({ onModification }) {
       siteIds: f.siteIds.includes(id)
         ? f.siteIds.filter((x) => x !== id)
         : [...f.siteIds, id],
+      // Changer la liste des sites invalide une repartition manuelle: on
+      // repart de parts egales plutot que de garder des montants incoherents.
+      parts: null,
     }));
   }
 
-  // Montre le partage avant d'enregistrer: c'est la seule facon de verifier
-  // d'un coup d'oeil que 11 EUR sur 3 sites tombent bien sur 3,67 / 3,67 / 3,66.
   const montantSaisiCents = parseMontant(formulaire.montant);
-  const apercuPartage =
-    formulaire.siteIds.length > 1 && montantSaisiCents > 0
-      ? `reparti en ${repartir(montantSaisiCents, formulaire.siteIds.length)
-          .map((p) => formatMontant(p))
-          .join(" + ")}`
-      : null;
 
   async function enregistrer(evenement) {
     evenement.preventDefault();
@@ -96,14 +92,21 @@ export default function Depenses({ onModification }) {
       formulaire.categorie,
     );
 
-    await ajouterDepense({
-      siteIds: formulaire.siteIds,
-      fournisseurId,
-      date: formulaire.date,
-      montantCents,
-      libelle: formulaire.libelle,
-      categorie: formulaire.categorie,
-    });
+    try {
+      await ajouterDepense({
+        siteIds: formulaire.siteIds,
+        partsCents: partsCentsDepuisSaisie(formulaire.siteIds, formulaire.parts),
+        fournisseurId,
+        date: formulaire.date,
+        montantCents,
+        libelle: formulaire.libelle,
+        categorie: formulaire.categorie,
+      });
+    } catch (e) {
+      // Typiquement: la somme des parts saisies ne fait pas le montant total
+      setErreur(String(e.message ?? e));
+      return;
+    }
 
     setFormulaire({ ...FORMULAIRE_VIDE, siteIds: formulaire.siteIds });
     await recharger();
@@ -129,12 +132,13 @@ export default function Depenses({ onModification }) {
       ) : (
         <Carte titre="Nouvelle depense">
           <form onSubmit={enregistrer} className="flex flex-wrap items-end gap-3">
-            <SelecteurSites
-              label="Sites concernes"
+            <RepartitionSites
               sites={sites}
               selection={formulaire.siteIds}
-              onBasculer={basculerSite}
-              aide={apercuPartage}
+              onBasculerSite={basculerSite}
+              montantCents={montantSaisiCents}
+              parts={formulaire.parts}
+              onChangerParts={(parts) => maj("parts", parts)}
             />
 
             <Champ

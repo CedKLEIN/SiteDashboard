@@ -35,3 +35,25 @@ export function tauxDisponibilite(verifications) {
   const reussis = verifications.filter((v) => v.ok).length;
   return (reussis / verifications.length) * 100;
 }
+
+/** Seuil par defaut: 21 jours laissent le temps de reagir sur un cycle Let's Encrypt de 90 jours. */
+export const SEUIL_CERT_JOURS = 21;
+
+/**
+ * Traduit le resultat brut d'une inspection de certificat en verdict de supervision.
+ *
+ * Un certificat qui expire dans 10 jours n'est pas encore une panne, mais c'en
+ * est une programmee: on le traite comme un echec pour qu'il remonte en orange
+ * AVANT que le site tombe, ce qui est tout l'interet de ce check.
+ */
+export function evaluerCertificat({ jours_restants, erreur } = {}, seuilJours = SEUIL_CERT_JOURS) {
+  if (erreur) return { ok: false, message: erreur };
+  if (jours_restants == null) return { ok: false, message: "certificat illisible" };
+  if (jours_restants < 0) {
+    return { ok: false, message: `certificat expire depuis ${-jours_restants} jour(s)` };
+  }
+  if (jours_restants <= seuilJours) {
+    return { ok: false, message: `certificat expire dans ${jours_restants} jour(s)` };
+  }
+  return { ok: true, message: `valide encore ${jours_restants} jour(s)` };
+}

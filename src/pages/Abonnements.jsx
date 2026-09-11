@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { Bouton, Carte, Champ, EtatVide, Selecteur, SelecteurSites } from "../components/ui";
+import { Bouton, Carte, Champ, EtatVide, Selecteur } from "../components/ui";
+import RepartitionSites, { partsCentsDepuisSaisie } from "../components/RepartitionSites";
 import {
   ajouterAbonnement,
   basculerAbonnement,
@@ -11,10 +12,10 @@ import {
   trouverOuCreerFournisseur,
 } from "../lib/queries";
 import { coutMensuelEquivalent, formatMontant, parseMontant } from "../lib/format";
-import { repartir } from "../lib/repartition";
 
 const FORMULAIRE_VIDE = {
   siteIds: [],
+  parts: null,
   fournisseur: "",
   libelle: "",
   montant: "",
@@ -56,17 +57,12 @@ export default function Abonnements({ onModification }) {
       siteIds: f.siteIds.includes(id)
         ? f.siteIds.filter((x) => x !== id)
         : [...f.siteIds, id],
+      parts: null,
     }));
   }
 
   // Cas typique: un hebergement mutualise a 11 EUR partage entre deux sites.
   const montantSaisiCents = parseMontant(formulaire.montant);
-  const apercuPartage =
-    formulaire.siteIds.length > 1 && montantSaisiCents > 0
-      ? `reparti en ${repartir(montantSaisiCents, formulaire.siteIds.length)
-          .map((p) => formatMontant(p))
-          .join(" + ")}`
-      : null;
 
   async function enregistrer(evenement) {
     evenement.preventDefault();
@@ -84,14 +80,20 @@ export default function Abonnements({ onModification }) {
 
     const fournisseurId = await trouverOuCreerFournisseur(formulaire.fournisseur);
 
-    await ajouterAbonnement({
-      siteIds: formulaire.siteIds,
-      fournisseurId,
-      libelle: formulaire.libelle.trim(),
-      montantCents,
-      periodicite: formulaire.periodicite,
-      prochaineEcheance: formulaire.prochaineEcheance || null,
-    });
+    try {
+      await ajouterAbonnement({
+        siteIds: formulaire.siteIds,
+        partsCents: partsCentsDepuisSaisie(formulaire.siteIds, formulaire.parts),
+        fournisseurId,
+        libelle: formulaire.libelle.trim(),
+        montantCents,
+        periodicite: formulaire.periodicite,
+        prochaineEcheance: formulaire.prochaineEcheance || null,
+      });
+    } catch (e) {
+      setErreur(String(e.message ?? e));
+      return;
+    }
 
     setFormulaire(FORMULAIRE_VIDE);
     await recharger();
@@ -126,12 +128,14 @@ export default function Abonnements({ onModification }) {
 
       <Carte titre="Nouvel abonnement">
         <form onSubmit={enregistrer} className="flex flex-wrap items-end gap-3">
-          <SelecteurSites
-            label="Sites concernes"
+          <RepartitionSites
             sites={sites}
             selection={formulaire.siteIds}
-            onBasculer={basculerSite}
-            aide={apercuPartage ?? "aucun site coche = cout transverse"}
+            onBasculerSite={basculerSite}
+            montantCents={montantSaisiCents}
+            parts={formulaire.parts}
+            onChangerParts={(parts) => maj("parts", parts)}
+            aideVide="aucun site coche = cout transverse"
           />
 
           <Champ

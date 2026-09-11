@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { etatSite, libelleEtat, tauxDisponibilite } from "./statut";
+import { etatSite, evaluerCertificat, libelleEtat, tauxDisponibilite } from "./statut";
 
 describe("etatSite", () => {
   it("est vert quand tous les checks passent", () => {
@@ -38,5 +38,46 @@ describe("tauxDisponibilite", () => {
   it("renvoie null sans donnee, plutot que 0 ou NaN", () => {
     expect(tauxDisponibilite([])).toBeNull();
     expect(tauxDisponibilite(undefined)).toBeNull();
+  });
+});
+
+describe("evaluerCertificat", () => {
+  it("valide un certificat largement au-dessus du seuil", () => {
+    expect(evaluerCertificat({ jours_restants: 68 }, 21)).toEqual({
+      ok: true,
+      message: "valide encore 68 jour(s)",
+    });
+  });
+
+  it("alerte AVANT l'expiration, pas apres", () => {
+    // Tout l'interet du check: 10 jours restants n'est pas encore une panne,
+    // mais c'en est une programmee.
+    const verdict = evaluerCertificat({ jours_restants: 10 }, 21);
+    expect(verdict.ok).toBe(false);
+    expect(verdict.message).toBe("certificat expire dans 10 jour(s)");
+  });
+
+  it("traite le seuil comme inclusif", () => {
+    expect(evaluerCertificat({ jours_restants: 21 }, 21).ok).toBe(false);
+    expect(evaluerCertificat({ jours_restants: 22 }, 21).ok).toBe(true);
+  });
+
+  it("annonce depuis combien de temps un certificat est expire", () => {
+    expect(evaluerCertificat({ jours_restants: -3 }, 21)).toEqual({
+      ok: false,
+      message: "certificat expire depuis 3 jour(s)",
+    });
+  });
+
+  it("remonte l'erreur reseau telle quelle", () => {
+    expect(evaluerCertificat({ erreur: "connexion impossible" })).toEqual({
+      ok: false,
+      message: "connexion impossible",
+    });
+  });
+
+  it("echoue proprement sur un resultat vide", () => {
+    expect(evaluerCertificat().ok).toBe(false);
+    expect(evaluerCertificat({}).message).toBe("certificat illisible");
   });
 });
