@@ -57,6 +57,7 @@ Deux règles non négociables, qui évitent 90 % des bugs de ce genre d'appli :
 | `verifications` | le résultat de chaque check, horodaté (purgé au-delà de 30 jours) |
 | `sites.favicon` | icône du site, stockée en data URI (pas en URL : elle doit s'afficher même site tombé) |
 | `revenu_sites` | même partage côté recettes |
+| `preferences` | réglages de l'application, en clé/valeur |
 
 ## Coûts partagés entre sites
 
@@ -116,10 +117,23 @@ L'icône d'un abonnement est celle de son **fournisseur**, récupérée depuis l
 création (`https://chatgpt.com` → l'icône d'OpenAI). Deux abonnements du même fournisseur la
 partagent, elle n'est téléchargée qu'une fois.
 
+## Devises
+
+Un revenu peut être saisi en **euros ou en dollars**. Trois valeurs sont stockées : le montant
+d'origine (ce qui a réellement été reçu), le **taux appliqué**, et le montant converti.
+
+Le taux est celui **du jour de la transaction**, récupéré auprès de l'API Frankfurter (données
+BCE). Reconvertir à l'affichage avec le taux courant ferait varier un revenu passé à chaque
+consultation : un don de 50 $ reçu en mars ne vaut pas ce qu'il vaudrait aujourd'hui.
+
+Tous les cumuls, graphiques et parts par site sont en **euros**, la devise de référence —
+additionner des euros et des dollars donnerait un nombre qui ne veut rien dire.
+
 ## Supervision
 
-Tant que l'appli est ouverte, elle rejoue **tous les checks actifs toutes les 60 secondes**
-et affiche l'état de chaque site en première ligne du tableau de bord :
+Tant que l'appli est ouverte, elle rejoue **tous les checks actifs** à la fréquence réglée
+dans les préférences (30 s à 1 h, **1 minute** par défaut) et affiche l'état de chaque site
+en première ligne du tableau de bord :
 
 | Icône | Signification |
 |---|---|
@@ -234,6 +248,15 @@ connecteurs API puissent être ajoutés sans migration destructive ni doublons.
 Le schéma vit dans [`src-tauri/migrations/001_init.sql`](src-tauri/migrations/001_init.sql),
 joué au démarrage par le plugin SQL. Pour le faire évoluer : ajouter un fichier
 `00N_*.sql` et une entrée `Migration` dans [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs).
+
+## Préférences
+
+La fréquence de vérification se règle entre 30 secondes et 1 heure, dans une liste fermée
+plutôt qu'un champ libre : une valeur de 2 secondes saisie par mégarde enverrait 1800
+requêtes par heure sur chaque site. Le changement prend effet sans redémarrer.
+
+Une fréquence élevée ne détecte pas mieux les pannes durables — elle ne raccourcit que le
+délai avant de les voir.
 
 ## Où sont mes données ?
 
