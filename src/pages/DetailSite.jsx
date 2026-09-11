@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   CartesianGrid,
@@ -20,6 +20,7 @@ import {
   supprimerCheck,
 } from "../lib/queries";
 import { couleurEtat, etatSite, libelleEtat, tauxDisponibilite } from "../lib/statut";
+import { suggestionsRestantes } from "../lib/checksSuggeres";
 import { formatMontant } from "../lib/format";
 
 const CHECK_VIDE = { libelle: "", url: "", statutAttendu: "", doitContenir: "" };
@@ -90,6 +91,16 @@ export default function DetailSite({
     await recharger();
   }
 
+  async function ajouterSuggestion(suggestion) {
+    await creerCheck({
+      siteId: site.id,
+      libelle: suggestion.libelle,
+      url: suggestion.url,
+      doitContenir: suggestion.doitContenir,
+    });
+    await recharger();
+  }
+
   async function retirerCheck(id) {
     await supprimerCheck(id);
     await recharger();
@@ -105,6 +116,8 @@ export default function DetailSite({
     nb_resultats: checks.filter((c) => c.actif && c.derniere_verif).length,
     nb_ok: checks.filter((c) => c.actif && c.dernier_ok).length,
   });
+
+  const suggestions = suggestionsRestantes(site.url, checks);
 
   const disponibilite = tauxDisponibilite(historique);
   const latences = historique.filter((v) => v.latence_ms != null);
@@ -273,6 +286,33 @@ export default function DetailSite({
               ))}
             </tbody>
           </table>
+        )}
+
+        {suggestions.length > 0 && (
+          <div className="mt-4 border-t border-bord/50 pt-3">
+            <p className="mb-2 text-xs text-texte-doux">
+              Checks courants a ajouter en un clic :
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {suggestions.map((s) => (
+                <button
+                  key={s.cle}
+                  type="button"
+                  onClick={() => ajouterSuggestion(s)}
+                  title={`${s.description} — ${s.url}`}
+                  className="flex items-center gap-1.5 rounded-lg border border-bord px-2.5 py-1.5 text-xs text-texte-doux transition hover:border-accent hover:text-texte"
+                >
+                  <Plus size={12} />
+                  {s.libelle}
+                  {s.doitContenir && (
+                    <span className="rounded bg-surface-2 px-1 py-0.5 text-[10px]">
+                      contenu verifie
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
 
         <form onSubmit={ajouterCheck} className="mt-4 flex flex-wrap items-end gap-3">

@@ -92,9 +92,28 @@ liste des checks avec leur dernier résultat, incidents récents et dernières d
 Les requêtes HTTP partent **du code Rust**, pas de la WebView : depuis le front, un `fetch`
 vers tes sites serait bloqué par CORS et ne donnerait jamais le vrai code de statut.
 
-Un site créé avec une URL reçoit automatiquement un check sur sa page d'accueil ; les checks
-supplémentaires (API de santé, page critique, présence d'un texte) s'ajoutent depuis l'écran
-de détail.
+Un site créé avec une URL reçoit automatiquement un check sur sa page d'accueil. L'écran de
+détail propose ensuite un **catalogue de checks courants en un clic**
+([`src/lib/checksSuggeres.js`](src/lib/checksSuggeres.js)), tiré de ce qui est réellement
+déployé sur Denivio et HistorySite :
+
+| Check | Chemin | Contenu vérifié |
+|---|---|---|
+| Page d'accueil | `/` | — |
+| Configuration runtime | `/config.js` | `window.` |
+| Santé de l'API | `/healthz` | — |
+| Sitemap | `/sitemap.xml` | `<urlset` |
+| robots.txt | `/robots.txt` | `User-agent` |
+| Manifest PWA | `/manifest.webmanifest` | — |
+
+Le `doitContenir` compte autant que le statut. Le cas qui a motivé le catalogue est
+`/config.js` : le conteneur le réécrit à chaque démarrage depuis son `.env`
+(`docker-entrypoint.sh`). Si l'entrypoint échoue, nginx sert quand même un **200** sur un
+fichier vide — et le symptôme est une carte muette, pas une erreur. Même logique pour un
+sitemap proxyfié qui renvoie 200 avec une page d'erreur HTML.
+
+Une suggestion déjà surveillée disparaît de la liste. Les checks sur mesure s'ajoutent
+toujours par le formulaire en dessous.
 
 ### Deux pièges rencontrés, à ne pas réintroduire
 
