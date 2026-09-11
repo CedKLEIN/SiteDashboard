@@ -1,7 +1,7 @@
 // @vitest-environment node
 // Ces tests parlent a SQLite, pas au DOM: l'environnement jsdom refuserait
 // d'importer le module natif node:sqlite.
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -70,13 +70,11 @@ const {
 } = await import("./queries");
 
 const DOSSIER_MIGRATIONS = path.resolve(__dirname, "../../src-tauri/migrations");
-const MIGRATIONS = [
-  "001_init.sql",
-  "002_monitoring.sql",
-  "003_partage.sql",
-  "004_revenus_partage.sql",
-  "005_certificat.sql",
-];
+// Lu depuis le disque plutot qu'ecrit en dur: une migration ajoutee a l'appli
+// et oubliee ici ferait echouer les tests pour une mauvaise raison.
+const MIGRATIONS = readdirSync(DOSSIER_MIGRATIONS)
+  .filter((f) => f.endsWith(".sql"))
+  .sort();
 
 beforeEach(() => {
   etat.base = new DatabaseSync(":memory:");
@@ -96,6 +94,11 @@ async function creerDeuxSites() {
 }
 
 describe("migrations", () => {
+  it("sont toutes jouees, sans liste ecrite en dur", () => {
+    expect(MIGRATIONS.length).toBeGreaterThanOrEqual(6);
+    expect(MIGRATIONS[0]).toBe("001_init.sql");
+  });
+
   it("produisent le schema attendu", () => {
     const tables = etat.base
       .prepare("SELECT name FROM sqlite_master WHERE type='table'")

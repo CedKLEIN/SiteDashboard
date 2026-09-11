@@ -28,11 +28,21 @@ export default function CarteSite({ site, onOuvrir }) {
             boxShadow: enAlerte ? `0 0 0 4px ${couleur}33` : "none",
           }}
         />
-        <span
-          className="size-2.5 shrink-0 rounded-full opacity-60"
-          style={{ background: site.couleur }}
-          title="Couleur du site"
-        />
+        {site.favicon ? (
+          <img
+            src={site.favicon}
+            alt=""
+            className="size-5 shrink-0 rounded"
+            // L'icone est decorative: le nom du site est juste en dessous
+            aria-hidden="true"
+          />
+        ) : (
+          <span
+            className="size-2.5 shrink-0 rounded-full opacity-60"
+            style={{ background: site.couleur }}
+            title="Couleur du site"
+          />
+        )}
       </div>
 
       <div className="min-w-0">

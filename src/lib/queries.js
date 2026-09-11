@@ -29,6 +29,10 @@ export function majSite(id, { nom, url, couleur, actif }) {
   );
 }
 
+export function majFaviconSite(id, favicon) {
+  return execute("UPDATE sites SET favicon = $1 WHERE id = $2", [favicon, id]);
+}
+
 export function supprimerSite(id) {
   return execute("DELETE FROM sites WHERE id = $1", [id]);
 }
@@ -364,7 +368,7 @@ export function enregistrerVerification(
  */
 export function etatsDesSites() {
   return select(
-    `SELECT s.id, s.nom, s.url, s.couleur,
+    `SELECT s.id, s.nom, s.url, s.couleur, s.favicon,
             COUNT(c.id)                                  AS nb_checks,
             COUNT(v.id)                                  AS nb_resultats,
             COALESCE(SUM(CASE WHEN v.ok = 1 THEN 1 ELSE 0 END), 0) AS nb_ok,

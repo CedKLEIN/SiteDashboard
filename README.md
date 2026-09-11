@@ -54,6 +54,7 @@ Deux règles non négociables, qui évitent 90 % des bugs de ce genre d'appli :
 | `depense_sites` / `abonnement_sites` | quels sites portent la ligne, et pour quelle part |
 | `checks` | ce qu'on vérifie sur un site : une URL, un statut attendu, un fragment de texte |
 | `verifications` | le résultat de chaque check, horodaté (purgé au-delà de 30 jours) |
+| `sites.favicon` | icône du site, stockée en data URI (pas en URL : elle doit s'afficher même site tombé) |
 | `revenu_sites` | même partage côté recettes |
 
 ## Coûts partagés entre sites
@@ -124,6 +125,30 @@ sitemap proxyfié qui renvoie 200 avec une page d'erreur HTML.
 Une suggestion déjà surveillée disparaît de la liste. Les checks sur mesure s'ajoutent
 toujours par le formulaire en dessous.
 
+### Diagnostiquer un check qui échoue
+
+La loupe à côté d'un check rejoue l'URL et montre **ce que le serveur renvoie
+vraiment** : statut, `content-type`, taille, redirection éventuelle et début du corps.
+
+Un « fragment absent » ne dit pas si la page est vide, si c'est une erreur déguisée en 200,
+ou si un SPA a servi son `index.html` pour une URL inconnue. Le `content-type` tranche en
+une seconde — et quand il vaut `text/html` alors qu'on attendait autre chose, le panneau le
+signale explicitement.
+
+Le message d'échec donne la **priorité au statut**. Sur un 404, le fragment est forcément
+absent puisque la page n'existe pas : annoncer « fragment absent » enverrait chercher un
+problème de contenu là où il n'y a pas de fichier.
+
+### Icônes des sites
+
+Le bouton « Icône » va chercher le `<link rel="icon">` de la page, et retombe sur
+`/favicon.ico`. Les octets sont stockés en data URI dans `sites.favicon` : une URL distante
+afficherait une image cassée pendant une panne, c'est-à-dire au moment précis où on regarde
+le tableau de bord. Si la récupération échoue, le bouton à côté importe une image locale.
+
+Un garde-fou : une réponse dont le `content-type` n'est pas `image/*` est rejetée, sinon un
+repli SPA ferait stocker une page HTML en guise d'icône.
+
 ### Expiration des certificats
 
 Un check de type `tls` ouvre une connexion, lit le certificat présenté et compte les jours
@@ -173,6 +198,11 @@ Pour sauvegarder : copier ce fichier.
   module `db` est remplacé par un adaptateur vers `node:sqlite`, et les vraies fonctions de
   `queries.js` tournent sur le schéma produit par les **vraies migrations**, en mémoire. Une
   jointure cassée ou une colonne renommée fait donc échouer les tests.
+
+Côté Rust, `cargo test` couvre le parsing des attributs HTML et la priorité des messages
+d'échec. Deux tests réseau sont marqués `#[ignore]` pour que la suite reste hors ligne ;
+`cargo test -- --ignored` les lance et vérifie la récupération réelle d'une icône et
+l'inspection d'une URL.
 
 Ce qui n'est **pas** couvert : le parcours à la souris dans l'application.
 

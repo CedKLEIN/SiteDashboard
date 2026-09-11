@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   CartesianGrid,
@@ -27,6 +28,7 @@ import {
   tauxDisponibilite,
 } from "../lib/statut";
 import { suggestionsRestantes } from "../lib/checksSuggeres";
+import Diagnostic from "../components/Diagnostic";
 import { formatMontant } from "../lib/format";
 
 const CHECK_VIDE = { libelle: "", url: "", statutAttendu: "", doitContenir: "" };
@@ -47,6 +49,7 @@ export default function DetailSite({
   const [depenses, setDepenses] = useState([]);
   const [formulaire, setFormulaire] = useState(CHECK_VIDE);
   const [erreur, setErreur] = useState("");
+  const [diagnostic, setDiagnostic] = useState(null);
 
   const recharger = useCallback(async () => {
     const [c, h, d] = await Promise.all([
@@ -107,6 +110,16 @@ export default function DetailSite({
       seuilJours: suggestion.type === "tls" ? SEUIL_CERT_JOURS : null,
     });
     await recharger();
+  }
+
+  async function inspecter(check) {
+    setDiagnostic({ check, inspection: null, enCours: true });
+    try {
+      const inspection = await invoke("inspecter_url", { url: check.url });
+      setDiagnostic({ check, inspection, enCours: false });
+    } catch (e) {
+      setDiagnostic({ check, inspection: { erreur: String(e) }, enCours: false });
+    }
   }
 
   async function retirerCheck(id) {
@@ -289,7 +302,17 @@ export default function DetailSite({
                   <td className="py-2 text-right tabular-nums text-texte-doux">
                     {check.derniere_latence == null ? "—" : `${check.derniere_latence} ms`}
                   </td>
-                  <td className="py-2 pl-2 text-right">
+                  <td className="py-2 pl-2 text-right whitespace-nowrap">
+                    {check.type !== "tls" && (
+                      <Bouton
+                        variante="fantome"
+                        className="mr-1 px-1.5 py-1"
+                        title="Voir ce que le serveur renvoie"
+                        onClick={() => inspecter(check)}
+                      >
+                        <Search size={14} />
+                      </Bouton>
+                    )}
                     <Bouton
                       variante="danger"
                       className="px-1.5 py-1"
@@ -303,6 +326,17 @@ export default function DetailSite({
               ))}
             </tbody>
           </table>
+        )}
+
+        {diagnostic && (
+          <div className="mt-4">
+            <Diagnostic
+              check={diagnostic.check}
+              inspection={diagnostic.inspection}
+              enCours={diagnostic.enCours}
+              onFermer={() => setDiagnostic(null)}
+            />
+          </div>
         )}
 
         {suggestions.length > 0 && (

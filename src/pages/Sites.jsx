@@ -1,8 +1,16 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, Trash2 } from "lucide-react";
+import { ExternalLink, ImageIcon, Trash2 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Bouton, Carte, Champ, EtatVide, Pastille } from "../components/ui";
-import { creerSite, listerSites, majSite, supprimerSite } from "../lib/queries";
+import {
+  creerSite,
+  listerSites,
+  majFaviconSite,
+  majSite,
+  supprimerSite,
+} from "../lib/queries";
 
 const FORMULAIRE_VIDE = { nom: "", url: "", couleur: "#6366f1" };
 
@@ -10,6 +18,7 @@ export default function Sites({ onModification }) {
   const [sites, setSites] = useState([]);
   const [formulaire, setFormulaire] = useState(FORMULAIRE_VIDE);
   const [erreur, setErreur] = useState("");
+  const [enCours, setEnCours] = useState(null);
 
   async function recharger() {
     setSites(await listerSites());
@@ -45,6 +54,46 @@ export default function Sites({ onModification }) {
     setFormulaire(FORMULAIRE_VIDE);
     await recharger();
     onModification?.();
+  }
+
+  async function recupererIcone(site) {
+    setErreur("");
+    if (!site.url) {
+      setErreur(`${site.nom} n'a pas d'URL : importe une image a la place.`);
+      return;
+    }
+
+    setEnCours(site.id);
+    try {
+      const favicon = await invoke("recuperer_favicon", { url: site.url });
+      if (!favicon) {
+        setErreur(`Aucune icone trouvee pour ${site.nom} : importe une image a la place.`);
+        return;
+      }
+      await majFaviconSite(site.id, favicon);
+      await recharger();
+      onModification?.();
+    } finally {
+      setEnCours(null);
+    }
+  }
+
+  async function importerIcone(site) {
+    setErreur("");
+    const chemin = await open({
+      multiple: false,
+      filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg", "svg", "gif", "webp", "ico"] }],
+    });
+    if (!chemin) return;
+
+    try {
+      const favicon = await invoke("importer_image", { chemin });
+      await majFaviconSite(site.id, favicon);
+      await recharger();
+      onModification?.();
+    } catch (e) {
+      setErreur(String(e));
+    }
   }
 
   async function basculerActif(site) {
@@ -111,7 +160,11 @@ export default function Sites({ onModification }) {
                   onChange={() => basculerActif(site)}
                   title="Site actif"
                 />
-                <Pastille couleur={site.couleur} />
+                {site.favicon ? (
+                  <img src={site.favicon} alt="" className="size-5 rounded" aria-hidden="true" />
+                ) : (
+                  <Pastille couleur={site.couleur} />
+                )}
                 <span className="font-medium">{site.nom}</span>
                 {site.url && (
                   <button
@@ -124,8 +177,25 @@ export default function Sites({ onModification }) {
                   </button>
                 )}
                 <Bouton
+                  variante="fantome"
+                  className="ml-auto px-2 py-1 text-xs"
+                  disabled={enCours === site.id}
+                  title="Recuperer l'icone depuis le site"
+                  onClick={() => recupererIcone(site)}
+                >
+                  {enCours === site.id ? "..." : "Icone"}
+                </Bouton>
+                <Bouton
+                  variante="fantome"
+                  className="px-1.5 py-1"
+                  title="Importer une image locale"
+                  onClick={() => importerIcone(site)}
+                >
+                  <ImageIcon size={14} />
+                </Bouton>
+                <Bouton
                   variante="danger"
-                  className="ml-auto px-1.5 py-1"
+                  className="px-1.5 py-1"
                   title="Supprimer"
                   onClick={() => retirer(site)}
                 >

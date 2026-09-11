@@ -97,19 +97,225 @@ async fn executer_check(
         None => None,
     };
 
-    let ok = statut_ok && erreur_contenu.is_none();
-    let erreur = if ok {
-        None
-    } else {
-        erreur_contenu.or_else(|| Some(format!("statut HTTP {}", statut.as_u16())))
-    };
-
     ResultatCheck {
-        ok,
+        ok: statut_ok && erreur_contenu.is_none(),
         statut: Some(statut.as_u16()),
         latence_ms: debut.elapsed().as_millis() as u64,
-        erreur,
+        erreur: message_echec(statut_ok, statut.as_u16(), erreur_contenu),
     }
+}
+
+/// Choisit le message d'echec le plus utile.
+///
+/// L'ordre compte: sur un 404, le fragment est forcement absent puisque la page
+/// n'existe pas. Annoncer "fragment absent" masquerait la cause reelle et
+/// enverrait chercher un probleme de contenu la ou il n'y a pas de fichier.
+fn message_echec(statut_ok: bool, statut: u16, erreur_contenu: Option<String>) -> Option<String> {
+    if !statut_ok {
+        return Some(format!("statut HTTP {statut}"));
+    }
+    erreur_contenu
+}
+
+const TAILLE_EXTRAIT: usize = 1200;
+const TAILLE_MAX_ICONE: usize = 200 * 1024;
+
+#[derive(serde::Serialize, Default)]
+pub struct Inspection {
+    statut: Option<u16>,
+    content_type: Option<String>,
+    taille: Option<usize>,
+    url_finale: Option<String>,
+    extrait: Option<String>,
+    erreur: Option<String>,
+}
+
+/// Rejoue une URL et renvoie de quoi comprendre POURQUOI un check echoue.
+///
+/// Un "fragment absent" ne dit pas si la page est vide, si c'est une erreur
+/// deguisee en 200, ou si un SPA a renvoye son index.html pour une URL inconnue
+/// - ce dernier cas etant le plus frequent et le plus deroutant. Le
+/// content-type et le debut du corps tranchent immediatement.
+#[tauri::command]
+async fn inspecter_url(url: String) -> Inspection {
+    let client = match reqwest::Client::builder()
+        .timeout(DELAI_CHECK)
+        .user_agent(concat!("SiteDashboard/", env!("CARGO_PKG_VERSION")))
+        .build()
+    {
+        Ok(client) => client,
+        Err(e) => {
+            return Inspection {
+                erreur: Some(e.to_string()),
+                ..Default::default()
+            }
+        }
+    };
+
+    let reponse = match client.get(&url).send().await {
+        Ok(reponse) => reponse,
+        Err(e) => {
+            return Inspection {
+                erreur: Some(message_erreur(&e)),
+                ..Default::default()
+            }
+        }
+    };
+
+    let statut = reponse.status().as_u16();
+    let content_type = reponse
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    // Apres redirections: si le serveur a renvoye ailleurs, c'est souvent l'explication
+    let url_finale = Some(reponse.url().to_string());
+
+    let corps = match reponse.text().await {
+        Ok(corps) => corps,
+        Err(e) => {
+            return Inspection {
+                statut: Some(statut),
+                content_type,
+                url_finale,
+                erreur: Some(message_erreur(&e)),
+                ..Default::default()
+            }
+        }
+    };
+
+    // On tronque sur une frontiere de caractere: coder en dur un index d'octet
+    // couperait un caractere accentue en deux et produirait du charabia.
+    let extrait: String = corps.chars().take(TAILLE_EXTRAIT).collect();
+
+    Inspection {
+        statut: Some(statut),
+        content_type,
+        taille: Some(corps.len()),
+        url_finale,
+        extrait: Some(extrait),
+        erreur: None,
+    }
+}
+
+fn data_uri(type_mime: &str, octets: &[u8]) -> String {
+    use base64::Engine;
+    format!(
+        "data:{};base64,{}",
+        type_mime,
+        base64::engine::general_purpose::STANDARD.encode(octets)
+    )
+}
+
+async fn telecharger_icone(client: &reqwest::Client, url: &url::Url) -> Option<String> {
+    let reponse = client.get(url.clone()).send().await.ok()?;
+    if !reponse.status().is_success() {
+        return None;
+    }
+
+    let type_mime = reponse
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(';').next().unwrap_or(v).trim().to_string())
+        .unwrap_or_else(|| "image/x-icon".to_string());
+
+    // Un SPA renvoie souvent son index.html pour une URL inconnue: sans ce
+    // garde-fou on stockerait une page HTML en guise d'icone.
+    if !type_mime.starts_with("image/") {
+        return None;
+    }
+
+    let octets = reponse.bytes().await.ok()?;
+    if octets.is_empty() || octets.len() > TAILLE_MAX_ICONE {
+        return None;
+    }
+    Some(data_uri(&type_mime, &octets))
+}
+
+/// Recupere l'icone d'un site: `<link rel="icon">` de la page, sinon /favicon.ico.
+#[tauri::command]
+async fn recuperer_favicon(url: String) -> Option<String> {
+    let base = url::Url::parse(&url).ok()?;
+    let client = reqwest::Client::builder()
+        .timeout(DELAI_CHECK)
+        .user_agent(concat!("SiteDashboard/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .ok()?;
+
+    // Lecture volontairement sommaire du HTML: on cherche un <link rel=...icon...>
+    // sans embarquer un parseur complet. En cas d'echec, /favicon.ico prend le relais.
+    if let Ok(reponse) = client.get(base.clone()).send().await {
+        if let Ok(html) = reponse.text().await {
+            for balise in html.split('<').filter(|b| b.to_lowercase().starts_with("link")) {
+                let minuscule = balise.to_lowercase();
+                if !minuscule.contains("icon") {
+                    continue;
+                }
+                if let Some(href) = valeur_attribut(balise, "href") {
+                    if let Ok(cible) = base.join(&href) {
+                        if let Some(icone) = telecharger_icone(&client, &cible).await {
+                            return Some(icone);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let defaut = base.join("/favicon.ico").ok()?;
+    telecharger_icone(&client, &defaut).await
+}
+
+/// Extrait la valeur d'un attribut HTML, en gerant guillemets simples et doubles.
+fn valeur_attribut(balise: &str, attribut: &str) -> Option<String> {
+    let minuscule = balise.to_lowercase();
+    let debut = minuscule.find(&format!("{attribut}="))? + attribut.len() + 1;
+    let reste = &balise[debut..];
+    let delimiteur = reste.chars().next()?;
+
+    if delimiteur == '"' || delimiteur == '\'' {
+        let fin = reste[1..].find(delimiteur)?;
+        Some(reste[1..=fin].to_string())
+    } else {
+        Some(
+            reste
+                .split([' ', '>', '\n', '\t'])
+                .next()
+                .unwrap_or("")
+                .to_string(),
+        )
+    }
+}
+
+/// Importe une image locale comme icone, quand la recuperation automatique echoue.
+#[tauri::command]
+fn importer_image(chemin: String) -> Result<String, String> {
+    let octets = std::fs::read(&chemin).map_err(|e| e.to_string())?;
+    if octets.len() > TAILLE_MAX_ICONE {
+        return Err(format!(
+            "image trop lourde ({} Ko, maximum {} Ko)",
+            octets.len() / 1024,
+            TAILLE_MAX_ICONE / 1024
+        ));
+    }
+
+    let type_mime = match std::path::Path::new(&chemin)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase)
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("svg") => "image/svg+xml",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("ico") => "image/x-icon",
+        _ => return Err("format non supporte (png, jpg, svg, gif, webp, ico)".to_string()),
+    };
+
+    Ok(data_uri(type_mime, &octets))
 }
 
 /// Verificateur permissif, utilise UNIQUEMENT pour inspecter un certificat.
@@ -280,6 +486,12 @@ pub fn run() {
             sql: include_str!("../migrations/005_certificat.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 6,
+            description: "icone du site, stockee en data URI",
+            sql: include_str!("../migrations/006_favicon.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -294,8 +506,92 @@ pub fn run() {
             chemin_base,
             executer_check,
             verifier_certificat,
+            inspecter_url,
+            recuperer_favicon,
+            importer_image,
             tracer
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lit_un_attribut_entre_guillemets_doubles() {
+        let balise = r#"link rel="icon" href="/favicon.png""#;
+        assert_eq!(valeur_attribut(balise, "href").as_deref(), Some("/favicon.png"));
+    }
+
+    #[test]
+    fn lit_un_attribut_entre_guillemets_simples() {
+        let balise = "link rel='shortcut icon' href='/icone.ico'";
+        assert_eq!(valeur_attribut(balise, "href").as_deref(), Some("/icone.ico"));
+    }
+
+    #[test]
+    fn lit_un_attribut_sans_guillemets() {
+        let balise = "link rel=icon href=/favicon.svg >";
+        assert_eq!(valeur_attribut(balise, "href").as_deref(), Some("/favicon.svg"));
+    }
+
+    #[test]
+    fn tolere_une_casse_inhabituelle() {
+        let balise = r#"LINK REL="ICON" HREF="/Favicon.PNG""#;
+        assert_eq!(valeur_attribut(balise, "href").as_deref(), Some("/Favicon.PNG"));
+    }
+
+    #[test]
+    fn renvoie_none_quand_l_attribut_est_absent() {
+        assert_eq!(valeur_attribut(r#"link rel="icon""#, "href"), None);
+    }
+
+    #[test]
+    fn signale_le_statut_avant_le_fragment() {
+        // Cas reel rencontre: un /config.js inexistant renvoyait 404, et le check
+        // annoncait "fragment absent" - ce qui envoyait chercher un probleme de
+        // contenu alors que le fichier n'existe simplement pas.
+        let message = message_echec(false, 404, Some("fragment absent: window.".to_string()));
+        assert_eq!(message.as_deref(), Some("statut HTTP 404"));
+    }
+
+    #[test]
+    fn signale_le_fragment_quand_le_statut_est_bon() {
+        let message = message_echec(true, 200, Some("fragment absent: window.".to_string()));
+        assert_eq!(message.as_deref(), Some("fragment absent: window."));
+    }
+
+    #[test]
+    fn ne_signale_rien_quand_tout_va_bien() {
+        assert_eq!(message_echec(true, 200, None), None);
+    }
+
+    #[test]
+    fn construit_un_data_uri_valide() {
+        assert_eq!(data_uri("image/png", b"ab"), "data:image/png;base64,YWI=");
+    }
+
+    /// Reproduit le cas signale: un fichier attendu qui repond 200 en HTML.
+    /// C'est exactement ce que le bouton de diagnostic doit rendre visible.
+    #[tokio::test]
+    #[ignore]
+    async fn inspecte_une_vraie_url() {
+        let vue = inspecter_url("https://example.com/".to_string()).await;
+        assert_eq!(vue.statut, Some(200), "erreur: {:?}", vue.erreur);
+        assert!(vue.content_type.unwrap().contains("html"));
+        assert!(vue.extrait.unwrap().contains("<"));
+    }
+
+    /// Test reseau: ignore par defaut pour que `cargo test` reste hors ligne.
+    /// A lancer avec `cargo test -- --ignored` pour verifier le chemin reel.
+    #[tokio::test]
+    #[ignore]
+    async fn recupere_une_vraie_icone() {
+        let icone = recuperer_favicon("https://github.com".to_string()).await;
+        let icone = icone.expect("aucune icone recuperee");
+        assert!(icone.starts_with("data:image/"), "data URI inattendu: {}", &icone[..40]);
+        assert!(icone.len() > 100);
+    }
 }
