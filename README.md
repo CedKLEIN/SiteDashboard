@@ -106,6 +106,12 @@ tarif change, elles sont **redistribuées proportionnellement**
 ([`redistribuer`](src/lib/repartition.js)) — un partage 80/20 sur 10 € devient 80/20 sur
 20 € — pour que l'invariant « somme des parts = montant courant » tienne toujours.
 
+Un abonnement se modifie (crayon) : libellé, fournisseur, périodicité, date de premier
+paiement, sites. Le **prix ne se change pas là** — il vit dans l'historique des tarifs, où
+une correction garde la trace de ce qui a réellement été payé. Chaque tarif est corrigeable
+ou supprimable, et **toute** modification de l'historique recalcule les parts entre sites,
+puisqu'une suppression peut elle aussi changer le prix en vigueur.
+
 L'icône d'un abonnement est celle de son **fournisseur**, récupérée depuis l'URL saisie à la
 création (`https://chatgpt.com` → l'icône d'OpenAI). Deux abonnements du même fournisseur la
 partagent, elle n'est téléchargée qu'une fois.
@@ -115,12 +121,17 @@ partagent, elle n'est téléchargée qu'une fois.
 Tant que l'appli est ouverte, elle rejoue **tous les checks actifs toutes les 60 secondes**
 et affiche l'état de chaque site en première ligne du tableau de bord :
 
-| Pastille | Signification |
+| Icône | Signification |
 |---|---|
-| 🟢 vert | tous les checks du site passent |
-| 🟠 orange | une partie des checks échoue |
-| 🔴 rouge | tous les checks échouent |
-| ⚪ gris | aucun check, ou aucun encore exécuté |
+| cercle coché, vert | tous les checks du site passent |
+| triangle d'alerte, orange | une partie des checks échoue |
+| croix cerclée, rouge | tous les checks échouent |
+| cercle pointillé, gris | aucun check, ou aucun encore exécuté |
+
+L'état passe par la **forme** de l'icône, pas seulement par la couleur : celle-ci sert déjà
+à identifier les sites, et ne distingue rien pour un daltonien. La couleur du site est donc
+une **barre verticale** sur le bord de la carte — deux pastilles rondes côte à côte se
+lisaient comme la même information.
 
 Un clic sur une carte ouvre le détail du site : disponibilité sur 24 h, courbe de latence,
 liste des checks avec leur dernier résultat, incidents récents et dernières dépenses.

@@ -219,17 +219,22 @@ export function listerTarifs() {
 }
 
 /**
- * Ajoute un tarif et reajuste les parts entre sites.
+ * Reajuste les parts entre sites sur le tarif courant, en conservant leurs
+ * proportions.
  *
- * Sans ce reajustement, les parts resteraient calculees sur l'ancien prix et la
- * somme des parts ne ferait plus le montant - les totaux par site deviendraient
- * silencieusement faux.
+ * Appele apres TOUTE modification de l'historique - ajout, correction ou
+ * suppression - parce que chacune peut changer le prix en vigueur. Sans ca les
+ * parts resteraient calculees sur un ancien prix et leur somme ne ferait plus
+ * le montant: les totaux par site deviendraient silencieusement faux.
  */
-export async function ajouterTarif(abonnementId, { debut, montantCents }) {
-  await execute(
-    "INSERT INTO abonnement_tarifs (abonnement_id, debut, montant_cents) VALUES ($1, $2, $3)",
-    [abonnementId, debut, montantCents],
+async function recalculerParts(abonnementId) {
+  const [courant] = await select(
+    `SELECT montant_cents FROM abonnement_tarifs
+      WHERE abonnement_id = $1 AND debut <= date('now', 'localtime')
+      ORDER BY debut DESC, id DESC LIMIT 1`,
+    [abonnementId],
   );
+  if (!courant) return;
 
   const parts = await select(
     "SELECT site_id, part_cents FROM abonnement_sites WHERE abonnement_id = $1 ORDER BY site_id",
@@ -239,7 +244,7 @@ export async function ajouterTarif(abonnementId, { debut, montantCents }) {
 
   const nouvelles = redistribuer(
     parts.map((p) => p.part_cents),
-    montantCents,
+    courant.montant_cents,
   );
   for (const [i, part] of parts.entries()) {
     await execute(
@@ -249,8 +254,75 @@ export async function ajouterTarif(abonnementId, { debut, montantCents }) {
   }
 }
 
-export function supprimerTarif(id) {
-  return execute("DELETE FROM abonnement_tarifs WHERE id = $1", [id]);
+export async function ajouterTarif(abonnementId, { debut, montantCents }) {
+  await execute(
+    "INSERT INTO abonnement_tarifs (abonnement_id, debut, montant_cents) VALUES ($1, $2, $3)",
+    [abonnementId, debut, montantCents],
+  );
+  await recalculerParts(abonnementId);
+}
+
+/** Corrige un tarif existant: une date de depart ou un montant saisi de travers. */
+export async function majTarif(id, { debut, montantCents }) {
+  const [tarif] = await select("SELECT abonnement_id FROM abonnement_tarifs WHERE id = $1", [id]);
+  if (!tarif) return;
+
+  await execute(
+    "UPDATE abonnement_tarifs SET debut = $1, montant_cents = $2 WHERE id = $3",
+    [debut, montantCents, id],
+  );
+  await recalculerParts(tarif.abonnement_id);
+}
+
+export async function supprimerTarif(id) {
+  const [tarif] = await select("SELECT abonnement_id FROM abonnement_tarifs WHERE id = $1", [id]);
+  await execute("DELETE FROM abonnement_tarifs WHERE id = $1", [id]);
+  if (tarif) await recalculerParts(tarif.abonnement_id);
+}
+
+/**
+ * Modifie un abonnement. Les sites sont remplaces en bloc: on ne sait pas quels
+ * rattachements ont ete retires, et une mise a jour partielle laisserait des
+ * parts orphelines dont la somme ne ferait plus le montant.
+ */
+export async function majAbonnement(
+  id,
+  { fournisseurId, libelle, periodicite, debut, prochaineEcheance, siteIds = [], partsCents = null },
+) {
+  const [courant] = await select(
+    `SELECT montant_cents FROM abonnement_tarifs
+      WHERE abonnement_id = $1 AND debut <= date('now', 'localtime')
+      ORDER BY debut DESC, id DESC LIMIT 1`,
+    [id],
+  );
+  const montantCents = courant?.montant_cents ?? 0;
+
+  // Valide avant d'ecrire: une repartition refusee ne doit rien laisser a moitie fait
+  const parts = partsPourSites(montantCents, siteIds, partsCents);
+
+  await execute(
+    `UPDATE abonnements
+        SET fournisseur_id = $1, libelle = $2, periodicite = $3, debut = $4,
+            prochaine_echeance = $5
+      WHERE id = $6`,
+    [fournisseurId, libelle, periodicite, debut, prochaineEcheance, id],
+  );
+
+  await execute("DELETE FROM abonnement_sites WHERE abonnement_id = $1", [id]);
+  for (const { siteId, partCents } of parts) {
+    await execute(
+      "INSERT INTO abonnement_sites (abonnement_id, site_id, part_cents) VALUES ($1, $2, $3)",
+      [id, siteId, partCents],
+    );
+  }
+}
+
+/** Les sites rattaches a un abonnement, avec leur part, pour pre-remplir l'edition. */
+export function partsAbonnement(id) {
+  return select(
+    "SELECT site_id, part_cents FROM abonnement_sites WHERE abonnement_id = $1 ORDER BY site_id",
+    [id],
+  );
 }
 
 export async function ajouterAbonnement({

@@ -52,6 +52,10 @@ vi.mock("./db", () => ({
 }));
 
 const {
+  majAbonnement,
+  majTarif,
+  supprimerTarif,
+  partsAbonnement,
   ajouterTarif,
   listerAbonnements,
   listerTarifs,
@@ -473,5 +477,103 @@ describe("tarifs d'abonnement", () => {
 
     etat.base.prepare("DELETE FROM abonnements WHERE id = ?").run(abo.id);
     expect(await listerTarifs()).toHaveLength(0);
+  });
+});
+
+describe("edition d'un abonnement", () => {
+  async function creerVps(siteIds, montantCents = 1080) {
+    await ajouterAbonnement({
+      siteIds,
+      libelle: "VPS",
+      montantCents,
+      periodicite: "mensuel",
+      debut: "2026-09-11",
+    });
+    const [abo] = await listerAbonnements();
+    return abo;
+  }
+
+  it("corrige une date de depart saisie de travers", async () => {
+    const [denivio] = await creerDeuxSites();
+    const abo = await creerVps([denivio]);
+
+    await majAbonnement(abo.id, {
+      fournisseurId: null,
+      libelle: "VPS",
+      periodicite: "mensuel",
+      debut: "2025-01-15",
+      prochaineEcheance: null,
+      siteIds: [denivio],
+    });
+
+    const [relu] = await listerAbonnements();
+    expect(relu.debut).toBe("2025-01-15");
+  });
+
+  it("remplace les sites rattaches sans laisser de part orpheline", async () => {
+    const [denivio, histoire] = await creerDeuxSites();
+    const abo = await creerVps([denivio, histoire]);
+
+    // On retire HistorySite: Denivio doit porter la totalite
+    await majAbonnement(abo.id, {
+      fournisseurId: null,
+      libelle: "VPS",
+      periodicite: "mensuel",
+      debut: "2026-09-11",
+      prochaineEcheance: null,
+      siteIds: [denivio],
+    });
+
+    const parts = await partsAbonnement(abo.id);
+    expect(parts).toHaveLength(1);
+    expect(parts[0].site_id).toBe(denivio);
+    expect(parts[0].part_cents).toBe(1080);
+  });
+
+  it("refuse une repartition incoherente sans rien modifier", async () => {
+    const [denivio, histoire] = await creerDeuxSites();
+    const abo = await creerVps([denivio, histoire]);
+
+    await expect(
+      majAbonnement(abo.id, {
+        fournisseurId: null,
+        libelle: "Renomme",
+        periodicite: "mensuel",
+        debut: "2026-09-11",
+        prochaineEcheance: null,
+        siteIds: [denivio, histoire],
+        partsCents: [100, 200],
+      }),
+    ).rejects.toThrow(/somme des parts/);
+
+    const [relu] = await listerAbonnements();
+    expect(relu.libelle).toBe("VPS");
+  });
+
+  it("recalcule les parts quand on corrige un tarif", async () => {
+    const [denivio, histoire] = await creerDeuxSites();
+    const abo = await creerVps([denivio, histoire]);
+    const [tarif] = await listerTarifs();
+
+    await majTarif(tarif.id, { debut: "2026-09-11", montantCents: 2000 });
+
+    const parts = await partsAbonnement(abo.id);
+    expect(parts.reduce((t, p) => t + p.part_cents, 0)).toBe(2000);
+  });
+
+  it("revient au tarif precedent quand on supprime le plus recent", async () => {
+    const [denivio, histoire] = await creerDeuxSites();
+    const abo = await creerVps([denivio, histoire], 1000);
+    await ajouterTarif(abo.id, { debut: "2026-09-12", montantCents: 3000 });
+
+    const recent = (await listerTarifs()).find((t) => t.montant_cents === 3000);
+    await supprimerTarif(recent.id);
+
+    const [relu] = await listerAbonnements();
+    expect(relu.montant_cents).toBe(1000);
+
+    // Les parts doivent suivre le retour au prix precedent
+    const parts = await partsAbonnement(abo.id);
+    expect(parts.reduce((t, p) => t + p.part_cents, 0)).toBe(1000);
   });
 });

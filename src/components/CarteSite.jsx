@@ -1,4 +1,13 @@
-import { couleurEtat, etatSite, libelleEtat } from "../lib/statut";
+import { CircleAlert, CircleCheck, CircleDashed, CircleOff, CircleX } from "lucide-react";
+import { couleurEtat, etatSite, iconeEtat, libelleEtat } from "../lib/statut";
+
+const ICONES = {
+  ok: CircleCheck,
+  alerte: CircleAlert,
+  ko: CircleX,
+  inconnu: CircleDashed,
+  aucun: CircleOff,
+};
 
 /** '2026-09-11 20:31:04' -> '20:31' */
 function heure(horodatage) {
@@ -9,45 +18,40 @@ function heure(horodatage) {
 export default function CarteSite({ site, onOuvrir }) {
   const etat = etatSite(site);
   const couleur = couleurEtat(etat);
-  const enAlerte = etat === "ko" || etat === "partiel";
+  const Icone = ICONES[iconeEtat(etat)] ?? CircleDashed;
 
   return (
     <button
       type="button"
       onClick={() => onOuvrir(site.id)}
       title={`${site.nom} — ${libelleEtat(etat)}`}
-      className="group flex aspect-square w-full flex-col justify-between rounded-xl border border-bord bg-surface p-3 text-left transition hover:border-accent hover:bg-surface-2"
+      className="group relative flex aspect-square w-full flex-col justify-between overflow-hidden rounded-xl border border-bord bg-surface p-3 pl-4 text-left transition hover:border-accent hover:bg-surface-2"
     >
+      {/*
+        La couleur du site devient une barre laterale, pas une seconde pastille:
+        deux ronds colores cote a cote se lisaient comme la meme information.
+      */}
+      <span
+        className="absolute inset-y-0 left-0 w-1.5"
+        style={{ background: site.couleur }}
+        aria-hidden="true"
+      />
+
       <div className="flex items-start justify-between gap-2">
-        <span
-          className="mt-0.5 size-3 shrink-0 rounded-full"
-          style={{
-            background: couleur,
-            // Le halo n'apparait que sur les etats qui demandent une action:
-            // un mur de pastilles vertes aureolees ne signalerait plus rien.
-            boxShadow: enAlerte ? `0 0 0 4px ${couleur}33` : "none",
-          }}
-        />
         {site.favicon ? (
-          <img
-            src={site.favicon}
-            alt=""
-            className="size-5 shrink-0 rounded"
-            // L'icone est decorative: le nom du site est juste en dessous
-            aria-hidden="true"
-          />
+          <img src={site.favicon} alt="" className="size-5 shrink-0 rounded" aria-hidden="true" />
         ) : (
-          <span
-            className="size-2.5 shrink-0 rounded-full opacity-60"
-            style={{ background: site.couleur }}
-            title="Couleur du site"
-          />
+          <span className="size-5 shrink-0" />
         )}
+        {/* L'etat est porte par la FORME de l'icone, la couleur ne fait que la renforcer */}
+        <Icone size={18} strokeWidth={2.25} style={{ color: couleur }} className="shrink-0" />
       </div>
 
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold text-texte">{site.nom}</p>
-        <p className="truncate text-[11px] text-texte-doux">{libelleEtat(etat)}</p>
+        <p className="truncate text-[11px]" style={{ color: couleur }}>
+          {libelleEtat(etat)}
+        </p>
       </div>
 
       <div className="text-[11px] text-texte-doux">

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
-import { History, Image as ImageIcon, Trash2 } from "lucide-react";
+import { History, Image as ImageIcon, Pencil, Trash2, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { Bouton, Carte, Champ, EtatVide, Kpi, Selecteur } from "../components/ui";
 import RepartitionSites, { partsCentsDepuisSaisie } from "../components/RepartitionSites";
@@ -7,6 +7,9 @@ import {
   ajouterAbonnement,
   ajouterTarif,
   basculerAbonnement,
+  majAbonnement,
+  majTarif,
+  partsAbonnement,
   listerAbonnements,
   listerFournisseurs,
   listerSites,
@@ -42,6 +45,8 @@ export default function Abonnements({ onModification }) {
   const [erreur, setErreur] = useState("");
   const [historiqueOuvert, setHistoriqueOuvert] = useState(null);
   const [nouveauTarif, setNouveauTarif] = useState(TARIF_VIDE);
+  const [enEdition, setEnEdition] = useState(null);
+  const [tarifEnEdition, setTarifEnEdition] = useState(null);
 
   async function recharger() {
     const [s, f, a, t] = await Promise.all([
@@ -79,6 +84,32 @@ export default function Abonnements({ onModification }) {
   const aujourdhui = aujourdhuiIso();
   const tarifsDe = (id) => tarifs.filter((t) => t.abonnement_id === id);
 
+  async function editer(abonnement) {
+    setErreur("");
+    const parts = await partsAbonnement(abonnement.id);
+    setEnEdition(abonnement.id);
+    setFormulaire({
+      siteIds: parts.map((p) => p.site_id),
+      // On repart de parts egales: les parts existantes sont deja coherentes, et
+      // rouvrir la saisie manuelle a chaque edition serait penible pour rien.
+      parts: null,
+      fournisseur: abonnement.fournisseur_nom ?? "",
+      fournisseurUrl: abonnement.fournisseur_url ?? "",
+      libelle: abonnement.libelle,
+      montant: ((abonnement.montant_cents ?? 0) / 100).toFixed(2),
+      periodicite: abonnement.periodicite,
+      debut: abonnement.debut ?? aujourdhuiIso(),
+      prochaineEcheance: abonnement.prochaine_echeance ?? "",
+    });
+    globalThis.scrollTo?.({ top: 0, behavior: "smooth" });
+  }
+
+  function annulerEdition() {
+    setEnEdition(null);
+    setFormulaire(FORMULAIRE_VIDE);
+    setErreur("");
+  }
+
   async function enregistrer(evenement) {
     evenement.preventDefault();
     setErreur("");
@@ -104,6 +135,25 @@ export default function Abonnements({ onModification }) {
     );
 
     try {
+      if (enEdition) {
+        // Le montant ne se modifie pas ici: il vit dans l'historique des tarifs,
+        // ou une correction garde la trace de ce qui a reellement ete paye.
+        await majAbonnement(enEdition, {
+          fournisseurId,
+          libelle: formulaire.libelle.trim(),
+          periodicite: formulaire.periodicite,
+          debut: formulaire.debut,
+          prochaineEcheance: formulaire.prochaineEcheance || null,
+          siteIds: formulaire.siteIds,
+          partsCents: partsCentsDepuisSaisie(formulaire.siteIds, formulaire.parts),
+        });
+        setEnEdition(null);
+        setFormulaire(FORMULAIRE_VIDE);
+        await recharger();
+        onModification?.();
+        return;
+      }
+
       await ajouterAbonnement({
         siteIds: formulaire.siteIds,
         partsCents: partsCentsDepuisSaisie(formulaire.siteIds, formulaire.parts),
@@ -144,6 +194,19 @@ export default function Abonnements({ onModification }) {
     }
     await ajouterTarif(abonnementId, { debut: nouveauTarif.debut, montantCents });
     setNouveauTarif(TARIF_VIDE);
+    await recharger();
+    onModification?.();
+  }
+
+  async function enregistrerCorrection() {
+    setErreur("");
+    const montantCents = parseMontant(tarifEnEdition.montant);
+    if (montantCents === null || montantCents <= 0) {
+      setErreur("Montant invalide.");
+      return;
+    }
+    await majTarif(tarifEnEdition.id, { debut: tarifEnEdition.debut, montantCents });
+    setTarifEnEdition(null);
     await recharger();
     onModification?.();
   }
@@ -220,7 +283,17 @@ export default function Abonnements({ onModification }) {
         <Kpi libelle="Abonnements suivis" valeur={String(abonnements.length)} />
       </div>
 
-      <Carte titre="Nouvel abonnement">
+      <Carte
+        titre={enEdition ? "Modifier cet abonnement" : "Nouvel abonnement"}
+        action={
+          enEdition && (
+            <Bouton variante="fantome" className="flex items-center gap-1 px-2 py-1 text-xs" onClick={annulerEdition}>
+              <X size={13} />
+              Annuler
+            </Bouton>
+          )
+        }
+      >
         <form onSubmit={enregistrer} className="flex flex-wrap items-end gap-3">
           <RepartitionSites
             sites={sites}
@@ -269,6 +342,12 @@ export default function Abonnements({ onModification }) {
             value={formulaire.montant}
             onChange={(e) => maj("montant", e.target.value)}
             className="w-28"
+            disabled={Boolean(enEdition)}
+            title={
+              enEdition
+                ? "Le prix se change dans l'historique des tarifs, pour garder trace de ce qui a ete paye"
+                : undefined
+            }
           />
 
           <Selecteur
@@ -297,7 +376,7 @@ export default function Abonnements({ onModification }) {
             className="w-40"
           />
 
-          <Bouton type="submit">Ajouter</Bouton>
+          <Bouton type="submit">{enEdition ? "Enregistrer" : "Ajouter"}</Bouton>
         </form>
         {erreur && <p className="mt-2 text-xs text-depense">{erreur}</p>}
       </Carte>
@@ -391,6 +470,14 @@ export default function Abonnements({ onModification }) {
                         <Bouton
                           variante="fantome"
                           className="mr-1 px-1.5 py-1"
+                          title="Modifier cet abonnement"
+                          onClick={() => editer(a)}
+                        >
+                          <Pencil size={14} />
+                        </Bouton>
+                        <Bouton
+                          variante="fantome"
+                          className="mr-1 px-1.5 py-1"
                           title="Historique des tarifs"
                           onClick={() => setHistoriqueOuvert(ouvert ? null : a.id)}
                         >
@@ -415,24 +502,74 @@ export default function Abonnements({ onModification }) {
                             date, les echeances anterieures gardent l&apos;ancien prix
                           </p>
                           <ul className="mb-3 flex flex-col gap-1">
-                            {sesTarifs.map((t) => (
-                              <li key={t.id} className="flex items-center gap-3 text-sm">
-                                <span className="w-24 tabular-nums text-texte-doux">
-                                  {t.debut}
-                                </span>
-                                <span className="tabular-nums">
-                                  {formatMontant(t.montant_cents, a.devise)}
-                                </span>
-                                <Bouton
-                                  variante="danger"
-                                  className="px-1.5 py-0.5"
-                                  title="Supprimer ce tarif"
-                                  onClick={() => retirerTarif(a.id, t.id)}
-                                >
-                                  <Trash2 size={12} />
-                                </Bouton>
-                              </li>
-                            ))}
+                            {sesTarifs.map((t) =>
+                              tarifEnEdition?.id === t.id ? (
+                                <li key={t.id} className="flex items-end gap-2 text-sm">
+                                  <Champ
+                                    label="A partir du"
+                                    type="date"
+                                    value={tarifEnEdition.debut}
+                                    onChange={(e) =>
+                                      setTarifEnEdition((x) => ({ ...x, debut: e.target.value }))
+                                    }
+                                    className="w-40"
+                                  />
+                                  <Champ
+                                    label="Montant"
+                                    inputMode="decimal"
+                                    value={tarifEnEdition.montant}
+                                    onChange={(e) =>
+                                      setTarifEnEdition((x) => ({ ...x, montant: e.target.value }))
+                                    }
+                                    className="w-28"
+                                  />
+                                  <Bouton
+                                    className="px-2 py-1 text-xs"
+                                    onClick={enregistrerCorrection}
+                                  >
+                                    Corriger
+                                  </Bouton>
+                                  <Bouton
+                                    variante="fantome"
+                                    className="px-2 py-1 text-xs"
+                                    onClick={() => setTarifEnEdition(null)}
+                                  >
+                                    Annuler
+                                  </Bouton>
+                                </li>
+                              ) : (
+                                <li key={t.id} className="flex items-center gap-3 text-sm">
+                                  <span className="w-24 tabular-nums text-texte-doux">
+                                    {t.debut}
+                                  </span>
+                                  <span className="tabular-nums">
+                                    {formatMontant(t.montant_cents, a.devise)}
+                                  </span>
+                                  <Bouton
+                                    variante="fantome"
+                                    className="px-1.5 py-0.5"
+                                    title="Corriger ce tarif"
+                                    onClick={() =>
+                                      setTarifEnEdition({
+                                        id: t.id,
+                                        debut: t.debut,
+                                        montant: (t.montant_cents / 100).toFixed(2),
+                                      })
+                                    }
+                                  >
+                                    <Pencil size={12} />
+                                  </Bouton>
+                                  <Bouton
+                                    variante="danger"
+                                    className="px-1.5 py-0.5"
+                                    title="Supprimer ce tarif"
+                                    onClick={() => retirerTarif(a.id, t.id)}
+                                  >
+                                    <Trash2 size={12} />
+                                  </Bouton>
+                                </li>
+                              ),
+                            )}
                           </ul>
                           <div className="flex flex-wrap items-end gap-3">
                             <Champ

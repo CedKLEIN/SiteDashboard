@@ -13,13 +13,24 @@ export function etatSite({ nb_checks = 0, nb_resultats = 0, nb_ok = 0 } = {}) {
   return "partiel";
 }
 
+/**
+ * Chaque etat a une icone en plus de sa couleur.
+ *
+ * La couleur seule ne suffit pas: elle est deja utilisee pour identifier les
+ * sites, et elle ne distingue rien pour un daltonien. L'icone porte donc le
+ * sens, la couleur ne fait que le renforcer.
+ */
 export const ETATS = {
-  ok: { libelle: "OK", couleur: "#34d399" },
-  partiel: { libelle: "Partiel", couleur: "#fbbf24" },
-  ko: { libelle: "KO", couleur: "#f97362" },
-  inconnu: { libelle: "Jamais verifie", couleur: "#98a2c4" },
-  aucun: { libelle: "Aucun check", couleur: "#3a4570" },
+  ok: { libelle: "OK", couleur: "#34d399", icone: "ok" },
+  partiel: { libelle: "Partiel", couleur: "#fbbf24", icone: "alerte" },
+  ko: { libelle: "KO", couleur: "#f97362", icone: "ko" },
+  inconnu: { libelle: "Jamais verifie", couleur: "#98a2c4", icone: "inconnu" },
+  aucun: { libelle: "Aucun check", couleur: "#3a4570", icone: "aucun" },
 };
+
+export function iconeEtat(etat) {
+  return (ETATS[etat] ?? ETATS.inconnu).icone;
+}
 
 export function couleurEtat(etat) {
   return (ETATS[etat] ?? ETATS.inconnu).couleur;

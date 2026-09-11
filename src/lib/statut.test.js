@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { etatSite, evaluerCertificat, libelleEtat, tauxDisponibilite } from "./statut";
+import {
+  etatSite,
+  evaluerCertificat,
+  iconeEtat,
+  libelleEtat,
+  tauxDisponibilite,
+} from "./statut";
 
 describe("etatSite", () => {
   it("est vert quand tous les checks passent", () => {
@@ -79,5 +85,17 @@ describe("evaluerCertificat", () => {
   it("echoue proprement sur un resultat vide", () => {
     expect(evaluerCertificat().ok).toBe(false);
     expect(evaluerCertificat({}).message).toBe("certificat illisible");
+  });
+});
+
+describe("iconeEtat", () => {
+  it("donne une icone distincte a chaque etat", () => {
+    const icones = ["ok", "partiel", "ko", "inconnu", "aucun"].map(iconeEtat);
+    // L'information ne doit pas reposer sur la seule couleur
+    expect(new Set(icones).size).toBe(icones.length);
+  });
+
+  it("retombe sur l'inconnu pour un etat non prevu", () => {
+    expect(iconeEtat("n-importe-quoi")).toBe("inconnu");
   });
 });
