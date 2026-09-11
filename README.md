@@ -1,0 +1,74 @@
+# SiteDashboard
+
+Application desktop **locale** de suivi des coûts et revenus de mes sites
+(Denivio / SportSite, HistorySite, SiteWatcher…).
+
+Aucune donnée ne sort de la machine : tout vit dans un fichier SQLite local.
+
+## Stack
+
+| Couche | Choix | Pourquoi |
+|---|---|---|
+| Coquille desktop | **Tauri 2** | binaire ~10 Mo, WebView système, pas de Chromium embarqué |
+| UI | **React 19 + Vite 8 + Tailwind 4** | même stack que les autres projets, composants réutilisables |
+| Graphiques | **Recharts** | déjà utilisé sur HistorySite |
+| Données | **SQLite** (`tauri-plugin-sql`) | un fichier, sauvegardable, schéma transposable vers Postgres |
+| Qualité | oxlint + vitest | aligné sur les autres repos |
+
+## Démarrer
+
+```bash
+npm install --legacy-peer-deps
+npm run app        # tauri dev : lance Vite + la fenêtre native
+```
+
+> `--legacy-peer-deps` est nécessaire : npm 10.9.2 plante (`Cannot read properties of
+> null (reading 'edgesOut')`) en résolvant les peer deps de vitest 4. Bug de npm, pas
+> du projet — à retirer quand npm sera à jour.
+
+Prérequis : Node 20+, Rust (`winget install --id Rustlang.Rustup`), les Build Tools
+MSVC et le runtime WebView2 (déjà présents sur une machine avec Visual Studio).
+
+```bash
+npm run test       # tests unitaires (vitest)
+npm run lint       # oxlint
+npm run app:build  # build release : installeur .msi dans src-tauri/target/release/bundle
+```
+
+## Modèle de données
+
+Deux règles non négociables, qui évitent 90 % des bugs de ce genre d'appli :
+
+1. **Les montants sont des entiers en centimes** (`montant_cents`). Jamais de flottant sur
+   de l'argent — `0.1 + 0.2 !== 0.3`.
+2. **Les dates sont en ISO `YYYY-MM-DD`**. En SQLite, le tri lexicographique est alors
+   le tri chronologique, et `substr(date, 1, 7)` donne le mois directement.
+
+| Table | Rôle |
+|---|---|
+| `sites` | les sites suivis (nom, URL, couleur, actif) |
+| `fournisseurs` | OVH, Stripe, Anthropic… avec une catégorie |
+| `depenses` | une ligne = une dépense, rattachée à un site et un fournisseur |
+| `revenus` | idem côté recettes, pour calculer la marge par site |
+| `abonnements` | coûts récurrents, pour projeter le budget et alerter sur les renouvellements |
+
+Les tables `depenses` et `revenus` portent une colonne **`source`** (`manuel` / `csv` / `api`)
+et une **`ref_externe`** (identifiant de facture côté fournisseur, avec index unique).
+Elles ne servent à rien aujourd'hui — elles existent pour que l'import CSV puis les
+connecteurs API puissent être ajoutés sans migration destructive ni doublons.
+
+Le schéma vit dans [`src-tauri/migrations/001_init.sql`](src-tauri/migrations/001_init.sql),
+joué au démarrage par le plugin SQL. Pour le faire évoluer : ajouter un fichier
+`002_*.sql` et une entrée `Migration` dans [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs).
+
+## Où sont mes données ?
+
+Le chemin du fichier `.db` est affiché en bas de la barre latérale
+(typiquement `%APPDATA%\com.cedklein.sitedashboard\sitedashboard.db`).
+Pour sauvegarder : copier ce fichier.
+
+## Suite envisagée
+
+- Import CSV par fournisseur (la plupart exportent du CSV) → `source = 'csv'`
+- Connecteurs API là où ça vaut le coup (Stripe, facturation cloud) → `source = 'api'`
+- Répartition des coûts transverses entre sites (une ligne `abonnements` sans `site_id`)

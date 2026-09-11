@@ -1,0 +1,222 @@
+import { execute, select } from "./db";
+
+/* ---------------------------------------------------------------- sites */
+
+export function listerSites() {
+  return select("SELECT * FROM sites ORDER BY actif DESC, nom");
+}
+
+export function creerSite({ nom, url, couleur }) {
+  return execute(
+    "INSERT INTO sites (nom, url, couleur) VALUES ($1, $2, $3)",
+    [nom, url || null, couleur || "#6366f1"],
+  );
+}
+
+export function majSite(id, { nom, url, couleur, actif }) {
+  return execute(
+    "UPDATE sites SET nom = $1, url = $2, couleur = $3, actif = $4 WHERE id = $5",
+    [nom, url || null, couleur, actif ? 1 : 0, id],
+  );
+}
+
+export function supprimerSite(id) {
+  return execute("DELETE FROM sites WHERE id = $1", [id]);
+}
+
+/* --------------------------------------------------------- fournisseurs */
+
+export function listerFournisseurs() {
+  return select("SELECT * FROM fournisseurs ORDER BY nom");
+}
+
+/** Cree le fournisseur s'il n'existe pas, et renvoie son id dans tous les cas. */
+export async function trouverOuCreerFournisseur(nom, categorie = "autre") {
+  const propre = String(nom || "").trim();
+  if (!propre) return null;
+
+  const existant = await select("SELECT id FROM fournisseurs WHERE nom = $1", [propre]);
+  if (existant.length > 0) return existant[0].id;
+
+  const res = await execute(
+    "INSERT INTO fournisseurs (nom, categorie) VALUES ($1, $2)",
+    [propre, categorie],
+  );
+  return res.lastInsertId;
+}
+
+/* ------------------------------------------------------------- depenses */
+
+export function listerDepenses({ siteId = null, limite = 200 } = {}) {
+  const base = `
+    SELECT d.*, s.nom AS site_nom, s.couleur AS site_couleur, f.nom AS fournisseur_nom
+    FROM depenses d
+    LEFT JOIN sites s ON s.id = d.site_id
+    LEFT JOIN fournisseurs f ON f.id = d.fournisseur_id`;
+
+  if (siteId) {
+    return select(`${base} WHERE d.site_id = $1 ORDER BY d.date DESC, d.id DESC LIMIT $2`, [
+      siteId,
+      limite,
+    ]);
+  }
+  return select(`${base} ORDER BY d.date DESC, d.id DESC LIMIT $1`, [limite]);
+}
+
+export function ajouterDepense({
+  siteId,
+  fournisseurId,
+  date,
+  montantCents,
+  devise = "EUR",
+  libelle = "",
+  categorie = "autre",
+  source = "manuel",
+  refExterne = null,
+}) {
+  return execute(
+    `INSERT INTO depenses
+       (site_id, fournisseur_id, date, montant_cents, devise, libelle, categorie, source, ref_externe)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [siteId, fournisseurId, date, montantCents, devise, libelle, categorie, source, refExterne],
+  );
+}
+
+export function supprimerDepense(id) {
+  return execute("DELETE FROM depenses WHERE id = $1", [id]);
+}
+
+/* -------------------------------------------------------------- revenus */
+
+export function listerRevenus({ limite = 200 } = {}) {
+  return select(
+    `SELECT r.*, s.nom AS site_nom, s.couleur AS site_couleur
+     FROM revenus r
+     LEFT JOIN sites s ON s.id = r.site_id
+     ORDER BY r.date DESC, r.id DESC LIMIT $1`,
+    [limite],
+  );
+}
+
+export function ajouterRevenu({
+  siteId,
+  date,
+  montantCents,
+  devise = "EUR",
+  libelle = "",
+  source = "manuel",
+}) {
+  return execute(
+    `INSERT INTO revenus (site_id, date, montant_cents, devise, libelle, source)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [siteId, date, montantCents, devise, libelle, source],
+  );
+}
+
+/* ---------------------------------------------------------- abonnements */
+
+export function listerAbonnements() {
+  return select(
+    `SELECT a.*, s.nom AS site_nom, s.couleur AS site_couleur, f.nom AS fournisseur_nom
+     FROM abonnements a
+     LEFT JOIN sites s ON s.id = a.site_id
+     LEFT JOIN fournisseurs f ON f.id = a.fournisseur_id
+     ORDER BY a.actif DESC, a.prochaine_echeance IS NULL, a.prochaine_echeance`,
+  );
+}
+
+export function ajouterAbonnement({
+  siteId,
+  fournisseurId,
+  libelle,
+  montantCents,
+  devise = "EUR",
+  periodicite = "mensuel",
+  prochaineEcheance = null,
+}) {
+  return execute(
+    `INSERT INTO abonnements
+       (site_id, fournisseur_id, libelle, montant_cents, devise, periodicite, prochaine_echeance)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [siteId, fournisseurId, libelle, montantCents, devise, periodicite, prochaineEcheance],
+  );
+}
+
+export function basculerAbonnement(id, actif) {
+  return execute("UPDATE abonnements SET actif = $1 WHERE id = $2", [actif ? 1 : 0, id]);
+}
+
+export function supprimerAbonnement(id) {
+  return execute("DELETE FROM abonnements WHERE id = $1", [id]);
+}
+
+/* ------------------------------------------------------------ agregats */
+
+/** Depenses et revenus agreges par mois, sur les n derniers mois. */
+export function totauxParMois(nbMois = 12) {
+  const depuis = `-${nbMois - 1} months`;
+  return select(
+    `SELECT mois, SUM(depense) AS depense_cents, SUM(revenu) AS revenu_cents FROM (
+       SELECT substr(date, 1, 7) AS mois, montant_cents AS depense, 0 AS revenu FROM depenses
+       UNION ALL
+       SELECT substr(date, 1, 7) AS mois, 0 AS depense, montant_cents AS revenu FROM revenus
+     )
+     WHERE mois >= strftime('%Y-%m', date('now', 'start of month', $1))
+     GROUP BY mois
+     ORDER BY mois`,
+    [depuis],
+  );
+}
+
+/** Depenses agregees par site sur une periode ('YYYY-MM-DD' incluse). */
+export function depensesParSite(depuis, jusqua) {
+  return select(
+    `SELECT s.id, s.nom, s.couleur, COALESCE(SUM(d.montant_cents), 0) AS total_cents
+     FROM sites s
+     LEFT JOIN depenses d
+       ON d.site_id = s.id AND d.date >= $1 AND d.date <= $2
+     GROUP BY s.id
+     ORDER BY total_cents DESC`,
+    [depuis, jusqua],
+  );
+}
+
+/** Depenses agregees par categorie sur une periode. */
+export function depensesParCategorie(depuis, jusqua) {
+  return select(
+    `SELECT categorie, SUM(montant_cents) AS total_cents
+     FROM depenses
+     WHERE date >= $1 AND date <= $2
+     GROUP BY categorie
+     ORDER BY total_cents DESC`,
+    [depuis, jusqua],
+  );
+}
+
+/** Totaux bruts sur une periode. */
+export async function totauxPeriode(depuis, jusqua) {
+  const [dep] = await select(
+    "SELECT COALESCE(SUM(montant_cents), 0) AS total FROM depenses WHERE date >= $1 AND date <= $2",
+    [depuis, jusqua],
+  );
+  const [rev] = await select(
+    "SELECT COALESCE(SUM(montant_cents), 0) AS total FROM revenus WHERE date >= $1 AND date <= $2",
+    [depuis, jusqua],
+  );
+  return { depensesCents: dep.total, revenusCents: rev.total };
+}
+
+/** Abonnements actifs a echeance dans les n prochains jours. */
+export function echeancesProches(jours = 45) {
+  return select(
+    `SELECT a.*, s.nom AS site_nom, f.nom AS fournisseur_nom
+     FROM abonnements a
+     LEFT JOIN sites s ON s.id = a.site_id
+     LEFT JOIN fournisseurs f ON f.id = a.fournisseur_id
+     WHERE a.actif = 1
+       AND a.prochaine_echeance IS NOT NULL
+       AND a.prochaine_echeance <= date('now', $1)
+     ORDER BY a.prochaine_echeance`,
+    [`+${jours} days`],
+  );
+}

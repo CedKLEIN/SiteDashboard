@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme {
+  --color-fond: #0b1020;
+  --color-surface: #141a2e;
+  --color-surface-2: #1b2340;
+  --color-bord: #2a3358;
+  --color-texte: #e7ebf7;
+  --color-texte-doux: #98a2c4;
+  --color-accent: #6366f1;
+  --color-depense: #f97362;
+  --color-revenu: #34d399;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-fond);
+  color: var(--color-texte);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Empeche la selection de texte facon page web dans une fenetre native */
+body {
+  user-select: none;
+}
+input,
+textarea,
+select,
+table {
+  user-select: text;
+}
