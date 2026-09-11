@@ -127,6 +127,12 @@ pub fn run() {
             sql: include_str!("../migrations/002_monitoring.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "partage d'une depense ou d'un abonnement entre plusieurs sites",
+            sql: include_str!("../migrations/003_partage.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

@@ -164,7 +164,7 @@ export default function DetailSite({
         <Kpi libelle="Checks actifs" valeur={String(checks.filter((c) => c.actif).length)} />
         <Kpi
           libelle="Depenses recentes"
-          valeur={formatMontant(depenses.reduce((t, d) => t + d.montant_cents, 0))}
+          valeur={formatMontant(depenses.reduce((t, d) => t + (d.part_cents ?? d.montant_cents), 0))}
           detail={`${depenses.length} derniere(s) ligne(s)`}
           ton="depense"
         />
@@ -341,8 +341,13 @@ export default function DetailSite({
                   <span className="w-20 shrink-0 tabular-nums text-texte-doux">{d.date}</span>
                   <span className="flex-1 truncate">
                     {d.fournisseur_nom ?? d.libelle ?? d.categorie}
+                    {d.nb_sites > 1 && (
+                      <span className="text-texte-doux"> · partagee ({d.sites_noms})</span>
+                    )}
                   </span>
-                  <span className="tabular-nums">{formatMontant(d.montant_cents, d.devise)}</span>
+                  <span className="tabular-nums">
+                    {formatMontant(d.part_cents ?? d.montant_cents, d.devise)}
+                  </span>
                 </li>
               ))}
             </ul>

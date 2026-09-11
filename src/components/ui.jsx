@@ -84,3 +84,41 @@ export function EtatVide({ children }) {
     <p className="py-8 text-center text-sm text-texte-doux">{children}</p>
   );
 }
+
+/**
+ * Selection multiple de sites, en pastilles cliquables.
+ * Une depense partagee (un hebergement mutualise, par exemple) se rattache a
+ * autant de sites que necessaire; son montant est ensuite reparti entre eux.
+ */
+export function SelecteurSites({ label, sites, selection, onBasculer, aide }) {
+  return (
+    <div className="flex min-w-56 flex-col gap-1">
+      <span className="text-xs text-texte-doux">{label}</span>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {sites.length === 0 && <span className="text-xs text-texte-doux">aucun site</span>}
+        {sites.map((site) => {
+          const choisi = selection.includes(site.id);
+          return (
+            <button
+              key={site.id}
+              type="button"
+              onClick={() => onBasculer(site.id)}
+              className={`flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs transition ${
+                choisi
+                  ? "border-accent bg-accent/15 text-texte"
+                  : "border-bord text-texte-doux hover:border-accent"
+              }`}
+            >
+              <span
+                className="size-2 rounded-full"
+                style={{ background: site.couleur, opacity: choisi ? 1 : 0.4 }}
+              />
+              {site.nom}
+            </button>
+          );
+        })}
+      </div>
+      {aide && <span className="text-[11px] text-texte-doux">{aide}</span>}
+    </div>
+  );
+}

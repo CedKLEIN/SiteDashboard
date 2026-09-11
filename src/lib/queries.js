@@ -1,4 +1,5 @@
 import { execute, select } from "./db";
+import { repartirEntreSites } from "./repartition";
 
 /* ---------------------------------------------------------------- sites */
 
@@ -55,24 +56,40 @@ export async function trouverOuCreerFournisseur(nom, categorie = "autre") {
 
 /* ------------------------------------------------------------- depenses */
 
-export function listerDepenses({ siteId = null, limite = 200 } = {}) {
-  const base = `
-    SELECT d.*, s.nom AS site_nom, s.couleur AS site_couleur, f.nom AS fournisseur_nom
-    FROM depenses d
-    LEFT JOIN sites s ON s.id = d.site_id
-    LEFT JOIN fournisseurs f ON f.id = d.fournisseur_id`;
+/** Noms des sites concernes, en une colonne, pour l'affichage en liste. */
+const SITES_DE_LA_DEPENSE = `
+  (SELECT group_concat(s.nom, ' + ')
+     FROM depense_sites x JOIN sites s ON s.id = x.site_id
+    WHERE x.depense_id = d.id) AS sites_noms,
+  (SELECT COUNT(*) FROM depense_sites WHERE depense_id = d.id) AS nb_sites`;
 
+export function listerDepenses({ siteId = null, limite = 200 } = {}) {
+  // Filtre par site: on renvoie en plus `part_cents`, la portion qui incombe a
+  // CE site, qui n'est pas le montant total quand la depense est partagee.
   if (siteId) {
-    return select(`${base} WHERE d.site_id = $1 ORDER BY d.date DESC, d.id DESC LIMIT $2`, [
-      siteId,
-      limite,
-    ]);
+    return select(
+      `SELECT d.*, f.nom AS fournisseur_nom, ds.part_cents, ${SITES_DE_LA_DEPENSE}
+       FROM depenses d
+       JOIN depense_sites ds ON ds.depense_id = d.id AND ds.site_id = $1
+       LEFT JOIN fournisseurs f ON f.id = d.fournisseur_id
+       ORDER BY d.date DESC, d.id DESC
+       LIMIT $2`,
+      [siteId, limite],
+    );
   }
-  return select(`${base} ORDER BY d.date DESC, d.id DESC LIMIT $1`, [limite]);
+
+  return select(
+    `SELECT d.*, f.nom AS fournisseur_nom, NULL AS part_cents, ${SITES_DE_LA_DEPENSE}
+     FROM depenses d
+     LEFT JOIN fournisseurs f ON f.id = d.fournisseur_id
+     ORDER BY d.date DESC, d.id DESC
+     LIMIT $1`,
+    [limite],
+  );
 }
 
-export function ajouterDepense({
-  siteId,
+export async function ajouterDepense({
+  siteIds = [],
   fournisseurId,
   date,
   montantCents,
@@ -82,12 +99,20 @@ export function ajouterDepense({
   source = "manuel",
   refExterne = null,
 }) {
-  return execute(
+  const res = await execute(
     `INSERT INTO depenses
-       (site_id, fournisseur_id, date, montant_cents, devise, libelle, categorie, source, ref_externe)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-    [siteId, fournisseurId, date, montantCents, devise, libelle, categorie, source, refExterne],
+       (fournisseur_id, date, montant_cents, devise, libelle, categorie, source, ref_externe)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [fournisseurId, date, montantCents, devise, libelle, categorie, source, refExterne],
   );
+
+  for (const { siteId, partCents } of repartirEntreSites(montantCents, siteIds)) {
+    await execute(
+      "INSERT INTO depense_sites (depense_id, site_id, part_cents) VALUES ($1, $2, $3)",
+      [res.lastInsertId, siteId, partCents],
+    );
+  }
+  return res;
 }
 
 export function supprimerDepense(id) {
@@ -123,18 +148,23 @@ export function ajouterRevenu({
 
 /* ---------------------------------------------------------- abonnements */
 
+const SITES_DE_L_ABONNEMENT = `
+  (SELECT group_concat(s.nom, ' + ')
+     FROM abonnement_sites x JOIN sites s ON s.id = x.site_id
+    WHERE x.abonnement_id = a.id) AS sites_noms,
+  (SELECT COUNT(*) FROM abonnement_sites WHERE abonnement_id = a.id) AS nb_sites`;
+
 export function listerAbonnements() {
   return select(
-    `SELECT a.*, s.nom AS site_nom, s.couleur AS site_couleur, f.nom AS fournisseur_nom
+    `SELECT a.*, f.nom AS fournisseur_nom, ${SITES_DE_L_ABONNEMENT}
      FROM abonnements a
-     LEFT JOIN sites s ON s.id = a.site_id
      LEFT JOIN fournisseurs f ON f.id = a.fournisseur_id
      ORDER BY a.actif DESC, a.prochaine_echeance IS NULL, a.prochaine_echeance`,
   );
 }
 
-export function ajouterAbonnement({
-  siteId,
+export async function ajouterAbonnement({
+  siteIds = [],
   fournisseurId,
   libelle,
   montantCents,
@@ -142,12 +172,20 @@ export function ajouterAbonnement({
   periodicite = "mensuel",
   prochaineEcheance = null,
 }) {
-  return execute(
+  const res = await execute(
     `INSERT INTO abonnements
-       (site_id, fournisseur_id, libelle, montant_cents, devise, periodicite, prochaine_echeance)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [siteId, fournisseurId, libelle, montantCents, devise, periodicite, prochaineEcheance],
+       (fournisseur_id, libelle, montant_cents, devise, periodicite, prochaine_echeance)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [fournisseurId, libelle, montantCents, devise, periodicite, prochaineEcheance],
   );
+
+  for (const { siteId, partCents } of repartirEntreSites(montantCents, siteIds)) {
+    await execute(
+      "INSERT INTO abonnement_sites (abonnement_id, site_id, part_cents) VALUES ($1, $2, $3)",
+      [res.lastInsertId, siteId, partCents],
+    );
+  }
+  return res;
 }
 
 export function basculerAbonnement(id, actif) {
@@ -176,17 +214,39 @@ export function totauxParMois(nbMois = 12) {
   );
 }
 
-/** Depenses agregees par site sur une periode ('YYYY-MM-DD' incluse). */
+/**
+ * Depenses agregees par site sur une periode ('YYYY-MM-DD' incluse).
+ * On somme les PARTS, pas les montants: une depense partagee entre deux sites
+ * ne doit pas etre comptee deux fois en entier.
+ */
 export function depensesParSite(depuis, jusqua) {
   return select(
-    `SELECT s.id, s.nom, s.couleur, COALESCE(SUM(d.montant_cents), 0) AS total_cents
+    `SELECT s.id, s.nom, s.couleur, COALESCE(SUM(p.part_cents), 0) AS total_cents
      FROM sites s
-     LEFT JOIN depenses d
-       ON d.site_id = s.id AND d.date >= $1 AND d.date <= $2
+     LEFT JOIN (
+       SELECT ds.site_id, ds.part_cents
+       FROM depense_sites ds
+       JOIN depenses d ON d.id = ds.depense_id
+       WHERE d.date >= $1 AND d.date <= $2
+     ) p ON p.site_id = s.id
      GROUP BY s.id
      ORDER BY total_cents DESC`,
     [depuis, jusqua],
   );
+}
+
+/** Cout recurrent mensuel porte par un site donne, parts comprises. */
+export async function coutRecurrentDuSite(siteId) {
+  const [ligne] = await select(
+    `SELECT COALESCE(SUM(
+       CASE WHEN a.periodicite = 'annuel' THEN lien.part_cents / 12 ELSE lien.part_cents END
+     ), 0) AS total_cents
+     FROM abonnement_sites lien
+     JOIN abonnements a ON a.id = lien.abonnement_id
+     WHERE lien.site_id = $1 AND a.actif = 1`,
+    [siteId],
+  );
+  return ligne.total_cents;
 }
 
 /** Depenses agregees par categorie sur une periode. */
@@ -217,9 +277,8 @@ export async function totauxPeriode(depuis, jusqua) {
 /** Abonnements actifs a echeance dans les n prochains jours. */
 export function echeancesProches(jours = 45) {
   return select(
-    `SELECT a.*, s.nom AS site_nom, f.nom AS fournisseur_nom
+    `SELECT a.*, f.nom AS fournisseur_nom, ${SITES_DE_L_ABONNEMENT}
      FROM abonnements a
-     LEFT JOIN sites s ON s.id = a.site_id
      LEFT JOIN fournisseurs f ON f.id = a.fournisseur_id
      WHERE a.actif = 1
        AND a.prochaine_echeance IS NOT NULL

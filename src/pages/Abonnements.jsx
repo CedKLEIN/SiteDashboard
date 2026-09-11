@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { Bouton, Carte, Champ, EtatVide, Pastille, Selecteur } from "../components/ui";
+import { Bouton, Carte, Champ, EtatVide, Selecteur, SelecteurSites } from "../components/ui";
 import {
   ajouterAbonnement,
   basculerAbonnement,
@@ -11,9 +11,10 @@ import {
   trouverOuCreerFournisseur,
 } from "../lib/queries";
 import { coutMensuelEquivalent, formatMontant, parseMontant } from "../lib/format";
+import { repartir } from "../lib/repartition";
 
 const FORMULAIRE_VIDE = {
-  siteId: "",
+  siteIds: [],
   fournisseur: "",
   libelle: "",
   montant: "",
@@ -49,6 +50,24 @@ export default function Abonnements({ onModification }) {
     setFormulaire((f) => ({ ...f, [champ]: valeur }));
   }
 
+  function basculerSite(id) {
+    setFormulaire((f) => ({
+      ...f,
+      siteIds: f.siteIds.includes(id)
+        ? f.siteIds.filter((x) => x !== id)
+        : [...f.siteIds, id],
+    }));
+  }
+
+  // Cas typique: un hebergement mutualise a 11 EUR partage entre deux sites.
+  const montantSaisiCents = parseMontant(formulaire.montant);
+  const apercuPartage =
+    formulaire.siteIds.length > 1 && montantSaisiCents > 0
+      ? `reparti en ${repartir(montantSaisiCents, formulaire.siteIds.length)
+          .map((p) => formatMontant(p))
+          .join(" + ")}`
+      : null;
+
   async function enregistrer(evenement) {
     evenement.preventDefault();
     setErreur("");
@@ -66,7 +85,7 @@ export default function Abonnements({ onModification }) {
     const fournisseurId = await trouverOuCreerFournisseur(formulaire.fournisseur);
 
     await ajouterAbonnement({
-      siteId: formulaire.siteId ? Number(formulaire.siteId) : null,
+      siteIds: formulaire.siteIds,
       fournisseurId,
       libelle: formulaire.libelle.trim(),
       montantCents,
@@ -107,19 +126,13 @@ export default function Abonnements({ onModification }) {
 
       <Carte titre="Nouvel abonnement">
         <form onSubmit={enregistrer} className="flex flex-wrap items-end gap-3">
-          <Selecteur
-            label="Site"
-            value={formulaire.siteId}
-            onChange={(e) => maj("siteId", e.target.value)}
-            className="w-40"
-          >
-            <option value="">Transverse</option>
-            {sites.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.nom}
-              </option>
-            ))}
-          </Selecteur>
+          <SelecteurSites
+            label="Sites concernes"
+            sites={sites}
+            selection={formulaire.siteIds}
+            onBasculer={basculerSite}
+            aide={apercuPartage ?? "aucun site coche = cout transverse"}
+          />
 
           <Champ
             label="Fournisseur"
@@ -182,7 +195,7 @@ export default function Abonnements({ onModification }) {
             <thead>
               <tr className="border-b border-bord text-left text-xs uppercase text-texte-doux">
                 <th className="py-2 font-medium">Actif</th>
-                <th className="py-2 font-medium">Site</th>
+                <th className="py-2 font-medium">Sites</th>
                 <th className="py-2 font-medium">Libelle</th>
                 <th className="py-2 font-medium">Fournisseur</th>
                 <th className="py-2 font-medium">Echeance</th>
@@ -205,10 +218,12 @@ export default function Abonnements({ onModification }) {
                     />
                   </td>
                   <td className="py-2">
-                    <span className="flex items-center gap-2">
-                      <Pastille couleur={a.site_couleur} />
-                      {a.site_nom ?? "transverse"}
-                    </span>
+                    {a.sites_noms ?? <span className="text-texte-doux">transverse</span>}
+                    {a.nb_sites > 1 && (
+                      <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-texte-doux">
+                        partage
+                      </span>
+                    )}
                   </td>
                   <td className="py-2">{a.libelle}</td>
                   <td className="py-2 text-texte-doux">{a.fournisseur_nom ?? "—"}</td>

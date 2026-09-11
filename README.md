@@ -48,11 +48,31 @@ Deux règles non négociables, qui évitent 90 % des bugs de ce genre d'appli :
 |---|---|
 | `sites` | les sites suivis (nom, URL, couleur, actif) |
 | `fournisseurs` | OVH, Stripe, Anthropic… avec une catégorie |
-| `depenses` | une ligne = une dépense, rattachée à un site et un fournisseur |
+| `depenses` | une ligne = une dépense, rattachée à un fournisseur et à un ou plusieurs sites |
 | `revenus` | idem côté recettes, pour calculer la marge par site |
-| `abonnements` | coûts récurrents, pour projeter le budget et alerter sur les renouvellements |
+| `abonnements` | coûts récurrents (partageables aussi), pour projeter le budget et alerter sur les renouvellements |
+| `depense_sites` / `abonnement_sites` | quels sites portent la ligne, et pour quelle part |
 | `checks` | ce qu'on vérifie sur un site : une URL, un statut attendu, un fragment de texte |
 | `verifications` | le résultat de chaque check, horodaté (purgé au-delà de 30 jours) |
+
+## Coûts partagés entre sites
+
+Une dépense ou un abonnement se rattache à **un ou plusieurs sites** — un hébergement Ionos
+à 11 € qui sert à deux sites, par exemple. La liaison passe par `depense_sites` /
+`abonnement_sites`, qui stocke la **part de chaque site, en centimes**.
+
+Cette part est calculée **à l'écriture**, pas à l'affichage, et le reste de la division est
+distribué un centime à la fois (voir [`src/lib/repartition.js`](src/lib/repartition.js)) :
+
+    11,00 € sur 3 sites  ->  3,67 + 3,67 + 3,66  =  11,00 €
+
+Un `montant / nb_sites` arrondi à l'affichage donnerait 11,01 € ou 10,98 € selon le sens de
+l'arrondi : les totaux par site ne retomberaient jamais sur le total réel. Les agrégats
+somment donc les parts, jamais les montants — sans quoi une dépense partagée serait comptée
+deux fois en entier.
+
+Un abonnement sans aucun site coché est un **coût transverse** : il compte dans le récurrent
+global, mais n'est imputé à aucun site.
 
 ## Supervision
 
@@ -93,7 +113,7 @@ connecteurs API puissent être ajoutés sans migration destructive ni doublons.
 
 Le schéma vit dans [`src-tauri/migrations/001_init.sql`](src-tauri/migrations/001_init.sql),
 joué au démarrage par le plugin SQL. Pour le faire évoluer : ajouter un fichier
-`002_*.sql` et une entrée `Migration` dans [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs).
+`00N_*.sql` et une entrée `Migration` dans [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs).
 
 ## Où sont mes données ?
 
@@ -105,4 +125,4 @@ Pour sauvegarder : copier ce fichier.
 
 - Import CSV par fournisseur (la plupart exportent du CSV) → `source = 'csv'`
 - Connecteurs API là où ça vaut le coup (Stripe, facturation cloud) → `source = 'api'`
-- Répartition des coûts transverses entre sites (une ligne `abonnements` sans `site_id`)
+- Parts inégales : aujourd'hui un coût partagé est réparti à parts égales entre les sites cochés

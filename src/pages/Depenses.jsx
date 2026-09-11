@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { Bouton, Carte, Champ, EtatVide, Pastille, Selecteur } from "../components/ui";
+import { Bouton, Carte, Champ, EtatVide, Selecteur, SelecteurSites } from "../components/ui";
 import {
   ajouterDepense,
   listerDepenses,
@@ -10,6 +10,7 @@ import {
   trouverOuCreerFournisseur,
 } from "../lib/queries";
 import { aujourdhuiIso, formatMontant, parseMontant } from "../lib/format";
+import { repartir } from "../lib/repartition";
 
 export const CATEGORIES = [
   "hebergement",
@@ -21,7 +22,7 @@ export const CATEGORIES = [
 ];
 
 const FORMULAIRE_VIDE = {
-  siteId: "",
+  siteIds: [],
   fournisseur: "",
   date: aujourdhuiIso(),
   montant: "",
@@ -57,6 +58,25 @@ export default function Depenses({ onModification }) {
     setFormulaire((f) => ({ ...f, [champ]: valeur }));
   }
 
+  function basculerSite(id) {
+    setFormulaire((f) => ({
+      ...f,
+      siteIds: f.siteIds.includes(id)
+        ? f.siteIds.filter((x) => x !== id)
+        : [...f.siteIds, id],
+    }));
+  }
+
+  // Montre le partage avant d'enregistrer: c'est la seule facon de verifier
+  // d'un coup d'oeil que 11 EUR sur 3 sites tombent bien sur 3,67 / 3,67 / 3,66.
+  const montantSaisiCents = parseMontant(formulaire.montant);
+  const apercuPartage =
+    formulaire.siteIds.length > 1 && montantSaisiCents > 0
+      ? `reparti en ${repartir(montantSaisiCents, formulaire.siteIds.length)
+          .map((p) => formatMontant(p))
+          .join(" + ")}`
+      : null;
+
   async function enregistrer(evenement) {
     evenement.preventDefault();
     setErreur("");
@@ -66,8 +86,8 @@ export default function Depenses({ onModification }) {
       setErreur("Montant invalide.");
       return;
     }
-    if (!formulaire.siteId) {
-      setErreur("Choisis un site.");
+    if (formulaire.siteIds.length === 0) {
+      setErreur("Choisis au moins un site.");
       return;
     }
 
@@ -77,7 +97,7 @@ export default function Depenses({ onModification }) {
     );
 
     await ajouterDepense({
-      siteId: Number(formulaire.siteId),
+      siteIds: formulaire.siteIds,
       fournisseurId,
       date: formulaire.date,
       montantCents,
@@ -85,7 +105,7 @@ export default function Depenses({ onModification }) {
       categorie: formulaire.categorie,
     });
 
-    setFormulaire({ ...FORMULAIRE_VIDE, siteId: formulaire.siteId });
+    setFormulaire({ ...FORMULAIRE_VIDE, siteIds: formulaire.siteIds });
     await recharger();
     onModification?.();
   }
@@ -109,19 +129,13 @@ export default function Depenses({ onModification }) {
       ) : (
         <Carte titre="Nouvelle depense">
           <form onSubmit={enregistrer} className="flex flex-wrap items-end gap-3">
-            <Selecteur
-              label="Site"
-              value={formulaire.siteId}
-              onChange={(e) => maj("siteId", e.target.value)}
-              className="w-44"
-            >
-              <option value="">—</option>
-              {sites.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.nom}
-                </option>
-              ))}
-            </Selecteur>
+            <SelecteurSites
+              label="Sites concernes"
+              sites={sites}
+              selection={formulaire.siteIds}
+              onBasculer={basculerSite}
+              aide={apercuPartage}
+            />
 
             <Champ
               label="Fournisseur"
@@ -205,7 +219,7 @@ export default function Depenses({ onModification }) {
             <thead>
               <tr className="border-b border-bord text-left text-xs uppercase text-texte-doux">
                 <th className="py-2 font-medium">Date</th>
-                <th className="py-2 font-medium">Site</th>
+                <th className="py-2 font-medium">Sites</th>
                 <th className="py-2 font-medium">Fournisseur</th>
                 <th className="py-2 font-medium">Categorie</th>
                 <th className="py-2 font-medium">Libelle</th>
@@ -218,16 +232,23 @@ export default function Depenses({ onModification }) {
                 <tr key={d.id} className="border-b border-bord/50 last:border-0">
                   <td className="py-2 tabular-nums text-texte-doux">{d.date}</td>
                   <td className="py-2">
-                    <span className="flex items-center gap-2">
-                      <Pastille couleur={d.site_couleur} />
-                      {d.site_nom ?? "—"}
-                    </span>
+                    {d.sites_noms ?? <span className="text-texte-doux">non rattachee</span>}
+                    {d.nb_sites > 1 && (
+                      <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-texte-doux">
+                        partagee
+                      </span>
+                    )}
                   </td>
                   <td className="py-2">{d.fournisseur_nom ?? "—"}</td>
                   <td className="py-2 text-texte-doux">{d.categorie}</td>
                   <td className="py-2 text-texte-doux">{d.libelle}</td>
                   <td className="py-2 text-right tabular-nums">
                     {formatMontant(d.montant_cents, d.devise)}
+                    {d.part_cents != null && d.nb_sites > 1 && (
+                      <span className="block text-[11px] text-texte-doux">
+                        dont {formatMontant(d.part_cents, d.devise)} pour ce site
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 pl-2 text-right">
                     <Bouton
