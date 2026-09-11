@@ -8,7 +8,13 @@ const ONGLETS = [
   { cle: "sites", libelle: "Sites", Icone: Globe },
 ];
 
-export default function Layout({ ongletActif, onChangerOnglet, cheminBase, children }) {
+export default function Layout({
+  ongletActif,
+  onChangerOnglet,
+  cheminBase,
+  verificationEnCours,
+  children,
+}) {
   return (
     <div className="flex h-full">
       <nav className="flex w-56 shrink-0 flex-col border-r border-bord bg-surface p-3">
@@ -35,15 +41,23 @@ export default function Layout({ ongletActif, onChangerOnglet, cheminBase, child
           ))}
         </div>
 
-        {cheminBase && (
-          <p
-            className="mt-auto px-2 pt-4 text-[10px] leading-relaxed break-all text-texte-doux"
-            title={cheminBase}
-          >
-            Base locale&nbsp;:<br />
-            {cheminBase}
+        <div className="mt-auto px-2 pt-4">
+          <p className="flex items-center gap-2 text-[11px] text-texte-doux">
+            <span
+              className={`size-1.5 rounded-full bg-accent ${verificationEnCours ? "animate-pulse" : "opacity-40"}`}
+            />
+            {verificationEnCours ? "Verification en cours..." : "Supervision toutes les 60 s"}
           </p>
-        )}
+          {cheminBase && (
+            <p
+              className="pt-2 text-[10px] leading-relaxed break-all text-texte-doux"
+              title={cheminBase}
+            >
+              Base locale&nbsp;:<br />
+              {cheminBase}
+            </p>
+          )}
+        </div>
       </nav>
 
       <main className="flex-1 overflow-y-auto p-6">{children}</main>

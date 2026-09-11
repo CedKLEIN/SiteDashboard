@@ -6,11 +6,19 @@ export function listerSites() {
   return select("SELECT * FROM sites ORDER BY actif DESC, nom");
 }
 
-export function creerSite({ nom, url, couleur }) {
-  return execute(
-    "INSERT INTO sites (nom, url, couleur) VALUES ($1, $2, $3)",
-    [nom, url || null, couleur || "#6366f1"],
-  );
+export async function creerSite({ nom, url, couleur }) {
+  const res = await execute("INSERT INTO sites (nom, url, couleur) VALUES ($1, $2, $3)", [
+    nom,
+    url || null,
+    couleur || "#6366f1",
+  ]);
+
+  // Un site avec une URL est supervise des sa creation: sans ce check par defaut,
+  // il resterait gris sur l'accueil tant qu'on n'a pas pense a en ajouter un.
+  if (url) {
+    await creerCheck({ siteId: res.lastInsertId, libelle: "Page d'accueil", url });
+  }
+  return res;
 }
 
 export function majSite(id, { nom, url, couleur, actif }) {
@@ -219,4 +227,111 @@ export function echeancesProches(jours = 45) {
      ORDER BY a.prochaine_echeance`,
     [`+${jours} days`],
   );
+}
+
+/* -------------------------------------------------------- supervision */
+
+export function listerChecks(siteId) {
+  return select(
+    `SELECT c.*,
+            v.ok          AS dernier_ok,
+            v.statut_http AS dernier_statut,
+            v.latence_ms  AS derniere_latence,
+            v.erreur      AS derniere_erreur,
+            v.verifie_le  AS derniere_verif
+     FROM checks c
+     LEFT JOIN verifications v ON v.id = (
+       SELECT id FROM verifications
+       WHERE check_id = c.id
+       ORDER BY verifie_le DESC, id DESC
+       LIMIT 1
+     )
+     WHERE c.site_id = $1
+     ORDER BY c.id`,
+    [siteId],
+  );
+}
+
+/** Les checks a executer a chaque cycle de supervision. */
+export function checksActifs() {
+  return select(
+    `SELECT c.id, c.url, c.statut_attendu, c.doit_contenir, c.libelle, s.nom AS site_nom
+     FROM checks c
+     JOIN sites s ON s.id = c.site_id
+     WHERE c.actif = 1 AND s.actif = 1
+     ORDER BY c.site_id, c.id`,
+  );
+}
+
+export function creerCheck({ siteId, libelle, url, statutAttendu = null, doitContenir = null }) {
+  return execute(
+    `INSERT INTO checks (site_id, libelle, url, statut_attendu, doit_contenir)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [siteId, libelle, url, statutAttendu, doitContenir || null],
+  );
+}
+
+export function supprimerCheck(id) {
+  return execute("DELETE FROM checks WHERE id = $1", [id]);
+}
+
+export function basculerCheck(id, actif) {
+  return execute("UPDATE checks SET actif = $1 WHERE id = $2", [actif ? 1 : 0, id]);
+}
+
+export function enregistrerVerification(checkId, { ok, statut, latence_ms, erreur }) {
+  return execute(
+    `INSERT INTO verifications (check_id, ok, statut_http, latence_ms, erreur)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [checkId, ok ? 1 : 0, statut ?? null, latence_ms ?? null, erreur ?? null],
+  );
+}
+
+/**
+ * Etat courant de chaque site: on ne regarde que le DERNIER resultat de chaque
+ * check actif, pas tout l'historique.
+ */
+export function etatsDesSites() {
+  return select(
+    `SELECT s.id, s.nom, s.url, s.couleur,
+            COUNT(c.id)                                  AS nb_checks,
+            COUNT(v.id)                                  AS nb_resultats,
+            COALESCE(SUM(CASE WHEN v.ok = 1 THEN 1 ELSE 0 END), 0) AS nb_ok,
+            MAX(v.verifie_le)                            AS derniere_verif,
+            AVG(v.latence_ms)                            AS latence_moyenne
+     FROM sites s
+     LEFT JOIN checks c ON c.site_id = s.id AND c.actif = 1
+     LEFT JOIN verifications v ON v.id = (
+       SELECT id FROM verifications
+       WHERE check_id = c.id
+       ORDER BY verifie_le DESC, id DESC
+       LIMIT 1
+     )
+     WHERE s.actif = 1
+     GROUP BY s.id
+     ORDER BY s.nom`,
+  );
+}
+
+/** Historique d'un site, tous checks confondus, pour le graphe de latence. */
+export function historiqueSite(siteId, heures = 24) {
+  return select(
+    `SELECT v.verifie_le, v.ok, v.latence_ms, v.statut_http, v.erreur, c.libelle AS check_libelle
+     FROM verifications v
+     JOIN checks c ON c.id = v.check_id
+     WHERE c.site_id = $1 AND v.verifie_le >= datetime('now', 'localtime', $2)
+     ORDER BY v.verifie_le`,
+    [siteId, `-${heures} hours`],
+  );
+}
+
+/**
+ * Purge l'historique de supervision. A 1 verification par minute et par check,
+ * la table grossit de ~1440 lignes par jour et par check: sans purge elle
+ * finirait par peser plus lourd que tout le reste de la base.
+ */
+export function purgerVerifications(jours = 30) {
+  return execute("DELETE FROM verifications WHERE verifie_le < datetime('now', 'localtime', $1)", [
+    `-${jours} days`,
+  ]);
 }

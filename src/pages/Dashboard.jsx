@@ -10,9 +10,11 @@ import {
   YAxis,
 } from "recharts";
 import { Carte, EtatVide, Kpi, Pastille } from "../components/ui";
+import CarteSite from "../components/CarteSite";
 import {
   depensesParSite,
   echeancesProches,
+  etatsDesSites,
   listerAbonnements,
   totauxParMois,
   totauxPeriode,
@@ -33,7 +35,7 @@ function bornesMoisCourant(aujourdhui = new Date()) {
   return [`${annee}-${mois}-01`, `${annee}-${mois}-${dernierJour}`];
 }
 
-export default function Dashboard({ rafraichissement }) {
+export default function Dashboard({ rafraichissement, onOuvrirSite }) {
   const [donnees, setDonnees] = useState(null);
 
   useEffect(() => {
@@ -41,14 +43,15 @@ export default function Dashboard({ rafraichissement }) {
 
     async function charger() {
       const [debut, fin] = bornesMoisCourant();
-      const [parMois, mois, parSite, abonnements, echeances] = await Promise.all([
+      const [parMois, mois, parSite, abonnements, echeances, etats] = await Promise.all([
         totauxParMois(NB_MOIS),
         totauxPeriode(debut, fin),
         depensesParSite(debut, fin),
         listerAbonnements(),
         echeancesProches(45),
+        etatsDesSites(),
       ]);
-      if (!annule) setDonnees({ parMois, mois, parSite, abonnements, echeances });
+      if (!annule) setDonnees({ parMois, mois, parSite, abonnements, echeances, etats });
     }
 
     charger();
@@ -59,7 +62,7 @@ export default function Dashboard({ rafraichissement }) {
 
   if (!donnees) return <EtatVide>Chargement...</EtatVide>;
 
-  const { parMois, mois, parSite, abonnements, echeances } = donnees;
+  const { parMois, mois, parSite, abonnements, echeances, etats } = donnees;
 
   // On repart des 12 derniers mois pour afficher aussi les mois sans ecriture
   const parMoisIndexe = new Map(parMois.map((l) => [l.mois, l]));
@@ -79,6 +82,18 @@ export default function Dashboard({ rafraichissement }) {
   return (
     <div className="flex flex-col gap-5">
       <h1 className="text-lg font-semibold">Tableau de bord</h1>
+
+      {etats.length === 0 ? (
+        <Carte>
+          <EtatVide>Aucun site actif. Ajoute-en un dans l&apos;onglet « Sites ».</EtatVide>
+        </Carte>
+      ) : (
+        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+          {etats.map((site) => (
+            <CarteSite key={site.id} site={site} onOuvrir={onOuvrirSite} />
+          ))}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Kpi
