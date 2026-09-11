@@ -25,7 +25,9 @@ export default function CarteSite({ site, onOuvrir }) {
       type="button"
       onClick={() => onOuvrir(site.id)}
       title={`${site.nom} — ${libelleEtat(etat)}`}
-      className="group relative flex aspect-square w-full flex-col justify-between overflow-hidden rounded-xl border border-bord bg-surface p-3 pl-4 text-left transition hover:border-accent hover:bg-surface-2"
+      // Hauteur fixe et non carree: etirees sur toute la largeur, des cartes
+      // carrees deviendraient enormes des qu'il n'y a que deux sites.
+      className="group relative flex h-32 w-full flex-col justify-between overflow-hidden rounded-xl border border-bord bg-surface p-3 pl-4 text-left transition hover:border-accent hover:bg-surface-2"
     >
       {/*
         La couleur du site devient une barre laterale, pas une seconde pastille:

@@ -6,12 +6,13 @@ import Depenses from "./pages/Depenses";
 import Revenus from "./pages/Revenus";
 import Abonnements from "./pages/Abonnements";
 import Sites from "./pages/Sites";
+import Preferences, { INTERVALLE_DEFAUT_S } from "./pages/Preferences";
 import DetailSite from "./pages/DetailSite";
 import { lancerCycle } from "./lib/monitoring";
-import { listerSites, purgerVerifications } from "./lib/queries";
+import { lirePreference, listerSites, purgerVerifications } from "./lib/queries";
 import { tracer } from "./lib/trace";
 
-const INTERVALLE_SUPERVISION_MS = 60_000;
+
 
 export default function App() {
   const [onglet, setOnglet] = useState("dashboard");
@@ -19,6 +20,7 @@ export default function App() {
   const [sites, setSites] = useState([]);
   const [cheminBase, setCheminBase] = useState("");
   const [verificationEnCours, setVerificationEnCours] = useState(false);
+  const [intervalleS, setIntervalleS] = useState(INTERVALLE_DEFAUT_S);
   // Incremente a chaque ecriture en base: force les ecrans a se recalculer
   const [revision, setRevision] = useState(0);
 
@@ -62,15 +64,28 @@ export default function App() {
     };
   }, [revision]);
 
+  // L'intervalle est une preference: on le relit a chaque modification pour que
+  // le changement prenne effet sans redemarrer l'application.
+  useEffect(() => {
+    let annule = false;
+    lirePreference("intervalle_supervision_s", String(INTERVALLE_DEFAUT_S)).then((v) => {
+      const secondes = Number(v);
+      if (!annule && Number.isFinite(secondes) && secondes > 0) setIntervalleS(secondes);
+    });
+    return () => {
+      annule = true;
+    };
+  }, [revision]);
+
   useEffect(() => {
     // Cas d'usage canonique d'un effet: on synchronise avec un systeme externe
     // (les sites a interroger). Le setState immediat est le drapeau "en cours",
     // qu'on veut justement voir des le premier cycle.
     // oxlint-disable-next-line react/set-state-in-effect
     verifier();
-    const minuterie = setInterval(verifier, INTERVALLE_SUPERVISION_MS);
+    const minuterie = setInterval(verifier, intervalleS * 1000);
     return () => clearInterval(minuterie);
-  }, [verifier]);
+  }, [verifier, intervalleS]);
 
   const site = sites.find((s) => s.id === siteOuvert);
 
@@ -80,6 +95,9 @@ export default function App() {
     revenus: <Revenus onModification={signalerModification} />,
     abonnements: <Abonnements onModification={signalerModification} />,
     sites: <Sites onModification={signalerModification} />,
+    preferences: (
+      <Preferences onModification={signalerModification} cheminBase={cheminBase} />
+    ),
   };
 
   function changerOnglet(cle) {
@@ -93,6 +111,7 @@ export default function App() {
       onChangerOnglet={changerOnglet}
       cheminBase={cheminBase}
       verificationEnCours={verificationEnCours}
+      intervalleS={intervalleS}
     >
       {site ? (
         <DetailSite

@@ -1,4 +1,11 @@
-import { BadgeEuro, LayoutDashboard, Receipt, Repeat, Globe } from "lucide-react";
+import {
+  BadgeEuro,
+  Globe,
+  LayoutDashboard,
+  Receipt,
+  Repeat,
+  Settings,
+} from "lucide-react";
 
 const ONGLETS = [
   { cle: "dashboard", libelle: "Tableau de bord", Icone: LayoutDashboard },
@@ -6,6 +13,7 @@ const ONGLETS = [
   { cle: "revenus", libelle: "Revenus", Icone: BadgeEuro },
   { cle: "abonnements", libelle: "Abonnements", Icone: Repeat },
   { cle: "sites", libelle: "Sites", Icone: Globe },
+  { cle: "preferences", libelle: "Preferences", Icone: Settings },
 ];
 
 export default function Layout({
@@ -13,6 +21,7 @@ export default function Layout({
   onChangerOnglet,
   cheminBase,
   verificationEnCours,
+  intervalleS,
   children,
 }) {
   return (
@@ -46,7 +55,9 @@ export default function Layout({
             <span
               className={`size-1.5 rounded-full bg-accent ${verificationEnCours ? "animate-pulse" : "opacity-40"}`}
             />
-            {verificationEnCours ? "Verification en cours..." : "Supervision toutes les 60 s"}
+            {verificationEnCours
+              ? "Verification en cours..."
+              : `Supervision toutes les ${intervalleS} s`}
           </p>
           {cheminBase && (
             <p

@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { Bouton, Carte, Champ, EtatVide } from "../components/ui";
+import { Bouton, Carte, Champ, EtatVide, Selecteur } from "../components/ui";
+import { invoke } from "@tauri-apps/api/core";
 import RepartitionSites, { partsCentsDepuisSaisie } from "../components/RepartitionSites";
 import { ajouterRevenu, listerRevenus, listerSites } from "../lib/queries";
 import { aujourdhuiIso, formatMontant, parseMontant } from "../lib/format";
+import { DEVISES, DEVISE_REFERENCE, mentionConversion, versReference } from "../lib/devises";
 
 const FORMULAIRE_VIDE = {
   siteIds: [],
   parts: null,
+  devise: DEVISE_REFERENCE,
   date: aujourdhuiIso(),
   montant: "",
   libelle: "",
@@ -60,12 +63,37 @@ export default function Revenus({ onModification }) {
       return;
     }
 
+    // Taux DU JOUR de la transaction, pas du jour de la saisie: un revenu passe
+    // ne doit pas changer de valeur parce qu'on le consulte plus tard.
+    let taux = 1;
+    if (formulaire.devise !== DEVISE_REFERENCE) {
+      try {
+        taux = await invoke("taux_change", {
+          date: formulaire.date,
+          de: formulaire.devise,
+          vers: DEVISE_REFERENCE,
+        });
+      } catch (e) {
+        setErreur(`Taux de change indisponible (${e}). Reessaie ou saisis en euros.`);
+        return;
+      }
+    }
+
+    const montantEurCents = versReference(montantCents, taux);
+    if (montantEurCents === null) {
+      setErreur("Taux de change invalide.");
+      return;
+    }
+
     try {
       await ajouterRevenu({
         siteIds: formulaire.siteIds,
         partsCents: partsCentsDepuisSaisie(formulaire.siteIds, formulaire.parts),
         date: formulaire.date,
         montantCents,
+        devise: formulaire.devise,
+        taux,
+        montantEurCents,
         libelle: formulaire.libelle,
       });
     } catch (e) {
@@ -101,13 +129,26 @@ export default function Revenus({ onModification }) {
               className="w-40"
             />
             <Champ
-              label="Montant (€)"
+              label="Montant"
               inputMode="decimal"
               placeholder="49,90"
               value={formulaire.montant}
               onChange={(e) => maj("montant", e.target.value)}
               className="w-28"
             />
+
+            <Selecteur
+              label="Devise"
+              value={formulaire.devise}
+              onChange={(e) => maj("devise", e.target.value)}
+              className="w-24"
+            >
+              {DEVISES.map((d) => (
+                <option key={d.code} value={d.code}>
+                  {d.code}
+                </option>
+              ))}
+            </Selecteur>
             <Champ
               label="Libelle"
               placeholder="Abonnements Stripe"
@@ -148,7 +189,12 @@ export default function Revenus({ onModification }) {
                   </td>
                   <td className="py-2 text-texte-doux">{r.libelle}</td>
                   <td className="py-2 text-right tabular-nums text-revenu">
-                    {formatMontant(r.montant_cents, r.devise)}
+                    {formatMontant(r.montant_eur_cents ?? r.montant_cents)}
+                    {mentionConversion(r) && (
+                      <span className="block text-[11px] text-texte-doux">
+                        {mentionConversion(r)}
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}

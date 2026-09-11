@@ -37,6 +37,21 @@ export function supprimerSite(id) {
   return execute("DELETE FROM sites WHERE id = $1", [id]);
 }
 
+/* --------------------------------------------------------- preferences */
+
+export async function lirePreference(cle, defaut = null) {
+  const [ligne] = await select("SELECT valeur FROM preferences WHERE cle = $1", [cle]);
+  return ligne?.valeur ?? defaut;
+}
+
+export function ecrirePreference(cle, valeur) {
+  return execute(
+    `INSERT INTO preferences (cle, valeur) VALUES ($1, $2)
+     ON CONFLICT(cle) DO UPDATE SET valeur = excluded.valeur`,
+    [cle, String(valeur)],
+  );
+}
+
 /* --------------------------------------------------------- fournisseurs */
 
 export function listerFournisseurs() {
@@ -158,21 +173,40 @@ export function listerRevenus({ limite = 200 } = {}) {
   );
 }
 
+/** Revenus d'un site, avec la part qui lui revient (en devise de reference). */
+export function revenusDuSite(siteId, limite = 8) {
+  return select(
+    `SELECT r.*, rs.part_cents, ${SITES_DU_REVENU}
+     FROM revenus r
+     JOIN revenu_sites rs ON rs.revenu_id = r.id AND rs.site_id = $1
+     ORDER BY r.date DESC, r.id DESC LIMIT $2`,
+    [siteId, limite],
+  );
+}
+
 export async function ajouterRevenu({
   siteIds = [],
   partsCents = null,
   date,
   montantCents,
   devise = "EUR",
+  taux = 1,
+  montantEurCents = null,
   libelle = "",
   source = "manuel",
+  refExterne = null,
 }) {
-  const parts = partsPourSites(montantCents, siteIds, partsCents);
+  // Les parts sont exprimees dans la devise de reference: c'est elle qui sert a
+  // tous les cumuls par site, additionner des dollars et des euros n'aurait
+  // aucun sens.
+  const montantRef = montantEurCents ?? montantCents;
+  const parts = partsPourSites(montantRef, siteIds, partsCents);
 
   const res = await execute(
-    `INSERT INTO revenus (date, montant_cents, devise, libelle, source)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [date, montantCents, devise, libelle, source],
+    `INSERT INTO revenus
+       (date, montant_cents, devise, taux, montant_eur_cents, libelle, source, ref_externe)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    [date, montantCents, devise, taux, montantRef, libelle, source, refExterne],
   );
 
   for (const { siteId, partCents } of parts) {
@@ -377,7 +411,8 @@ export function totauxParMois(nbMois = 12) {
     `SELECT mois, SUM(depense) AS depense_cents, SUM(revenu) AS revenu_cents FROM (
        SELECT substr(date, 1, 7) AS mois, montant_cents AS depense, 0 AS revenu FROM depenses
        UNION ALL
-       SELECT substr(date, 1, 7) AS mois, 0 AS depense, montant_cents AS revenu FROM revenus
+       SELECT substr(date, 1, 7) AS mois, 0 AS depense,
+              COALESCE(montant_eur_cents, montant_cents) AS revenu FROM revenus
      )
      WHERE mois >= strftime('%Y-%m', date('now', 'start of month', $1))
      GROUP BY mois
@@ -415,10 +450,29 @@ export async function totauxPeriode(depuis, jusqua) {
     [depuis, jusqua],
   );
   const [rev] = await select(
-    "SELECT COALESCE(SUM(montant_cents), 0) AS total FROM revenus WHERE date >= $1 AND date <= $2",
+    `SELECT COALESCE(SUM(COALESCE(montant_eur_cents, montant_cents)), 0) AS total
+     FROM revenus WHERE date >= $1 AND date <= $2`,
     [depuis, jusqua],
   );
   return { depensesCents: dep.total, revenusCents: rev.total };
+}
+
+/**
+ * Cout recurrent mensuel porte par un site: la somme de SES PARTS d'abonnements
+ * actifs, ramenees au mois. Un abonnement partage ne compte donc que pour sa
+ * fraction.
+ */
+export async function coutFixeDuSite(siteId) {
+  const [ligne] = await select(
+    `SELECT COALESCE(SUM(
+       CASE WHEN a.periodicite = 'annuel' THEN lien.part_cents / 12.0 ELSE lien.part_cents END
+     ), 0) AS total_cents
+     FROM abonnement_sites lien
+     JOIN abonnements a ON a.id = lien.abonnement_id
+     WHERE lien.site_id = $1 AND a.actif = 1`,
+    [siteId],
+  );
+  return Math.round(ligne.total_cents);
 }
 
 /** Abonnements actifs a echeance dans les n prochains jours. */

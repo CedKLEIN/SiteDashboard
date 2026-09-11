@@ -14,6 +14,7 @@ import {
 import { Bouton, Carte, Champ, EtatVide, Kpi } from "../components/ui";
 import {
   basculerCheck,
+  coutFixeDuSite,
   creerCheck,
   historiqueSite,
   listerChecks,
@@ -50,16 +51,20 @@ export default function DetailSite({
   const [formulaire, setFormulaire] = useState(CHECK_VIDE);
   const [erreur, setErreur] = useState("");
   const [diagnostic, setDiagnostic] = useState(null);
+  const [coutFixe, setCoutFixe] = useState(0);
+  const [uniteCout, setUniteCout] = useState("mois");
 
   const recharger = useCallback(async () => {
-    const [c, h, d] = await Promise.all([
+    const [c, h, d, fixe] = await Promise.all([
       listerChecks(site.id),
       historiqueSite(site.id, 24),
       listerDepenses({ siteId: site.id, limite: 8 }),
+      coutFixeDuSite(site.id),
     ]);
     setChecks(c);
     setHistorique(h);
     setDepenses(d);
+    setCoutFixe(fixe);
   }, [site.id]);
 
   useEffect(() => {
@@ -165,14 +170,15 @@ export default function DetailSite({
         <h1 className="text-lg font-semibold">{site.nom}</h1>
         <span className="text-sm text-texte-doux">{libelleEtat(etat)}</span>
         {site.url && (
-          <button
-            type="button"
+          <Bouton
+            variante="fantome"
+            className="flex items-center gap-1.5 text-xs"
+            title={`Ouvrir ${site.url} dans le navigateur`}
             onClick={() => openUrl(site.url)}
-            className="flex items-center gap-1 text-xs text-texte-doux hover:text-accent"
           >
-            {site.url}
-            <ExternalLink size={12} />
-          </button>
+            <ExternalLink size={13} />
+            Ouvrir le site
+          </Bouton>
         )}
         <Bouton
           variante="fantome"
@@ -196,7 +202,24 @@ export default function DetailSite({
           libelle="Latence moyenne"
           valeur={latenceMoyenne == null ? "—" : `${latenceMoyenne} ms`}
         />
-        <Kpi libelle="Checks actifs" valeur={String(checks.filter((c) => c.actif).length)} />
+        <Kpi
+          libelle={
+            <span className="flex items-center gap-1.5">
+              Cout fixe /
+              <button
+                type="button"
+                onClick={() => setUniteCout(uniteCout === "mois" ? "an" : "mois")}
+                className="rounded border border-bord px-1 text-[10px] uppercase hover:border-accent"
+                title="Basculer entre mensuel et annuel"
+              >
+                {uniteCout}
+              </button>
+            </span>
+          }
+          valeur={formatMontant(uniteCout === "an" ? coutFixe * 12 : coutFixe)}
+          detail="part des abonnements actifs"
+          ton="depense"
+        />
         <Kpi
           libelle="Depenses recentes"
           valeur={formatMontant(depenses.reduce((t, d) => t + (d.part_cents ?? d.montant_cents), 0))}

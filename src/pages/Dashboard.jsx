@@ -84,7 +84,12 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
           <EtatVide>Aucun site actif. Ajoute-en un dans l&apos;onglet « Sites ».</EtatVide>
         </Carte>
       ) : (
-        <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+        // auto-fit plutot qu'un nombre de colonnes fixe: avec deux sites, les
+        // cartes occupent toute la largeur au lieu de laisser un grand vide.
+        <div
+          className="grid gap-3"
+          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
+        >
           {etats.map((site) => (
             <CarteSite key={site.id} site={site} onOuvrir={onOuvrirSite} />
           ))}

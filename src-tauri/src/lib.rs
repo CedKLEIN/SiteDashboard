@@ -263,6 +263,41 @@ async fn inspecter_url(url: String) -> Inspection {
     vue
 }
 
+/// Taux de change a une date donnee, via l'API Frankfurter (donnees BCE).
+///
+/// On demande le taux DU JOUR DE LA TRANSACTION et non le taux courant: un
+/// revenu passe ne doit pas changer de valeur a chaque consultation.
+/// L'API renvoie le dernier jour ouvre si la date tombe un week-end.
+#[tauri::command]
+async fn taux_change(date: String, de: String, vers: String) -> Result<f64, String> {
+    if de == vers {
+        return Ok(1.0);
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(DELAI_CHECK)
+        .user_agent(concat!("SiteDashboard/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let url = format!("https://api.frankfurter.app/{date}?from={de}&to={vers}");
+    let reponse = client.get(&url).send().await.map_err(|e| message_erreur(&e))?;
+
+    if !reponse.status().is_success() {
+        return Err(format!("taux indisponible (HTTP {})", reponse.status().as_u16()));
+    }
+
+    // On passe par le texte plutot que par `Response::json`, qui exige la
+    // feature `json` de reqwest desactivee ici; serde_json est deja present.
+    let texte = reponse.text().await.map_err(|e| message_erreur(&e))?;
+    let corps: serde_json::Value = serde_json::from_str(&texte).map_err(|e| e.to_string())?;
+    corps
+        .get("rates")
+        .and_then(|r| r.get(&vers))
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| format!("aucun taux {de} vers {vers} pour le {date}"))
+}
+
 fn data_uri(type_mime: &str, octets: &[u8]) -> String {
     use base64::Engine;
     format!(
@@ -563,6 +598,12 @@ pub fn run() {
             sql: include_str!("../migrations/007_tarifs.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 8,
+            description: "devises des revenus, preferences et dedoublonnage des revenus",
+            sql: include_str!("../migrations/008_devises_prefs.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -581,6 +622,7 @@ pub fn run() {
             inspecter_url,
             recuperer_favicon,
             importer_image,
+            taux_change,
             tracer
         ])
         .run(tauri::generate_context!())
@@ -667,6 +709,26 @@ mod tests {
         // En https, le certificat fait partie des informations utiles
         let cert = vue.certificat.expect("certificat non lu en https");
         assert!(cert.jours_restants.unwrap() > 0, "certificat deja expire ?");
+    }
+
+    /// Taux de change reel: on verifie qu'on interroge bien la date demandee.
+    #[tokio::test]
+    #[ignore]
+    async fn recupere_un_vrai_taux() {
+        let taux = taux_change("2026-03-02".to_string(), "USD".to_string(), "EUR".to_string())
+            .await
+            .expect("taux indisponible");
+        // Un taux USD/EUR plausible: le test doit echouer si l'API change de
+        // format et qu'on lit un champ qui n'a rien a voir.
+        assert!(taux > 0.5 && taux < 1.5, "taux aberrant: {taux}");
+    }
+
+    #[tokio::test]
+    async fn taux_identique_sans_appel_reseau() {
+        let taux = taux_change("2026-03-02".to_string(), "EUR".to_string(), "EUR".to_string())
+            .await
+            .unwrap();
+        assert_eq!(taux, 1.0);
     }
 
     /// Une redirection doit apparaitre dans la chaine, pas etre avalee.
