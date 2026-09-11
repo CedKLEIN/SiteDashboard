@@ -43,17 +43,36 @@ export default function Sites({ onModification }) {
       return;
     }
 
+    let cree;
     try {
-      await creerSite({ ...formulaire, nom: formulaire.nom.trim() });
+      cree = await creerSite({ ...formulaire, nom: formulaire.nom.trim() });
     } catch {
       // Le seul cas realiste ici est la violation de la contrainte UNIQUE sur le nom
       setErreur("Un site porte deja ce nom.");
       return;
     }
 
+    const url = formulaire.url.trim();
     setFormulaire(FORMULAIRE_VIDE);
     await recharger();
     onModification?.();
+
+    // L'icone est recuperee apres coup, pas pendant la creation: elle demande un
+    // aller-retour reseau, et le site ne doit pas attendre une icone pour
+    // apparaitre. Un echec est sans consequence, le bouton d'import reste la.
+    if (url && cree?.lastInsertId) {
+      setEnCours(cree.lastInsertId);
+      try {
+        const favicon = await invoke("recuperer_favicon", { url }).catch(() => null);
+        if (favicon) {
+          await majFaviconSite(cree.lastInsertId, favicon);
+          await recharger();
+          onModification?.();
+        }
+      } finally {
+        setEnCours(null);
+      }
+    }
   }
 
   async function recupererIcone(site) {

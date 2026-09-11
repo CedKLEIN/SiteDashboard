@@ -226,3 +226,43 @@ describe("abonnementsParSite", () => {
     expect(abonnementsParSite([vps], tarifs, [], "2026-09-01", "2026-09-30").size).toBe(0);
   });
 });
+
+describe("abonnementsParMois filtre par site", () => {
+  const vps = { id: 1, debut: "2026-09-01", periodicite: "mensuel", fin: null };
+  const tarifs = [{ abonnement_id: 1, debut: "2026-09-01", montant_cents: 1080 }];
+  const parts = [
+    { abonnement_id: 1, site_id: 7, part_cents: 540 },
+    { abonnement_id: 1, site_id: 9, part_cents: 540 },
+  ];
+
+  it("ne compte que la part du site demande", () => {
+    const parMois = abonnementsParMois([vps], tarifs, "2026-09-30", { parts, siteId: 7 });
+    expect(parMois.get("2026-09")).toBe(540);
+  });
+
+  it("compte le montant entier sans filtre de site", () => {
+    const parMois = abonnementsParMois([vps], tarifs, "2026-09-30");
+    expect(parMois.get("2026-09")).toBe(1080);
+  });
+
+  it("ignore un abonnement auquel le site n'est pas rattache", () => {
+    const parMois = abonnementsParMois([vps], tarifs, "2026-09-30", { parts, siteId: 42 });
+    expect(parMois.size).toBe(0);
+  });
+
+  it("respecte un partage inegal", () => {
+    const inegal = [
+      { abonnement_id: 1, site_id: 7, part_cents: 864 },
+      { abonnement_id: 1, site_id: 9, part_cents: 216 },
+    ];
+    expect(
+      abonnementsParMois([vps], tarifs, "2026-09-30", { parts: inegal, siteId: 9 }).get("2026-09"),
+    ).toBe(216);
+  });
+
+  it("la somme des parts par site fait le montant total", () => {
+    const pour7 = abonnementsParMois([vps], tarifs, "2026-09-30", { parts, siteId: 7 });
+    const pour9 = abonnementsParMois([vps], tarifs, "2026-09-30", { parts, siteId: 9 });
+    expect(pour7.get("2026-09") + pour9.get("2026-09")).toBe(1080);
+  });
+});

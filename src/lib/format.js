@@ -65,3 +65,23 @@ export function aujourdhuiIso(date = new Date()) {
   return `${date.getFullYear()}-${mois}-${jour}`;
 }
 
+
+/** Tous les mois entre deux dates ISO, bornes incluses: ['2026-01', ...]. */
+export function moisEntre(debutIso, finIso) {
+  const mois = [];
+  let [annee, m] = debutIso.split("-").map(Number);
+  const [anneeFin, mFin] = finIso.split("-").map(Number);
+
+  while (annee < anneeFin || (annee === anneeFin && m <= mFin)) {
+    mois.push(`${String(annee).padStart(4, "0")}-${String(m).padStart(2, "0")}`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      annee += 1;
+    }
+    // Garde-fou: une borne aberrante ne doit pas faire tourner la boucle
+    // indefiniment ni produire un graphe de 20 000 colonnes.
+    if (mois.length > 600) break;
+  }
+  return mois;
+}

@@ -91,24 +91,51 @@ function jusqua(abonnement, aujourdhui) {
   return fin && fin < aujourdhui ? fin : aujourdhui;
 }
 
-/** Prelevements d'abonnements, regroupes par mois ('YYYY-MM' -> centimes). */
-export function abonnementsParMois(abonnements, tarifs, aujourdhui) {
+/**
+ * Prelevements d'abonnements, regroupes par mois ('YYYY-MM' -> centimes).
+ *
+ * Avec `siteId`, on ne compte que la part de ce site: un abonnement partage ne
+ * doit pas apparaitre en entier dans les chiffres d'un seul site.
+ */
+export function abonnementsParMois(
+  abonnements,
+  tarifs,
+  aujourdhui,
+  { parts = [], siteId = null } = {},
+) {
   const parMois = new Map();
 
   for (const abonnement of abonnements) {
     const sesTarifs = tarifs.filter((t) => t.abonnement_id === abonnement.id);
     if (sesTarifs.length === 0) continue;
 
+    const sesParts = parts.filter((p) => p.abonnement_id === abonnement.id);
+    if (siteId && !sesParts.some((p) => p.site_id === siteId)) continue;
+
     for (const date of echeancesPassees(
       abonnement.debut,
       abonnement.periodicite,
       jusqua(abonnement, aujourdhui),
     )) {
+      const total = tarifApplicable(sesTarifs, date);
+      const montant = siteId ? partDuSite(sesParts, total, siteId) : total;
+      if (montant === 0) continue;
+
       const mois = date.slice(0, 7);
-      parMois.set(mois, (parMois.get(mois) ?? 0) + tarifApplicable(sesTarifs, date));
+      parMois.set(mois, (parMois.get(mois) ?? 0) + montant);
     }
   }
   return parMois;
+}
+
+/** Part d'un site dans une echeance, les parts etant reproportionnees au tarif. */
+function partDuSite(sesParts, montant, siteId) {
+  const index = sesParts.findIndex((p) => p.site_id === siteId);
+  if (index === -1) return 0;
+  return redistribuer(
+    sesParts.map((p) => p.part_cents),
+    montant,
+  )[index];
 }
 
 /**

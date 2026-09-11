@@ -133,6 +133,27 @@ consultation : un don de 50 $ reçu en mars ne vaut pas ce qu'il vaudrait aujour
 Tous les cumuls, graphiques et parts par site sont en **euros**, la devise de référence —
 additionner des euros et des dollars donnerait un nombre qui ne veut rien dire.
 
+## Le tableau de bord
+
+Deux filtres, en boutons plutôt qu'en sélecteurs de dates — on consulte un tableau de bord
+pour répondre à « où j'en suis cette année », pas pour interroger une plage arbitraire :
+
+- **période** : ce mois, cette année (défaut), 12 derniers mois, année dernière, depuis
+  toujours. « Depuis toujours » démarre à la première écriture connue, sinon le graphe
+  afficherait des siècles de mois vides ;
+- **site** : tous, ou un seul. Filtré sur un site, tout ne compte que **sa part** — une
+  dépense partagée ne doit pas apparaître en entier dans les chiffres d'un seul site.
+
+Deux graphes, qui ne disent pas la même chose :
+
+- **cumul sur la période** : deux courbes qui ne peuvent que monter. Ce qui compte est
+  l'écart entre elles et le moment où les revenus rattrapent les dépenses ;
+- **mois par mois** : dépenses ponctuelles et abonnements empilés, revenus à côté.
+
+Le calcul des cumuls vit dans [`src/lib/series.js`](src/lib/series.js), pas dans le
+composant : accumuler pendant le rendu donnerait des totaux différents à chaque re-rendu,
+et c'est le genre d'erreur qui produit des chiffres faux sans rien casser visiblement.
+
 ## Les abonnements dans les graphes
 
 Les abonnements ne vivent pas dans la table `depenses` : ce sont des prélèvements récurrents
@@ -226,8 +247,10 @@ problème de contenu là où il n'y a pas de fichier.
 
 ### Icônes des sites
 
-Le bouton « Icône » va chercher le `<link rel="icon">` de la page, et retombe sur
-`/favicon.ico`. Les octets sont stockés en data URI dans `sites.favicon` : une URL distante
+L'icône est récupérée **automatiquement à la création** d'un site qui a une URL — après coup
+et non pendant, pour que le site n'attende pas un aller-retour réseau pour apparaître. Un
+échec est sans conséquence : le bouton « Icône » relance la recherche
+(`<link rel="icon">` de la page, sinon `/favicon.ico`). Les octets sont stockés en data URI dans `sites.favicon` : une URL distante
 afficherait une image cassée pendant une panne, c'est-à-dire au moment précis où on regarde
 le tableau de bord. Si la récupération échoue, le bouton à côté importe une image locale.
 

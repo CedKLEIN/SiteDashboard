@@ -282,6 +282,55 @@ export function listerPartsAbonnements() {
   return select("SELECT * FROM abonnement_sites ORDER BY abonnement_id, site_id");
 }
 
+/**
+ * Depenses et revenus par mois sur une periode, filtrables par site.
+ *
+ * Quand un site est demande, on somme les PARTS et non les montants: une
+ * depense partagee ne doit compter que pour la fraction du site.
+ */
+export function seriesParMois(depuis, jusqua, siteId = null) {
+  if (siteId) {
+    return select(
+      `SELECT mois, SUM(depense) AS depense_cents, SUM(revenu) AS revenu_cents FROM (
+         SELECT substr(d.date, 1, 7) AS mois, ds.part_cents AS depense, 0 AS revenu
+           FROM depenses d JOIN depense_sites ds ON ds.depense_id = d.id
+          WHERE ds.site_id = $1 AND d.date >= $2 AND d.date <= $3
+         UNION ALL
+         SELECT substr(r.date, 1, 7) AS mois, 0 AS depense, rs.part_cents AS revenu
+           FROM revenus r JOIN revenu_sites rs ON rs.revenu_id = r.id
+          WHERE rs.site_id = $1 AND r.date >= $2 AND r.date <= $3
+       )
+       GROUP BY mois ORDER BY mois`,
+      [siteId, depuis, jusqua],
+    );
+  }
+
+  return select(
+    `SELECT mois, SUM(depense) AS depense_cents, SUM(revenu) AS revenu_cents FROM (
+       SELECT substr(date, 1, 7) AS mois, montant_cents AS depense, 0 AS revenu
+         FROM depenses WHERE date >= $1 AND date <= $2
+       UNION ALL
+       SELECT substr(date, 1, 7) AS mois, 0 AS depense,
+              COALESCE(montant_eur_cents, montant_cents) AS revenu
+         FROM revenus WHERE date >= $1 AND date <= $2
+     )
+     GROUP BY mois ORDER BY mois`,
+    [depuis, jusqua],
+  );
+}
+
+/** Premiere date connue, toutes ecritures confondues: borne de "depuis toujours". */
+export async function premiereDate() {
+  const [ligne] = await select(
+    `SELECT MIN(date) AS debut FROM (
+       SELECT MIN(date) AS date FROM depenses
+       UNION ALL SELECT MIN(date) FROM revenus
+       UNION ALL SELECT MIN(debut) FROM abonnements
+     ) WHERE date IS NOT NULL`,
+  );
+  return ligne?.debut ?? null;
+}
+
 /** Tous les tarifs, a regrouper par abonnement pour calculer les cumuls. */
 export function listerTarifs() {
   return select("SELECT * FROM abonnement_tarifs ORDER BY abonnement_id, debut, id");
