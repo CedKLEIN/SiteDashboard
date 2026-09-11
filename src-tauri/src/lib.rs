@@ -117,85 +117,150 @@ fn message_echec(statut_ok: bool, statut: u16, erreur_contenu: Option<String>) -
     erreur_contenu
 }
 
-const TAILLE_EXTRAIT: usize = 1200;
+const TAILLE_EXTRAIT: usize = 4000;
 const TAILLE_MAX_ICONE: usize = 200 * 1024;
+const MAX_REDIRECTIONS: usize = 10;
 
 #[derive(serde::Serialize, Default)]
 pub struct Inspection {
+    url_demandee: String,
+    methode: String,
+    entetes_requete: Vec<(String, String)>,
+    /// Chaque saut de redirection: "301 https://a -> https://b"
+    redirections: Vec<String>,
     statut: Option<u16>,
+    statut_texte: Option<String>,
+    version_http: Option<String>,
+    entetes_reponse: Vec<(String, String)>,
     content_type: Option<String>,
     taille: Option<usize>,
+    duree_ms: u64,
     url_finale: Option<String>,
     extrait: Option<String>,
+    tronque: bool,
+    certificat: Option<ResultatCertificat>,
     erreur: Option<String>,
 }
 
-/// Rejoue une URL et renvoie de quoi comprendre POURQUOI un check echoue.
+/// Rejoue une URL et renvoie TOUT ce qui aide a comprendre un echec:
+/// requete envoyee, redirections suivies, reponse complete et certificat.
 ///
 /// Un "fragment absent" ne dit pas si la page est vide, si c'est une erreur
-/// deguisee en 200, ou si un SPA a renvoye son index.html pour une URL inconnue
-/// - ce dernier cas etant le plus frequent et le plus deroutant. Le
-/// content-type et le debut du corps tranchent immediatement.
+/// deguisee en 200, ou si un SPA a renvoye son index.html pour une URL inconnue.
+/// Les en-tetes et le debut du corps tranchent immediatement.
 #[tauri::command]
 async fn inspecter_url(url: String) -> Inspection {
+    let debut = Instant::now();
+    let agent = concat!("SiteDashboard/", env!("CARGO_PKG_VERSION"));
+
+    let mut vue = Inspection {
+        url_demandee: url.clone(),
+        methode: "GET".to_string(),
+        entetes_requete: vec![
+            ("user-agent".to_string(), agent.to_string()),
+            ("accept".to_string(), "*/*".to_string()),
+        ],
+        ..Default::default()
+    };
+
+    // Redirections suivies a la main: reqwest les avale silencieusement, alors
+    // qu'un saut inattendu (http -> https, ajout de www) est souvent l'explication.
     let client = match reqwest::Client::builder()
         .timeout(DELAI_CHECK)
-        .user_agent(concat!("SiteDashboard/", env!("CARGO_PKG_VERSION")))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent(agent)
         .build()
     {
         Ok(client) => client,
         Err(e) => {
-            return Inspection {
-                erreur: Some(e.to_string()),
-                ..Default::default()
-            }
+            vue.erreur = Some(e.to_string());
+            return vue;
         }
     };
 
-    let reponse = match client.get(&url).send().await {
-        Ok(reponse) => reponse,
-        Err(e) => {
-            return Inspection {
-                erreur: Some(message_erreur(&e)),
-                ..Default::default()
+    let mut courante = url.clone();
+    let reponse = loop {
+        let reponse = match client.get(&courante).header("accept", "*/*").send().await {
+            Ok(reponse) => reponse,
+            Err(e) => {
+                vue.erreur = Some(message_erreur(&e));
+                vue.duree_ms = debut.elapsed().as_millis() as u64;
+                return vue;
             }
+        };
+
+        if !reponse.status().is_redirection() {
+            break reponse;
         }
+
+        let cible = reponse
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string);
+
+        let Some(cible) = cible else {
+            break reponse;
+        };
+
+        let absolue = url::Url::parse(&courante)
+            .ok()
+            .and_then(|base| base.join(&cible).ok())
+            .map(|u| u.to_string())
+            .unwrap_or(cible);
+
+        vue.redirections
+            .push(format!("{} {} -> {}", reponse.status().as_u16(), courante, absolue));
+
+        if vue.redirections.len() >= MAX_REDIRECTIONS {
+            vue.erreur = Some(format!("plus de {MAX_REDIRECTIONS} redirections"));
+            vue.duree_ms = debut.elapsed().as_millis() as u64;
+            return vue;
+        }
+        courante = absolue;
     };
 
-    let statut = reponse.status().as_u16();
-    let content_type = reponse
+    let statut = reponse.status();
+    vue.statut = Some(statut.as_u16());
+    vue.statut_texte = statut.canonical_reason().map(str::to_string);
+    vue.version_http = Some(format!("{:?}", reponse.version()));
+    vue.url_finale = Some(reponse.url().to_string());
+    vue.entetes_reponse = reponse
+        .headers()
+        .iter()
+        .map(|(nom, valeur)| {
+            (
+                nom.to_string(),
+                valeur.to_str().unwrap_or("(valeur non textuelle)").to_string(),
+            )
+        })
+        .collect();
+    vue.content_type = reponse
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
         .map(str::to_string);
-    // Apres redirections: si le serveur a renvoye ailleurs, c'est souvent l'explication
-    let url_finale = Some(reponse.url().to_string());
 
-    let corps = match reponse.text().await {
-        Ok(corps) => corps,
-        Err(e) => {
-            return Inspection {
-                statut: Some(statut),
-                content_type,
-                url_finale,
-                erreur: Some(message_erreur(&e)),
-                ..Default::default()
-            }
-        }
-    };
-
-    // On tronque sur une frontiere de caractere: coder en dur un index d'octet
-    // couperait un caractere accentue en deux et produirait du charabia.
-    let extrait: String = corps.chars().take(TAILLE_EXTRAIT).collect();
-
-    Inspection {
-        statut: Some(statut),
-        content_type,
-        taille: Some(corps.len()),
-        url_finale,
-        extrait: Some(extrait),
-        erreur: None,
+    // Le certificat fait partie des "infos utiles": inutile d'ouvrir un second
+    // ecran pour savoir que la panne vient d'une expiration.
+    if courante.starts_with("https://") {
+        vue.certificat = lire_certificat(&courante).await.ok();
     }
+
+    match reponse.text().await {
+        Ok(corps) => {
+            // On tronque sur une frontiere de caractere: un index d'octet
+            // couperait un caractere accentue en deux et produirait du charabia.
+            let extrait: String = corps.chars().take(TAILLE_EXTRAIT).collect();
+            vue.tronque = extrait.len() < corps.len();
+            vue.taille = Some(corps.len());
+            vue.extrait = Some(extrait);
+        }
+        Err(e) => vue.erreur = Some(message_erreur(&e)),
+    }
+
+    vue.duree_ms = debut.elapsed().as_millis() as u64;
+    vue
 }
 
 fn data_uri(type_mime: &str, octets: &[u8]) -> String {
@@ -368,7 +433,7 @@ impl rustls::client::danger::ServerCertVerifier for InspectionSansValidation {
     }
 }
 
-#[derive(serde::Serialize, Default)]
+#[derive(serde::Serialize, Default, Clone)]
 pub struct ResultatCertificat {
     /// Negatif si le certificat est deja expire.
     jours_restants: Option<i64>,
@@ -497,6 +562,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations(DB_URL, migrations)
@@ -579,9 +645,34 @@ mod tests {
     #[ignore]
     async fn inspecte_une_vraie_url() {
         let vue = inspecter_url("https://example.com/".to_string()).await;
+
         assert_eq!(vue.statut, Some(200), "erreur: {:?}", vue.erreur);
+        assert_eq!(vue.methode, "GET");
         assert!(vue.content_type.unwrap().contains("html"));
         assert!(vue.extrait.unwrap().contains("<"));
+
+        // Tout ce qui doit se retrouver dans le rapport copie
+        assert!(!vue.entetes_requete.is_empty(), "en-tetes de requete absents");
+        assert!(!vue.entetes_reponse.is_empty(), "en-tetes de reponse absents");
+        assert!(vue.statut_texte.is_some(), "libelle de statut absent");
+        assert!(vue.version_http.is_some(), "version HTTP absente");
+        assert!(vue.url_finale.is_some(), "URL finale absente");
+
+        // En https, le certificat fait partie des informations utiles
+        let cert = vue.certificat.expect("certificat non lu en https");
+        assert!(cert.jours_restants.unwrap() > 0, "certificat deja expire ?");
+    }
+
+    /// Une redirection doit apparaitre dans la chaine, pas etre avalee.
+    #[tokio::test]
+    #[ignore]
+    async fn trace_les_redirections() {
+        let vue = inspecter_url("http://github.com/".to_string()).await;
+        assert!(
+            !vue.redirections.is_empty(),
+            "aucune redirection tracee alors que http doit rediriger vers https"
+        );
+        assert!(vue.url_finale.unwrap().starts_with("https://"));
     }
 
     /// Test reseau: ignore par defaut pour que `cargo test` reste hors ligne.

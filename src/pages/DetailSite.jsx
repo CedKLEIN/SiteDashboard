@@ -303,16 +303,14 @@ export default function DetailSite({
                     {check.derniere_latence == null ? "—" : `${check.derniere_latence} ms`}
                   </td>
                   <td className="py-2 pl-2 text-right whitespace-nowrap">
-                    {check.type !== "tls" && (
-                      <Bouton
-                        variante="fantome"
-                        className="mr-1 px-1.5 py-1"
-                        title="Voir ce que le serveur renvoie"
-                        onClick={() => inspecter(check)}
-                      >
-                        <Search size={14} />
-                      </Bouton>
-                    )}
+                    <Bouton
+                      variante="fantome"
+                      className="mr-1 px-1.5 py-1"
+                      title="Voir la requete, la reponse et le certificat"
+                      onClick={() => inspecter(check)}
+                    >
+                      <Search size={14} />
+                    </Bouton>
                     <Bouton
                       variante="danger"
                       className="px-1.5 py-1"
@@ -333,6 +331,7 @@ export default function DetailSite({
             <Diagnostic
               check={diagnostic.check}
               inspection={diagnostic.inspection}
+              site={site}
               enCours={diagnostic.enCours}
               onFermer={() => setDiagnostic(null)}
             />

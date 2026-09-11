@@ -127,8 +127,20 @@ toujours par le formulaire en dessous.
 
 ### Diagnostiquer un check qui échoue
 
-La loupe à côté d'un check rejoue l'URL et montre **ce que le serveur renvoie
-vraiment** : statut, `content-type`, taille, redirection éventuelle et début du corps.
+La loupe à côté d'un check rejoue l'URL et montre **tout ce qui explique un échec** :
+
+- la **requête** envoyée (méthode, URL, en-têtes) ;
+- les **redirections** suivies, saut par saut — reqwest les avale silencieusement, alors
+  qu'un saut inattendu (`http` → `https`, ajout de `www`) est souvent l'explication ;
+- la **réponse** : statut et libellé, version HTTP, tous les en-têtes, taille, durée ;
+- le **certificat TLS** quand l'URL est en https — inutile d'ouvrir un second écran pour
+  savoir que la panne vient d'une expiration ;
+- le **corps** de la réponse (4 000 premiers caractères, troncature signalée).
+
+Le bouton **« Copier le rapport »** met tout ça dans le presse-papiers en texte brut, prêt à
+coller dans un ticket ou un message. Le format est plat — pas de tableau, pas de couleur,
+rien qui se perde à la copie — et l'ordre suit le sens du débogage : ce qu'on a demandé, où
+on a été redirigé, ce qu'on a reçu.
 
 Un « fragment absent » ne dit pas si la page est vide, si c'est une erreur déguisée en 200,
 ou si un SPA a servi son `index.html` pour une URL inconnue. Le `content-type` tranche en
@@ -200,9 +212,9 @@ Pour sauvegarder : copier ce fichier.
   jointure cassée ou une colonne renommée fait donc échouer les tests.
 
 Côté Rust, `cargo test` couvre le parsing des attributs HTML et la priorité des messages
-d'échec. Deux tests réseau sont marqués `#[ignore]` pour que la suite reste hors ligne ;
-`cargo test -- --ignored` les lance et vérifie la récupération réelle d'une icône et
-l'inspection d'une URL.
+d'échec. Trois tests réseau sont marqués `#[ignore]` pour que la suite reste hors ligne ;
+`cargo test -- --ignored` les lance et vérifie la récupération réelle d'une icône,
+l'inspection complète d'une URL et le suivi des redirections.
 
 Ce qui n'est **pas** couvert : le parcours à la souris dans l'application.
 
