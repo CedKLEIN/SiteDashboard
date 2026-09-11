@@ -86,6 +86,34 @@ export function majFaviconFournisseur(id, favicon) {
   return execute("UPDATE fournisseurs SET favicon = $1 WHERE id = $2", [favicon, id]);
 }
 
+/**
+ * Verifie que tous les sites vises existent encore.
+ *
+ * Sans ce controle, l'INSERT parent passe et c'est le rattachement qui echoue
+ * sur la cle etrangere: on se retrouve avec une ligne orpheline, rattachee a
+ * aucun site, et un message SQLite brut ("code 787") incomprehensible.
+ * Ces ecritures ne sont pas dans une transaction - le pool de connexions rend
+ * un BEGIN/COMMIT manuel peu fiable - donc on valide AVANT d'ecrire.
+ */
+async function verifierSitesExistants(siteIds) {
+  if (siteIds.length === 0) return;
+
+  const lignes = await select(
+    `SELECT id FROM sites WHERE id IN (${siteIds.map((_, i) => `$${i + 1}`).join(", ")})`,
+    siteIds,
+  );
+  const connus = new Set(lignes.map((l) => l.id));
+  const inconnus = siteIds.filter((id) => !connus.has(id));
+
+  if (inconnus.length > 0) {
+    throw new Error(
+      inconnus.length === siteIds.length
+        ? "Aucun des sites selectionnes n'existe encore : recree-les dans l'onglet Sites."
+        : `${inconnus.length} site(s) selectionne(s) n'existent plus : reselectionne les sites.`,
+    );
+  }
+}
+
 /* ------------------------------------------------------------- depenses */
 
 /** Noms des sites concernes, en une colonne, pour l'affichage en liste. */
@@ -132,8 +160,9 @@ export async function ajouterDepense({
   source = "manuel",
   refExterne = null,
 }) {
-  // Les parts sont calculees et validees AVANT d'inserer la depense: sinon une
-  // somme incoherente laisserait une ligne orpheline, rattachee a aucun site.
+  // Tout est valide AVANT d'inserer la depense: une somme incoherente ou un
+  // site disparu laisserait sinon une ligne orpheline, rattachee a aucun site.
+  await verifierSitesExistants(siteIds);
   const parts = partsPourSites(montantCents, siteIds, partsCents);
 
   const res = await execute(
@@ -200,6 +229,7 @@ export async function ajouterRevenu({
   // tous les cumuls par site, additionner des dollars et des euros n'aurait
   // aucun sens.
   const montantRef = montantEurCents ?? montantCents;
+  await verifierSitesExistants(siteIds);
   const parts = partsPourSites(montantRef, siteIds, partsCents);
 
   const res = await execute(
@@ -332,6 +362,7 @@ export async function majAbonnement(
   const montantCents = courant?.montant_cents ?? 0;
 
   // Valide avant d'ecrire: une repartition refusee ne doit rien laisser a moitie fait
+  await verifierSitesExistants(siteIds);
   const parts = partsPourSites(montantCents, siteIds, partsCents);
 
   await execute(
@@ -370,6 +401,7 @@ export async function ajouterAbonnement({
   debut,
   prochaineEcheance = null,
 }) {
+  await verifierSitesExistants(siteIds);
   const parts = partsPourSites(montantCents, siteIds, partsCents);
 
   const res = await execute(

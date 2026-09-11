@@ -577,3 +577,76 @@ describe("edition d'un abonnement", () => {
     expect(parts.reduce((t, p) => t + p.part_cents, 0)).toBe(1000);
   });
 });
+
+describe("site disparu", () => {
+  // Cas rencontre: les sites avaient ete supprimes, le formulaire gardait leurs
+  // identifiants, et l'insertion echouait sur "code 787 FOREIGN KEY constraint
+  // failed" - un message qui ne dit pas quoi corriger.
+  it("refuse une depense visant un site inexistant, avec un message clair", async () => {
+    await expect(
+      ajouterDepense({
+        siteIds: [4242],
+        date: "2026-09-11",
+        montantCents: 1100,
+        libelle: "Ionos",
+      }),
+    ).rejects.toThrow(/n'existe encore/);
+  });
+
+  it("n'ecrit aucune depense orpheline dans ce cas", async () => {
+    await expect(
+      ajouterDepense({
+        siteIds: [4242],
+        date: "2026-09-11",
+        montantCents: 1100,
+        libelle: "Ionos",
+      }),
+    ).rejects.toThrow();
+
+    // L'INSERT parent ne doit pas avoir eu lieu: ces ecritures ne sont pas
+    // transactionnelles, la validation doit donc preceder toute ecriture.
+    expect(etat.base.prepare("SELECT COUNT(*) AS n FROM depenses").get().n).toBe(0);
+  });
+
+  it("signale une selection partiellement obsolete", async () => {
+    const [denivio] = await creerDeuxSites();
+    await expect(
+      ajouterDepense({
+        siteIds: [denivio, 4242],
+        date: "2026-09-11",
+        montantCents: 1100,
+        libelle: "Ionos",
+      }),
+    ).rejects.toThrow(/n'existent plus/);
+  });
+
+  it("protege aussi les revenus et les abonnements", async () => {
+    await expect(
+      ajouterRevenu({ siteIds: [4242], date: "2026-09-11", montantCents: 500 }),
+    ).rejects.toThrow(/n'existe encore/);
+
+    await expect(
+      ajouterAbonnement({
+        siteIds: [4242],
+        libelle: "VPS",
+        montantCents: 500,
+        debut: "2026-09-11",
+      }),
+    ).rejects.toThrow(/n'existe encore/);
+
+    expect(etat.base.prepare("SELECT COUNT(*) AS n FROM revenus").get().n).toBe(0);
+    expect(etat.base.prepare("SELECT COUNT(*) AS n FROM abonnements").get().n).toBe(0);
+  });
+
+  it("laisse passer une depense transverse, sans aucun site", async () => {
+    // Zero site est un cas legitime (cout transverse), a ne pas confondre avec
+    // un site disparu.
+    await ajouterAbonnement({
+      siteIds: [],
+      libelle: "Transverse",
+      montantCents: 500,
+      debut: "2026-09-11",
+    });
+    expect(etat.base.prepare("SELECT COUNT(*) AS n FROM abonnements").get().n).toBe(1);
+  });
+});

@@ -48,6 +48,12 @@ export default function Depenses({ onModification }) {
     setSites(s);
     setFournisseurs(f);
     setDepenses(d);
+    // Un site supprime entre-temps laisserait un identifiant invisible dans la
+    // selection: on ne peut pas deselectionner une pastille qui n'existe plus.
+    setFormulaire((f) => ({
+      ...f,
+      siteIds: f.siteIds.filter((id) => s.some((site) => site.id === id)),
+    }));
   }
 
   useEffect(() => {

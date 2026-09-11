@@ -25,6 +25,12 @@ export default function Revenus({ onModification }) {
     const [s, r] = await Promise.all([listerSites(), listerRevenus({})]);
     setSites(s);
     setRevenus(r);
+    // Un site supprime entre-temps laisserait un identifiant invisible dans la
+    // selection: on ne peut pas deselectionner une pastille qui n'existe plus.
+    setFormulaire((f) => ({
+      ...f,
+      siteIds: f.siteIds.filter((id) => s.some((site) => site.id === id)),
+    }));
   }
 
   useEffect(() => {
