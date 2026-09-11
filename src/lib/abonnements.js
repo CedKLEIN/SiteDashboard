@@ -1,3 +1,5 @@
+import { redistribuer } from "./repartition";
+
 /**
  * Calculs sur les abonnements: echeances passees, tarif en vigueur, cumul paye.
  *
@@ -77,4 +79,68 @@ export function prochaineEcheance(debut, periodicite, aujourdhui) {
   const pas = PAS[periodicite] ?? PAS.mensuel;
   if (passees.length === 0) return debut;
   return ajouterMois(debut, passees.length * pas);
+}
+
+/**
+ * Borne haute des prelevements d'un abonnement: sa date de fin s'il est resilie,
+ * sinon aujourd'hui. Le drapeau `actif` ne suffit pas: il dit QUE c'est arrete,
+ * pas QUAND, et l'exclure ferait disparaitre ses paiements passes du cumul.
+ */
+function jusqua(abonnement, aujourdhui) {
+  const fin = abonnement.fin;
+  return fin && fin < aujourdhui ? fin : aujourdhui;
+}
+
+/** Prelevements d'abonnements, regroupes par mois ('YYYY-MM' -> centimes). */
+export function abonnementsParMois(abonnements, tarifs, aujourdhui) {
+  const parMois = new Map();
+
+  for (const abonnement of abonnements) {
+    const sesTarifs = tarifs.filter((t) => t.abonnement_id === abonnement.id);
+    if (sesTarifs.length === 0) continue;
+
+    for (const date of echeancesPassees(
+      abonnement.debut,
+      abonnement.periodicite,
+      jusqua(abonnement, aujourdhui),
+    )) {
+      const mois = date.slice(0, 7);
+      parMois.set(mois, (parMois.get(mois) ?? 0) + tarifApplicable(sesTarifs, date));
+    }
+  }
+  return parMois;
+}
+
+/**
+ * Prelevements d'abonnements imputes a chaque site sur une periode
+ * ('siteId' -> centimes). Un abonnement partage ne compte que pour la fraction
+ * de chaque site, et les parts sont reproportionnees au tarif de l'echeance.
+ */
+export function abonnementsParSite(abonnements, tarifs, parts, depuis, jusquA) {
+  const parSite = new Map();
+
+  for (const abonnement of abonnements) {
+    const sesParts = parts.filter((p) => p.abonnement_id === abonnement.id);
+    const sesTarifs = tarifs.filter((t) => t.abonnement_id === abonnement.id);
+    // Aucun site rattache: cout transverse, imputable a personne
+    if (sesParts.length === 0 || sesTarifs.length === 0) continue;
+
+    const echeances = echeancesPassees(
+      abonnement.debut,
+      abonnement.periodicite,
+      jusqua(abonnement, jusquA),
+    ).filter((date) => date >= depuis && date <= jusquA);
+
+    for (const date of echeances) {
+      const montant = tarifApplicable(sesTarifs, date);
+      const repartis = redistribuer(
+        sesParts.map((p) => p.part_cents),
+        montant,
+      );
+      sesParts.forEach((p, i) => {
+        parSite.set(p.site_id, (parSite.get(p.site_id) ?? 0) + repartis[i]);
+      });
+    }
+  }
+  return parSite;
 }

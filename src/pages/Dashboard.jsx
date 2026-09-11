@@ -16,11 +16,18 @@ import {
   echeancesProches,
   etatsDesSites,
   listerAbonnements,
+  listerPartsAbonnements,
+  listerTarifs,
   totauxParMois,
   totauxPeriode,
 } from "../lib/queries";
 import { derniersMois, formatMontant, moisLisible } from "../lib/format";
-import { coutMensuelEquivalent } from "../lib/abonnements";
+import {
+  abonnementsParMois,
+  abonnementsParSite,
+  coutMensuelEquivalent,
+} from "../lib/abonnements";
+import { aujourdhuiIso } from "../lib/format";
 
 const NB_MOIS = 12;
 
@@ -39,15 +46,19 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
 
     async function charger() {
       const [debut, fin] = bornesMoisCourant();
-      const [parMois, mois, parSite, abonnements, echeances, etats] = await Promise.all([
-        totauxParMois(NB_MOIS),
-        totauxPeriode(debut, fin),
-        depensesParSite(debut, fin),
-        listerAbonnements(),
-        echeancesProches(45),
-        etatsDesSites(),
-      ]);
-      if (!annule) setDonnees({ parMois, mois, parSite, abonnements, echeances, etats });
+      const [parMois, mois, parSite, abonnements, tarifs, parts, echeances, etats] =
+        await Promise.all([
+          totauxParMois(NB_MOIS),
+          totauxPeriode(debut, fin),
+          depensesParSite(debut, fin),
+          listerAbonnements(),
+          listerTarifs(),
+          listerPartsAbonnements(),
+          echeancesProches(45),
+          etatsDesSites(),
+        ]);
+      if (!annule)
+        setDonnees({ parMois, mois, parSite, abonnements, tarifs, parts, echeances, etats });
     }
 
     charger();
@@ -58,13 +69,23 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
 
   if (!donnees) return <EtatVide>Chargement...</EtatVide>;
 
-  const { parMois, mois, parSite, abonnements, echeances, etats } = donnees;
+  const { parMois, mois, parSite, abonnements, tarifs, parts, echeances, etats } =
+    donnees;
+  const aujourdhui = aujourdhuiIso();
+  const [debutMois, finMois] = bornesMoisCourant();
+
+  // Les abonnements ne vivent pas dans la table depenses: sans cet apport, un an
+  // de VPS paye n'apparaitrait nulle part dans les graphes.
+  const aboParMois = abonnementsParMois(abonnements, tarifs, aujourdhui);
+  const aboParSite = abonnementsParSite(abonnements, tarifs, parts, debutMois, finMois);
+  const aboCeMoisCents = [...aboParSite.values()].reduce((t, v) => t + v, 0);
 
   // On repart des 12 derniers mois pour afficher aussi les mois sans ecriture
   const parMoisIndexe = new Map(parMois.map((l) => [l.mois, l]));
   const serie = derniersMois(NB_MOIS).map((m) => ({
     mois: moisLisible(m),
     depenses: (parMoisIndexe.get(m)?.depense_cents ?? 0) / 100,
+    abonnements: (aboParMois.get(m) ?? 0) / 100,
     revenus: (parMoisIndexe.get(m)?.revenu_cents ?? 0) / 100,
   }));
 
@@ -72,8 +93,13 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
     .filter((a) => a.actif)
     .reduce((total, a) => total + coutMensuelEquivalent(a), 0);
 
-  const margeCents = mois.revenusCents - mois.depensesCents;
-  const sitesAvecDepenses = parSite.filter((s) => s.total_cents > 0);
+  const margeCents = mois.revenusCents - (mois.depensesCents + aboCeMoisCents);
+  // Meme apport cote repartition par site, sinon un site dont le seul cout est
+  // un abonnement partage n'apparaitrait pas du tout.
+  const sitesAvecDepenses = parSite
+    .map((s) => ({ ...s, total_cents: s.total_cents + (aboParSite.get(s.id) ?? 0) }))
+    .filter((s) => s.total_cents > 0)
+    .sort((a, b) => b.total_cents - a.total_cents);
 
   return (
     <div className="flex flex-col gap-5">
@@ -99,7 +125,8 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Kpi
           libelle="Depenses ce mois"
-          valeur={formatMontant(mois.depensesCents)}
+          valeur={formatMontant(mois.depensesCents + aboCeMoisCents)}
+          detail={`dont ${formatMontant(aboCeMoisCents)} d'abonnements`}
           ton="depense"
         />
         <Kpi
@@ -143,7 +170,19 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
                 formatter={(v, nom) => [`${v.toFixed(2)} €`, nom]}
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Bar dataKey="depenses" name="Depenses" fill="#f97362" radius={[4, 4, 0, 0]} />
+              <Bar
+                dataKey="depenses"
+                name="Depenses ponctuelles"
+                stackId="depenses"
+                fill="#f97362"
+              />
+              <Bar
+                dataKey="abonnements"
+                name="Abonnements"
+                stackId="depenses"
+                fill="#c2410c"
+                radius={[4, 4, 0, 0]}
+              />
               <Bar dataKey="revenus" name="Revenus" fill="#34d399" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>

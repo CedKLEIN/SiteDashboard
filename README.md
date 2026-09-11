@@ -95,6 +95,10 @@ pas un montant unique. Un nom de domaine à 6 € la première année puis 11 �
 | 2024-03-01 | 6,00 € |
 | 2025-03-01 | 11,00 € |
 
+Un abonnement résilié porte une **date de fin** : sans elle, soit on le ferait courir
+indéfiniment et on inventerait des prélèvements, soit on l'exclurait et ses paiements passés
+disparaîtraient du cumul. Le drapeau « actif » dit *que* c'est arrêté, pas *quand*.
+
 Le cumul payé additionne chaque échéance **au tarif qui s'appliquait ce jour-là** — ici
 6 + 11 + 11 = 28,00 € au bout de trois ans. Écraser le montant aurait fait disparaître la
 première année et rendu tout cumul faux.
@@ -128,6 +132,20 @@ consultation : un don de 50 $ reçu en mars ne vaut pas ce qu'il vaudrait aujour
 
 Tous les cumuls, graphiques et parts par site sont en **euros**, la devise de référence —
 additionner des euros et des dollars donnerait un nombre qui ne veut rien dire.
+
+## Les abonnements dans les graphes
+
+Les abonnements ne vivent pas dans la table `depenses` : ce sont des prélèvements récurrents
+déduits d'une date de début, d'une périodicité et d'un historique de tarifs. Le tableau de
+bord les **recalcule à la volée** et les ajoute aux dépenses ponctuelles, en barres empilées
+pour que la distinction reste lisible.
+
+Ils ne sont pas matérialisés en lignes de dépenses : ce serait une seconde source de vérité
+à resynchroniser à chaque correction de tarif ou de date, avec un risque de doublons.
+
+Un piège que les tests verrouillent : un abonnement prélevé le 29 ne compte **pas** pour le
+mois en cours tant que le 29 n'est pas passé. Compter le mois courant d'office gonflerait le
+total d'une échéance.
 
 ## Supervision
 

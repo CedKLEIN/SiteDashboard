@@ -277,6 +277,11 @@ export function listerAbonnements() {
   );
 }
 
+/** Toutes les parts d'abonnements, pour imputer les prelevements aux sites. */
+export function listerPartsAbonnements() {
+  return select("SELECT * FROM abonnement_sites ORDER BY abonnement_id, site_id");
+}
+
 /** Tous les tarifs, a regrouper par abonnement pour calculer les cumuls. */
 export function listerTarifs() {
   return select("SELECT * FROM abonnement_tarifs ORDER BY abonnement_id, debut, id");

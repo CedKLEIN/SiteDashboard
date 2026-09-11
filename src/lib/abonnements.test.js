@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  abonnementsParMois,
+  abonnementsParSite,
   ajouterMois,
   coutMensuelEquivalent,
   echeancesPassees,
@@ -133,5 +135,94 @@ describe("prochaineEcheance", () => {
 
   it("renvoie le debut quand aucun paiement n'a encore eu lieu", () => {
     expect(prochaineEcheance("2027-01-01", "mensuel", "2026-09-11")).toBe("2027-01-01");
+  });
+});
+
+describe("abonnementsParMois", () => {
+  // Cas reel: un VPS mensuel paye depuis juillet 2025, invisible jusqu'ici dans
+  // le graphe des depenses parce qu'il ne vit pas dans la table depenses.
+  const vps = { id: 1, debut: "2025-07-29", periodicite: "mensuel", fin: null };
+  const tarifs = [{ abonnement_id: 1, debut: "2025-07-29", montant_cents: 1080 }];
+
+  it("etale l'abonnement sur chaque mois paye", () => {
+    // Prelevement le 29: au 15 octobre, l'echeance d'octobre n'a pas encore eu
+    // lieu. Compter le mois en cours d'office gonflerait le total d'un mois.
+    const parMois = abonnementsParMois([vps], tarifs, "2025-10-15");
+    expect([...parMois.keys()]).toEqual(["2025-07", "2025-08", "2025-09"]);
+    expect(parMois.get("2025-09")).toBe(1080);
+  });
+
+  it("compte le mois en cours une fois la date de prelevement passee", () => {
+    const parMois = abonnementsParMois([vps], tarifs, "2025-10-30");
+    expect([...parMois.keys()]).toEqual(["2025-07", "2025-08", "2025-09", "2025-10"]);
+  });
+
+  it("applique le tarif en vigueur a chaque mois", () => {
+    const avecHausse = [
+      { abonnement_id: 1, debut: "2025-07-29", montant_cents: 1080 },
+      { abonnement_id: 1, debut: "2025-09-01", montant_cents: 1500 },
+    ];
+    const parMois = abonnementsParMois([vps], avecHausse, "2025-09-30");
+    expect(parMois.get("2025-08")).toBe(1080);
+    expect(parMois.get("2025-09")).toBe(1500);
+  });
+
+  it("s'arrete a la date de resiliation, sans inventer de prelevement", () => {
+    const resilie = { ...vps, fin: "2025-09-01" };
+    const parMois = abonnementsParMois([resilie], tarifs, "2026-09-11");
+    expect([...parMois.keys()]).toEqual(["2025-07", "2025-08"]);
+  });
+
+  it("conserve les paiements passes d'un abonnement resilie", () => {
+    const resilie = { ...vps, fin: "2025-09-01" };
+    const total = [...abonnementsParMois([resilie], tarifs, "2026-09-11").values()].reduce(
+      (t, v) => t + v,
+      0,
+    );
+    expect(total).toBe(2160);
+  });
+
+  it("ignore un abonnement sans tarif connu", () => {
+    expect(abonnementsParMois([vps], [], "2025-10-15").size).toBe(0);
+  });
+});
+
+describe("abonnementsParSite", () => {
+  const vps = { id: 1, debut: "2026-09-01", periodicite: "mensuel", fin: null };
+  const tarifs = [{ abonnement_id: 1, debut: "2026-09-01", montant_cents: 1080 }];
+  const parts = [
+    { abonnement_id: 1, site_id: 7, part_cents: 540 },
+    { abonnement_id: 1, site_id: 9, part_cents: 540 },
+  ];
+
+  it("impute a chaque site sa fraction, pas le montant entier", () => {
+    const parSite = abonnementsParSite([vps], tarifs, parts, "2026-09-01", "2026-09-30");
+    expect(parSite.get(7)).toBe(540);
+    expect(parSite.get(9)).toBe(540);
+  });
+
+  it("ne compte rien hors de la periode demandee", () => {
+    // L'echeance d'octobre tombe le 1er: une periode qui demarre le 2 l'exclut
+    const parSite = abonnementsParSite([vps], tarifs, parts, "2026-10-02", "2026-10-31");
+    expect(parSite.size).toBe(0);
+  });
+
+  it("compte l'echeance du mois suivant quand elle est dans la periode", () => {
+    const parSite = abonnementsParSite([vps], tarifs, parts, "2026-10-01", "2026-10-31");
+    expect(parSite.get(7)).toBe(540);
+  });
+
+  it("respecte un partage inegal", () => {
+    const inegal = [
+      { abonnement_id: 1, site_id: 7, part_cents: 864 },
+      { abonnement_id: 1, site_id: 9, part_cents: 216 },
+    ];
+    const parSite = abonnementsParSite([vps], tarifs, inegal, "2026-09-01", "2026-09-30");
+    expect(parSite.get(7)).toBe(864);
+    expect(parSite.get(9)).toBe(216);
+  });
+
+  it("n'impute rien pour un abonnement transverse", () => {
+    expect(abonnementsParSite([vps], tarifs, [], "2026-09-01", "2026-09-30").size).toBe(0);
   });
 });

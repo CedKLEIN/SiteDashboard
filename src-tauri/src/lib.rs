@@ -604,6 +604,12 @@ pub fn run() {
             sql: include_str!("../migrations/008_devises_prefs.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 9,
+            description: "date de fin d'un abonnement resilie",
+            sql: include_str!("../migrations/009_fin_abonnement.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
