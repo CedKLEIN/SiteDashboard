@@ -144,6 +144,14 @@ pour répondre à « où j'en suis cette année », pas pour interroger une plag
 - **site** : tous, ou un seul. Filtré sur un site, tout ne compte que **sa part** — une
   dépense partagée ne doit pas apparaître en entier dans les chiffres d'un seul site.
 
+Les deux choix sont **mémorisés** dans la table `preferences` et rétablis au lancement. Le
+tableau attend de les avoir relus avant de charger : sinon il s'afficherait sur la période
+par défaut puis sauterait sur celle enregistrée, avec deux requêtes au lieu d'une.
+
+Un site mémorisé puis supprimé est confronté aux sites existants au démarrage, et le filtre
+revient à « tous ». Sans ce contrôle, le tableau filtrerait sur un identifiant fantôme :
+aucun chiffre affiché, et rien pour comprendre pourquoi.
+
 Deux graphes, qui ne disent pas la même chose :
 
 - **cumul sur la période** : deux courbes qui ne peuvent que monter. Ce qui compte est

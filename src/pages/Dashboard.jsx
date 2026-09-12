@@ -20,6 +20,8 @@ import {
   listerAbonnements,
   listerPartsAbonnements,
   listerTarifs,
+  lirePreference,
+  ecrirePreference,
   premiereDate,
   seriesParMois,
 } from "../lib/queries";
@@ -27,6 +29,13 @@ import { aujourdhuiIso, formatMontant } from "../lib/format";
 import { construireSerie } from "../lib/series";
 import { abonnementsParMois, abonnementsParSite, coutMensuelEquivalent } from "../lib/abonnements";
 import { bornesPeriode, PERIODES, PERIODE_DEFAUT } from "../lib/periodes";
+import {
+  CLE_PERIODE,
+  CLE_SITE,
+  periodeValide,
+  siteEnPreference,
+  siteValide,
+} from "../lib/preferencesTableau";
 
 const COULEURS = {
   depenses: "#f97362",
@@ -68,8 +77,46 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
   const [periode, setPeriode] = useState(PERIODE_DEFAUT);
   const [siteFiltre, setSiteFiltre] = useState(null);
   const [donnees, setDonnees] = useState(null);
+  // On attend d'avoir relu les preferences avant de charger: sans ce drapeau,
+  // le tableau s'afficherait sur la periode par defaut puis sauterait sur celle
+  // enregistree, avec deux requetes au lieu d'une.
+  const [prefsLues, setPrefsLues] = useState(false);
 
   useEffect(() => {
+    let annule = false;
+
+    async function relire() {
+      const [periodeStockee, siteStocke, sites] = await Promise.all([
+        lirePreference(CLE_PERIODE, PERIODE_DEFAUT),
+        lirePreference(CLE_SITE, ""),
+        etatsDesSites(),
+      ]);
+      if (annule) return;
+
+      setPeriode(periodeValide(periodeStockee));
+      // Le site memorise a pu etre supprime: on le confronte aux sites existants
+      setSiteFiltre(siteValide(siteStocke, sites));
+      setPrefsLues(true);
+    }
+
+    relire();
+    return () => {
+      annule = true;
+    };
+  }, []);
+
+  function changerPeriode(cle) {
+    setPeriode(cle);
+    ecrirePreference(CLE_PERIODE, cle).catch(() => {});
+  }
+
+  function changerSite(id) {
+    setSiteFiltre(id);
+    ecrirePreference(CLE_SITE, siteEnPreference(id)).catch(() => {});
+  }
+
+  useEffect(() => {
+    if (!prefsLues) return undefined;
     let annule = false;
 
     async function charger() {
@@ -112,7 +159,7 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
     return () => {
       annule = true;
     };
-  }, [rafraichissement, periode, siteFiltre]);
+  }, [rafraichissement, periode, siteFiltre, prefsLues]);
 
   if (!donnees) return <EtatVide>Chargement...</EtatVide>;
 
@@ -157,7 +204,7 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
           Tableau de bord
           {siteChoisi && <span className="text-texte-doux"> · {siteChoisi.nom}</span>}
         </h1>
-        <Onglets valeur={periode} options={PERIODES} onChanger={setPeriode} />
+        <Onglets valeur={periode} options={PERIODES} onChanger={changerPeriode} />
       </div>
 
       {etats.length === 0 ? (
@@ -172,7 +219,7 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
               { cle: "tous", libelle: "Tous les sites" },
               ...etats.map((s) => ({ cle: s.id, libelle: s.nom })),
             ]}
-            onChanger={(cle) => setSiteFiltre(cle === "tous" ? null : cle)}
+            onChanger={(cle) => changerSite(cle === "tous" ? null : cle)}
           />
 
           {/*
@@ -321,7 +368,7 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
                   <Pastille couleur={site.couleur} />
                   <button
                     type="button"
-                    onClick={() => setSiteFiltre(site.id)}
+                    onClick={() => changerSite(site.id)}
                     className="flex-1 truncate text-left hover:text-accent"
                     title="Filtrer le tableau de bord sur ce site"
                   >

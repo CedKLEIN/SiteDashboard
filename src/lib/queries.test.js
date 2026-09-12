@@ -52,6 +52,8 @@ vi.mock("./db", () => ({
 }));
 
 const {
+  lirePreference,
+  ecrirePreference,
   majAbonnement,
   majTarif,
   supprimerTarif,
@@ -648,5 +650,39 @@ describe("site disparu", () => {
       debut: "2026-09-11",
     });
     expect(etat.base.prepare("SELECT COUNT(*) AS n FROM abonnements").get().n).toBe(1);
+  });
+});
+
+describe("preferences", () => {
+  it("relit ce qui a ete ecrit", async () => {
+    await ecrirePreference("tableau_periode", "12mois");
+    expect(await lirePreference("tableau_periode", "annee")).toBe("12mois");
+  });
+
+  it("remplace une valeur existante au lieu d'en empiler une seconde", async () => {
+    await ecrirePreference("tableau_periode", "mois");
+    await ecrirePreference("tableau_periode", "toujours");
+
+    expect(await lirePreference("tableau_periode")).toBe("toujours");
+    const n = etat.base
+      .prepare("SELECT COUNT(*) AS n FROM preferences WHERE cle = 'tableau_periode'")
+      .get().n;
+    expect(n).toBe(1);
+  });
+
+  it("renvoie le defaut pour une cle jamais ecrite", async () => {
+    expect(await lirePreference("cle_inexistante", "secours")).toBe("secours");
+    expect(await lirePreference("cle_inexistante")).toBeNull();
+  });
+
+  it("conserve la chaine vide, qui represente tous les sites", async () => {
+    // Elle ne doit pas etre confondue avec une absence de preference
+    await ecrirePreference("tableau_site", "3");
+    await ecrirePreference("tableau_site", "");
+    expect(await lirePreference("tableau_site", "3")).toBe("");
+  });
+
+  it("garde l'intervalle de supervision installe par la migration", async () => {
+    expect(await lirePreference("intervalle_supervision_s")).toBe("60");
   });
 });
