@@ -405,7 +405,16 @@ export async function supprimerTarif(id) {
  */
 export async function majAbonnement(
   id,
-  { fournisseurId, libelle, periodicite, debut, prochaineEcheance, siteIds = [], partsCents = null },
+  {
+    fournisseurId,
+    libelle,
+    periodicite,
+    debut,
+    fin = null,
+    prochaineEcheance,
+    siteIds = [],
+    partsCents = null,
+  },
 ) {
   const [courant] = await select(
     `SELECT montant_cents FROM abonnement_tarifs
@@ -422,9 +431,11 @@ export async function majAbonnement(
   await execute(
     `UPDATE abonnements
         SET fournisseur_id = $1, libelle = $2, periodicite = $3, debut = $4,
-            prochaine_echeance = $5
-      WHERE id = $6`,
-    [fournisseurId, libelle, periodicite, debut, prochaineEcheance, id],
+            fin = $5, prochaine_echeance = $6, actif = $7
+      WHERE id = $8`,
+    // `actif` suit `fin`: une date de fin corrigee a la main ne doit pas laisser
+    // un abonnement affiche comme actif alors qu'il ne court plus.
+    [fournisseurId, libelle, periodicite, debut, fin, prochaineEcheance, fin ? 0 : 1, id],
   );
 
   await execute("DELETE FROM abonnement_sites WHERE abonnement_id = $1", [id]);
@@ -480,8 +491,23 @@ export async function ajouterAbonnement({
   return res;
 }
 
-export function basculerAbonnement(id, actif) {
-  return execute("UPDATE abonnements SET actif = $1 WHERE id = $2", [actif ? 1 : 0, id]);
+/**
+ * Arrete un abonnement a une date donnee.
+ *
+ * `fin` et `actif` sont ecrits ENSEMBLE et jamais separement: les graphes se
+ * basent sur `fin` et l'affichage sur `actif`. Les laisser diverger donnerait
+ * une case decochee pendant que les montants continuent de monter - on croirait
+ * avoir arrete, et les chiffres diraient le contraire.
+ *
+ * Les echeances anterieures a `fin` restent comptees: ce qui a ete paye l'a ete.
+ */
+export function arreterAbonnement(id, fin) {
+  return execute("UPDATE abonnements SET fin = $1, actif = 0 WHERE id = $2", [fin, id]);
+}
+
+/** Reprend un abonnement arrete: la date de fin est effacee. */
+export function reprendreAbonnement(id) {
+  return execute("UPDATE abonnements SET fin = NULL, actif = 1 WHERE id = $1", [id]);
 }
 
 export function supprimerAbonnement(id) {

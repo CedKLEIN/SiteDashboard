@@ -1,12 +1,13 @@
 import { Fragment, useEffect, useState } from "react";
-import { History, Image as ImageIcon, Pencil, Trash2, X } from "lucide-react";
+import { History, Image as ImageIcon, Pencil, Play, Square, Trash2, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { Bouton, Carte, Champ, EtatVide, Kpi, Selecteur } from "../components/ui";
 import RepartitionSites, { partsCentsDepuisSaisie } from "../components/RepartitionSites";
 import {
   ajouterAbonnement,
   ajouterTarif,
-  basculerAbonnement,
+  arreterAbonnement,
+  reprendreAbonnement,
   majAbonnement,
   majTarif,
   partsAbonnement,
@@ -31,6 +32,7 @@ const FORMULAIRE_VIDE = {
   montant: "",
   periodicite: "mensuel",
   debut: aujourdhuiIso(),
+  fin: "",
   prochaineEcheance: "",
 };
 
@@ -47,6 +49,7 @@ export default function Abonnements({ onModification }) {
   const [nouveauTarif, setNouveauTarif] = useState(TARIF_VIDE);
   const [enEdition, setEnEdition] = useState(null);
   const [tarifEnEdition, setTarifEnEdition] = useState(null);
+  const [arretEnCours, setArretEnCours] = useState(null);
 
   async function recharger() {
     const [s, f, a, t] = await Promise.all([
@@ -105,6 +108,7 @@ export default function Abonnements({ onModification }) {
       montant: ((abonnement.montant_cents ?? 0) / 100).toFixed(2),
       periodicite: abonnement.periodicite,
       debut: abonnement.debut ?? aujourdhuiIso(),
+      fin: abonnement.fin ?? "",
       prochaineEcheance: abonnement.prochaine_echeance ?? "",
     });
     globalThis.scrollTo?.({ top: 0, behavior: "smooth" });
@@ -149,6 +153,7 @@ export default function Abonnements({ onModification }) {
           libelle: formulaire.libelle.trim(),
           periodicite: formulaire.periodicite,
           debut: formulaire.debut,
+          fin: formulaire.fin || null,
           prochaineEcheance: formulaire.prochaineEcheance || null,
           siteIds: formulaire.siteIds,
           partsCents: partsCentsDepuisSaisie(formulaire.siteIds, formulaire.parts),
@@ -245,8 +250,20 @@ export default function Abonnements({ onModification }) {
     onModification?.();
   }
 
-  async function basculer(abonnement) {
-    await basculerAbonnement(abonnement.id, !abonnement.actif);
+  async function confirmerArret(abonnementId) {
+    setErreur("");
+    if (!arretEnCours?.date) {
+      setErreur("Indique la date d'arret.");
+      return;
+    }
+    await arreterAbonnement(abonnementId, arretEnCours.date);
+    setArretEnCours(null);
+    await recharger();
+    onModification?.();
+  }
+
+  async function reprendre(abonnement) {
+    await reprendreAbonnement(abonnement.id);
     await recharger();
     onModification?.();
   }
@@ -382,6 +399,17 @@ export default function Abonnements({ onModification }) {
             className="w-40"
           />
 
+          {enEdition && (
+            <Champ
+              label="Arrete le"
+              type="date"
+              value={formulaire.fin}
+              onChange={(e) => maj("fin", e.target.value)}
+              className="w-40"
+              title="Vider ce champ remet l'abonnement en cours"
+            />
+          )}
+
           <Bouton type="submit">{enEdition ? "Enregistrer" : "Ajouter"}</Bouton>
         </form>
         {erreur && <p className="mt-2 text-xs text-depense">{erreur}</p>}
@@ -394,11 +422,12 @@ export default function Abonnements({ onModification }) {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-bord text-left text-xs uppercase text-texte-doux">
-                <th className="py-2 font-medium">Actif</th>
+                <th className="py-2 font-medium">Etat</th>
                 <th className="py-2 font-medium">Fournisseur</th>
                 <th className="py-2 font-medium">Libelle</th>
                 <th className="py-2 font-medium">Sites</th>
                 <th className="py-2 font-medium">Depuis</th>
+                <th className="py-2 font-medium">Arrete le</th>
                 <th className="py-2 font-medium">Echeance</th>
                 <th className="py-2 text-right font-medium">Tarif actuel</th>
                 <th className="py-2 text-right font-medium">≈ / mois</th>
@@ -413,12 +442,30 @@ export default function Abonnements({ onModification }) {
                 return (
                   <Fragment key={a.id}>
                     <tr className={`border-b border-bord/50 ${a.actif ? "" : "opacity-50"}`}>
-                      <td className="py-2">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(a.actif)}
-                          onChange={() => basculer(a)}
-                        />
+                      <td className="py-2 whitespace-nowrap">
+                        {a.fin ? (
+                          <Bouton
+                            variante="fantome"
+                            className="flex items-center gap-1 px-1.5 py-1 text-[11px]"
+                            title="Reprendre cet abonnement"
+                            onClick={() => reprendre(a)}
+                          >
+                            <Play size={12} />
+                            Arrete
+                          </Bouton>
+                        ) : (
+                          <Bouton
+                            variante="fantome"
+                            className="flex items-center gap-1 px-1.5 py-1 text-[11px]"
+                            title="Arreter cet abonnement a une date donnee"
+                            onClick={() =>
+                              setArretEnCours({ id: a.id, date: aujourdhuiIso() })
+                            }
+                          >
+                            <Square size={12} />
+                            En cours
+                          </Bouton>
+                        )}
                       </td>
                       <td className="py-2">
                         <span className="flex items-center gap-2">
@@ -443,6 +490,7 @@ export default function Abonnements({ onModification }) {
                         )}
                       </td>
                       <td className="py-2 tabular-nums text-texte-doux">{a.debut ?? "—"}</td>
+                      <td className="py-2 tabular-nums text-texte-doux">{a.fin ?? "—"}</td>
                       <td className="py-2 tabular-nums text-texte-doux">
                         {a.prochaine_echeance ?? "—"}
                       </td>
@@ -500,9 +548,35 @@ export default function Abonnements({ onModification }) {
                       </td>
                     </tr>
 
+                    {arretEnCours?.id === a.id && (
+                      <tr className="border-b border-bord/50">
+                        <td colSpan={11} className="bg-surface-2/40 px-3 py-3">
+                          <div className="flex flex-wrap items-end gap-3">
+                            <Champ
+                              label="Arreter a partir du"
+                              type="date"
+                              value={arretEnCours.date}
+                              onChange={(e) =>
+                                setArretEnCours((x) => ({ ...x, date: e.target.value }))
+                              }
+                              className="w-40"
+                            />
+                            <Bouton onClick={() => confirmerArret(a.id)}>Arreter</Bouton>
+                            <Bouton variante="fantome" onClick={() => setArretEnCours(null)}>
+                              Annuler
+                            </Bouton>
+                            <p className="text-xs text-texte-doux">
+                              Les echeances anterieures a cette date restent comptees : ce qui a
+                              ete paye l&apos;a ete.
+                            </p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+
                     {ouvert && (
                       <tr className="border-b border-bord/50">
-                        <td colSpan={10} className="bg-surface-2/40 px-3 py-3">
+                        <td colSpan={11} className="bg-surface-2/40 px-3 py-3">
                           <p className="mb-2 text-xs font-medium text-texte-doux">
                             Historique des tarifs — chaque ligne s&apos;applique a partir de sa
                             date, les echeances anterieures gardent l&apos;ancien prix

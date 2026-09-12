@@ -58,9 +58,11 @@ export function tarifApplicable(tarifs, date) {
 }
 
 /** Total reellement paye depuis le debut, tarif par tarif. */
-export function totalPaye({ debut, periodicite }, tarifs, aujourdhui) {
+export function totalPaye(abonnement, tarifs, aujourdhui) {
   if (!tarifs || tarifs.length === 0) return 0;
-  return echeancesPassees(debut, periodicite, aujourdhui).reduce(
+  // `echeancesDues` borne a la date de resiliation: sans ca, un abonnement arrete
+  // continuerait de gonfler son cumul mois apres mois.
+  return echeancesDues(abonnement, aujourdhui).reduce(
     (total, date) => total + tarifApplicable(tarifs, date),
     0,
   );
@@ -82,13 +84,21 @@ export function prochaineEcheance(debut, periodicite, aujourdhui) {
 }
 
 /**
- * Borne haute des prelevements d'un abonnement: sa date de fin s'il est resilie,
- * sinon aujourd'hui. Le drapeau `actif` ne suffit pas: il dit QUE c'est arrete,
- * pas QUAND, et l'exclure ferait disparaitre ses paiements passes du cumul.
+ * Echeances effectivement dues par un abonnement jusqu'a une date.
+ *
+ * La date de fin est EXCLUSIVE: "arrete a partir du 1er avril" signifie que le
+ * prelevement du 1er avril n'a pas lieu. Une borne inclusive facturerait un
+ * mois de trop a chaque resiliation.
+ *
+ * Le drapeau `actif` ne suffirait pas a piloter ce calcul: il dit QUE c'est
+ * arrete, pas QUAND, et exclure purement l'abonnement ferait disparaitre ses
+ * paiements passes du cumul.
  */
-function jusqua(abonnement, aujourdhui) {
+function echeancesDues(abonnement, aujourdhui) {
   const fin = abonnement.fin;
-  return fin && fin < aujourdhui ? fin : aujourdhui;
+  const borne = fin && fin < aujourdhui ? fin : aujourdhui;
+  const dates = echeancesPassees(abonnement.debut, abonnement.periodicite, borne);
+  return fin ? dates.filter((date) => date < fin) : dates;
 }
 
 /**
@@ -112,11 +122,7 @@ export function abonnementsParMois(
     const sesParts = parts.filter((p) => p.abonnement_id === abonnement.id);
     if (siteId && !sesParts.some((p) => p.site_id === siteId)) continue;
 
-    for (const date of echeancesPassees(
-      abonnement.debut,
-      abonnement.periodicite,
-      jusqua(abonnement, aujourdhui),
-    )) {
+    for (const date of echeancesDues(abonnement, aujourdhui)) {
       const total = tarifApplicable(sesTarifs, date);
       const montant = siteId ? partDuSite(sesParts, total, siteId) : total;
       if (montant === 0) continue;
@@ -152,11 +158,9 @@ export function abonnementsParSite(abonnements, tarifs, parts, depuis, jusquA) {
     // Aucun site rattache: cout transverse, imputable a personne
     if (sesParts.length === 0 || sesTarifs.length === 0) continue;
 
-    const echeances = echeancesPassees(
-      abonnement.debut,
-      abonnement.periodicite,
-      jusqua(abonnement, jusquA),
-    ).filter((date) => date >= depuis && date <= jusquA);
+    const echeances = echeancesDues(abonnement, jusquA).filter(
+      (date) => date >= depuis && date <= jusquA,
+    );
 
     for (const date of echeances) {
       const montant = tarifApplicable(sesTarifs, date);

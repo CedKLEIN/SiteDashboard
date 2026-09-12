@@ -266,3 +266,44 @@ describe("abonnementsParMois filtre par site", () => {
     expect(pour7.get("2026-09") + pour9.get("2026-09")).toBe(1080);
   });
 });
+
+describe("arret d'un abonnement", () => {
+  const tarifs = [{ debut: "2025-01-01", montant_cents: 1000 }];
+
+  it("cesse de cumuler apres la date d'arret", () => {
+    const arrete = { debut: "2025-01-01", periodicite: "mensuel", fin: "2025-04-01" };
+    // Janvier, fevrier, mars: trois echeances avant l'arret du 1er avril
+    expect(totalPaye(arrete, tarifs, "2026-09-12")).toBe(3000);
+  });
+
+  it("conserve integralement ce qui a ete paye avant l'arret", () => {
+    const arrete = { debut: "2025-01-01", periodicite: "mensuel", fin: "2025-04-01" };
+    const encoreActif = { debut: "2025-01-01", periodicite: "mensuel", fin: null };
+
+    // Arreter ne doit rien effacer du passe, seulement stopper l'accumulation
+    expect(totalPaye(arrete, tarifs, "2025-03-15")).toBe(
+      totalPaye(encoreActif, tarifs, "2025-03-15"),
+    );
+  });
+
+  it("continue de cumuler tant qu'il n'est pas arrete", () => {
+    const actif = { debut: "2025-01-01", periodicite: "mensuel", fin: null };
+    expect(totalPaye(actif, tarifs, "2025-06-01")).toBe(6000);
+  });
+
+  it("ignore une date de fin posterieure a aujourd'hui", () => {
+    // Un arret programme dans le futur ne doit pas amputer le present
+    const futur = { debut: "2025-01-01", periodicite: "mensuel", fin: "2030-01-01" };
+    expect(totalPaye(futur, tarifs, "2025-06-01")).toBe(6000);
+  });
+
+  it("applique le tarif de chaque echeance jusqu'a l'arret", () => {
+    const avecHausse = [
+      { debut: "2025-01-01", montant_cents: 1000 },
+      { debut: "2025-03-01", montant_cents: 1500 },
+    ];
+    const arrete = { debut: "2025-01-01", periodicite: "mensuel", fin: "2025-04-01" };
+    // jan 10 + fev 10 + mars 15 = 35,00 EUR
+    expect(totalPaye(arrete, avecHausse, "2026-09-12")).toBe(3500);
+  });
+});

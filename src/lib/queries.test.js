@@ -52,6 +52,8 @@ vi.mock("./db", () => ({
 }));
 
 const {
+  arreterAbonnement,
+  reprendreAbonnement,
   lirePreference,
   ecrirePreference,
   majAbonnement,
@@ -684,5 +686,99 @@ describe("preferences", () => {
 
   it("garde l'intervalle de supervision installe par la migration", async () => {
     expect(await lirePreference("intervalle_supervision_s")).toBe("60");
+  });
+});
+
+describe("arreter et reprendre un abonnement", () => {
+  async function creerVps(siteIds = []) {
+    await ajouterAbonnement({
+      siteIds,
+      libelle: "VPS",
+      montantCents: 1080,
+      periodicite: "mensuel",
+      debut: "2025-01-01",
+    });
+    const [abo] = await listerAbonnements();
+    return abo;
+  }
+
+  it("enregistre la date d'arret et desactive d'un seul geste", async () => {
+    const abo = await creerVps();
+    await arreterAbonnement(abo.id, "2026-03-01");
+
+    const [relu] = await listerAbonnements();
+    expect(relu.fin).toBe("2026-03-01");
+    expect(relu.actif).toBe(0);
+  });
+
+  it("ne laisse jamais fin et actif diverger", async () => {
+    // C'est la divergence qui trompait: case decochee et montants qui montent
+    const abo = await creerVps();
+    await arreterAbonnement(abo.id, "2026-03-01");
+    let [relu] = await listerAbonnements();
+    expect(Boolean(relu.fin)).toBe(relu.actif === 0);
+
+    await reprendreAbonnement(abo.id);
+    [relu] = await listerAbonnements();
+    expect(relu.fin).toBeNull();
+    expect(relu.actif).toBe(1);
+  });
+
+  it("conserve l'abonnement, ses tarifs et ses parts apres l'arret", async () => {
+    const [denivio] = await creerDeuxSites();
+    const abo = await creerVps([denivio]);
+    await arreterAbonnement(abo.id, "2026-03-01");
+
+    // Arreter n'est pas supprimer: le passe reste consultable
+    expect(await listerTarifs()).toHaveLength(1);
+    expect(await partsAbonnement(abo.id)).toHaveLength(1);
+  });
+
+  it("corrige la date d'arret par l'edition, et la remet a zero si on la vide", async () => {
+    const abo = await creerVps();
+    await arreterAbonnement(abo.id, "2026-03-01");
+
+    await majAbonnement(abo.id, {
+      fournisseurId: null,
+      libelle: "VPS",
+      periodicite: "mensuel",
+      debut: "2025-01-01",
+      fin: "2026-05-01",
+      prochaineEcheance: null,
+      siteIds: [],
+    });
+    let [relu] = await listerAbonnements();
+    expect(relu.fin).toBe("2026-05-01");
+    expect(relu.actif).toBe(0);
+
+    await majAbonnement(abo.id, {
+      fournisseurId: null,
+      libelle: "VPS",
+      periodicite: "mensuel",
+      debut: "2025-01-01",
+      fin: null,
+      prochaineEcheance: null,
+      siteIds: [],
+    });
+    [relu] = await listerAbonnements();
+    expect(relu.fin).toBeNull();
+    expect(relu.actif).toBe(1);
+  });
+
+  it("sort des echeances a venir une fois arrete", async () => {
+    const abo = await creerVps();
+    const dans10Jours = new Date(Date.now() + 10 * 86_400_000).toISOString().slice(0, 10);
+    await majAbonnement(abo.id, {
+      fournisseurId: null,
+      libelle: "VPS",
+      periodicite: "mensuel",
+      debut: "2025-01-01",
+      prochaineEcheance: dans10Jours,
+      siteIds: [],
+    });
+    expect(await echeancesProches(45)).toHaveLength(1);
+
+    await arreterAbonnement(abo.id, "2026-03-01");
+    expect(await echeancesProches(45)).toHaveLength(0);
   });
 });

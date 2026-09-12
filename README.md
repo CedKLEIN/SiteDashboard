@@ -95,9 +95,20 @@ pas un montant unique. Un nom de domaine à 6 € la première année puis 11 �
 | 2024-03-01 | 6,00 € |
 | 2025-03-01 | 11,00 € |
 
-Un abonnement résilié porte une **date de fin** : sans elle, soit on le ferait courir
-indéfiniment et on inventerait des prélèvements, soit on l'exclurait et ses paiements passés
-disparaîtraient du cumul. Le drapeau « actif » dit *que* c'est arrêté, pas *quand*.
+### Arrêter un abonnement
+
+Le bouton d'état (« En cours ») demande une **date d'arrêt**, puis fige l'abonnement à
+partir de cette date. Les échéances antérieures restent comptées partout — cumul, graphes,
+répartition par site : ce qui a été payé l'a été. « Arrêté » redevient cliquable pour
+reprendre.
+
+La date est **exclusive** : « arrêté à partir du 1er avril » signifie que le prélèvement du
+1er avril n'a pas lieu. Une borne inclusive facturerait un mois de trop à chaque résiliation.
+
+`fin` et `actif` sont toujours écrits **ensemble**, jamais séparément : les graphes se basent
+sur `fin` et l'affichage sur `actif`. Les laisser diverger donnait une case décochée pendant
+que les montants continuaient de monter — on croyait avoir arrêté, et les chiffres disaient
+le contraire. Le drapeau « actif » dit *que* c'est arrêté, la date dit *quand*.
 
 Le cumul payé additionne chaque échéance **au tarif qui s'appliquait ce jour-là** — ici
 6 + 11 + 11 = 28,00 € au bout de trois ans. Écraser le montant aurait fait disparaître la
