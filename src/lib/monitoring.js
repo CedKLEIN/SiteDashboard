@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import { checksActifs, enregistrerVerification } from "./queries";
+import { checksActifs, enregistrerValeur, enregistrerVerification } from "./queries";
 import { evaluerCertificat } from "./statut";
+import { evaluerDomaine, evaluerRedirection, evaluerReponse } from "./assertions";
 
 /**
  * Garde-fou contre le chevauchement: un cycle peut depasser l'intervalle
@@ -9,7 +10,13 @@ import { evaluerCertificat } from "./statut";
  */
 let enCours = false;
 
-/** Lance le bon type de verification et normalise le resultat pour la base. */
+/**
+ * Lance le bon type de verification et normalise le resultat pour la base.
+ *
+ * Aucun verdict n'est rendu ici ni cote Rust: les commandes renvoient des faits,
+ * et ce sont les fonctions `evaluer*` qui decident. Un seul endroit a corriger
+ * quand une regle change, et toutes sont testables sans reseau.
+ */
 async function executer(check) {
   if (check.type === "tls") {
     const brut = await invoke("verifier_certificat", { url: check.url });
@@ -25,11 +32,64 @@ async function executer(check) {
     };
   }
 
-  return invoke("executer_check", {
+  if (check.type === "redirection") {
+    const brut = await invoke("executer_redirection", { url: check.url });
+    const verdict = evaluerRedirection(check, brut);
+    return {
+      ok: verdict.ok,
+      statut: brut.statut ?? null,
+      latence_ms: brut.latence_ms ?? null,
+      erreur: verdict.message,
+    };
+  }
+
+  if (check.type === "domaine") {
+    const brut = await invoke("verifier_domaine", { domaine: check.domaine ?? "" });
+    const verdict = evaluerDomaine(check, brut);
+    return {
+      ok: verdict.ok,
+      statut: null,
+      latence_ms: brut.latence_ms ?? null,
+      jours_restants: brut.jours_restants ?? null,
+      adresses: (brut.adresses ?? []).join(", ") || null,
+      erreur: verdict.message,
+    };
+  }
+
+  if (check.type === "valeur") {
+    const brut = await invoke("lire_valeur", {
+      url: check.url,
+      extracteur: check.extracteur ?? "",
+    });
+    if (brut.valeur != null) await enregistrerValeur(check.id, brut.valeur);
+
+    // Volontairement toujours OK: un retard de deploiement n'est pas une panne,
+    // c'est une information. Meme une extraction ratee ne fait pas rougir le
+    // site - le check d'accueil est la pour dire si le site repond.
+    return {
+      ok: true,
+      statut: brut.statut ?? null,
+      latence_ms: brut.latence_ms ?? null,
+      erreur: brut.erreur ?? null,
+    };
+  }
+
+  const brut = await invoke("executer_check", {
     url: check.url,
-    statutAttendu: check.statut_attendu ?? null,
     doitContenir: check.doit_contenir ?? null,
+    // Le corps n'etait lu que pour chercher un fragment: sans ce drapeau, une
+    // taille minimale seule serait silencieusement ignoree.
+    lireCorps: check.taille_min_octets != null || check.occurrences_min != null,
   });
+  const verdict = evaluerReponse(check, brut);
+  return {
+    ok: verdict.ok,
+    statut: brut.statut ?? null,
+    latence_ms: brut.latence_ms ?? null,
+    taille: brut.taille ?? null,
+    occurrences: brut.occurrences ?? null,
+    erreur: verdict.message,
+  };
 }
 
 /** Execute tous les checks actifs, en serie, et enregistre chaque resultat. */

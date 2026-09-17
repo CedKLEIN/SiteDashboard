@@ -24,8 +24,22 @@ export function formaterRapport({ check, inspection, site }) {
   champ("URL", check.url);
   champ("Statut attendu", check.statut_attendu ?? "tout succès (2xx)");
   champ("Doit contenir", check.doit_contenir ?? "(rien)");
-  champ("Seuil certificat (jours)", check.seuil_jours);
+  champ("Occurrences minimum", check.occurrences_min);
+  champ("Taille minimum (octets, corps décodé)", check.taille_min_octets);
+  champ("Doit rediriger vers", check.cible_attendue);
+  champ("Extracteur", check.extracteur);
+  champ("Domaine", check.domaine);
+  champ("Seuil expiration (jours)", check.seuil_jours);
+  champ("Intervalle minimum (s)", check.intervalle_min_s);
   champ("Actif", check.actif ? "oui" : "non");
+  // Les regles d'en-tetes sont la raison d'etre du rapport dans la moitie des
+  // cas: une regression de securite ne laisse aucune autre trace.
+  if (check.entetes?.length > 0) {
+    lignes.push("En-têtes attendus:");
+    for (const { nom, operateur, valeur } of check.entetes) {
+      lignes.push(`  ${nom} ${operateur}${valeur ? ` "${valeur}"` : ""}`);
+    }
+  }
 
   section("Dernier résultat enregistré");
   champ("Horodatage", check.derniere_verif ?? "jamais vérifié");
@@ -33,8 +47,16 @@ export function formaterRapport({ check, inspection, site }) {
     champ("Verdict", check.dernier_ok ? "OK" : "ÉCHEC");
     champ("Statut HTTP", check.dernier_statut);
     champ("Latence (ms)", check.derniere_latence);
-    champ("Jours restants (TLS)", check.derniers_jours);
-    champ("Erreur", check.derniere_erreur);
+    champ("Jours restants", check.derniers_jours);
+    champ("Taille reçue (octets)", check.derniere_taille);
+    champ("Occurrences trouvées", check.dernieres_occurrences);
+    champ("Adresses résolues", check.dernieres_adresses);
+    champ("Message", check.derniere_erreur);
+  }
+
+  if (check.valeur_courante != null) {
+    champ("Valeur lue", check.valeur_courante);
+    champ("Inchangée depuis", check.valeur_depuis);
   }
 
   if (!inspection) {

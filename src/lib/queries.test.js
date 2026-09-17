@@ -71,12 +71,15 @@ const {
   creerSite,
   depensesParSite,
   echeancesProches,
+  enregistrerValeur,
   enregistrerVerification,
   etatsDesSites,
+  historiqueSite,
   listerChecks,
   listerDepenses,
   listerRevenus,
   purgerVerifications,
+  supprimerCheck,
   supprimerSite,
 } = await import("./queries");
 
@@ -387,6 +390,114 @@ describe("supervision", () => {
     const actifs = await checksActifs();
     const tls = actifs.find((c) => c.type === "tls");
     expect(tls.seuil_jours).toBe(30);
+  });
+
+  it("saute un check dont l'intervalle n'est pas ecoule", async () => {
+    const [denivio] = await creerDeuxSites();
+    const cert = await creerCheck({
+      siteId: denivio,
+      libelle: "Certificat TLS",
+      url: "https://denivio.fr",
+      type: "tls",
+    });
+
+    // Le type impose sa cadence par defaut: 6 h pour une date qui change tous
+    // les 90 jours.
+    expect(
+      etat.base.prepare("SELECT intervalle_min_s FROM checks WHERE id = ?").get(cert.lastInsertId)
+        .intervalle_min_s,
+    ).toBe(21600);
+
+    await enregistrerVerification(cert.lastInsertId, { ok: true, statut: null, latence_ms: null });
+    expect((await checksActifs()).map((c) => c.id)).not.toContain(cert.lastInsertId);
+
+    // Une fois l'intervalle passe, il revient dans le cycle.
+    etat.base
+      .prepare("UPDATE verifications SET verifie_le = datetime('now', 'localtime', '-7 hours')")
+      .run();
+    expect((await checksActifs()).map((c) => c.id)).toContain(cert.lastInsertId);
+  });
+
+  it("exclut les checks valeur de l'etat du site et de son historique", async () => {
+    const [denivio] = await creerDeuxSites();
+    const [accueil] = await checksActifs();
+    const version = await creerCheck({
+      siteId: denivio,
+      libelle: "Version deployee",
+      url: "https://denivio.fr/version.json",
+      type: "valeur",
+      extracteur: "json:buildId",
+    });
+
+    await enregistrerVerification(accueil.id, { ok: false, statut: 500, latence_ms: 10 });
+    await enregistrerVerification(version.lastInsertId, { ok: true, statut: 200, latence_ms: 8 });
+
+    // Toujours OK, un check valeur ferait passer le site de rouge a orange.
+    const denivioEtat = (await etatsDesSites()).find((e) => e.id === denivio);
+    expect(denivioEtat.nb_checks).toBe(1);
+    expect(denivioEtat.nb_ok).toBe(0);
+    expect(await historiqueSite(denivio, 24)).toHaveLength(1);
+  });
+
+  it("n'enregistre une valeur que lorsqu'elle change", async () => {
+    const [denivio] = await creerDeuxSites();
+    const version = await creerCheck({
+      siteId: denivio,
+      libelle: "Version deployee",
+      url: "https://denivio.fr/version.json",
+      type: "valeur",
+      extracteur: "json:buildId",
+    });
+    const id = version.lastInsertId;
+
+    await enregistrerValeur(id, "2026-09-14.1");
+    await enregistrerValeur(id, "2026-09-14.1");
+    await enregistrerValeur(id, "2026-09-17.4");
+
+    // Une ligne par deploiement, pas une par verification: c'est ce qui permet
+    // de dire "inchange depuis 3 jours" sans que la purge ne mente.
+    const valeurs = etat.base.prepare("SELECT valeur FROM check_valeurs ORDER BY id").all();
+    expect(valeurs.map((v) => v.valeur)).toEqual(["2026-09-14.1", "2026-09-17.4"]);
+
+    const ligne = (await listerChecks(denivio)).find((c) => c.id === id);
+    expect(ligne.valeur_courante).toBe("2026-09-17.4");
+  });
+
+  it("charge les regles d'en-tetes avec les checks, et les supprime avec eux", async () => {
+    const [denivio] = await creerDeuxSites();
+    const entetes = await creerCheck({
+      siteId: denivio,
+      libelle: "En-tetes de securite",
+      url: "https://denivio.fr/",
+      entetes: [
+        { nom: "strict-transport-security", operateur: "present", valeur: null },
+        { nom: "server", operateur: "ne_contient_pas", valeur: "/" },
+      ],
+    });
+
+    const ligne = (await checksActifs()).find((c) => c.id === entetes.lastInsertId);
+    expect(ligne.entetes).toHaveLength(2);
+    expect(ligne.entetes[1]).toMatchObject({ nom: "server", operateur: "ne_contient_pas" });
+    // Les checks sans regle en recoivent une liste vide, pas undefined
+    expect((await checksActifs()).find((c) => c.id !== entetes.lastInsertId).entetes).toEqual([]);
+
+    await supprimerCheck(entetes.lastInsertId);
+    expect(etat.base.prepare("SELECT COUNT(*) AS n FROM check_entetes").get().n).toBe(0);
+  });
+
+  it("refuse un nombre d'occurrences sans fragment a chercher", async () => {
+    const [denivio] = await creerDeuxSites();
+    await expect(
+      creerCheck({
+        siteId: denivio,
+        libelle: "Sitemap",
+        url: "https://denivio.fr/sitemap.xml",
+        occurrencesMin: 10,
+      }),
+    ).rejects.toThrow(/occurrences/i);
+
+    // Le refus a lieu avant l'INSERT: pas de check a moitie configure en base.
+    expect(etat.base.prepare("SELECT COUNT(*) AS n FROM checks").get().n).toBe(2);
   });
 
   it("purge les verifications au-dela du delai de retention", async () => {

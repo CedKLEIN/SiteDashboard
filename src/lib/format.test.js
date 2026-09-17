@@ -3,6 +3,7 @@ import {
   moisEntre,
   derniersMois,
   aujourdhuiIso,
+  joursDepuis,
   moisIso,
   parseMontant,
 } from "./format";
@@ -72,5 +73,27 @@ describe("moisEntre", () => {
 
   it("borne la serie plutot que de boucler sur une date aberrante", () => {
     expect(moisEntre("0001-01-01", "2026-12-31").length).toBeLessThanOrEqual(601);
+  });
+});
+
+describe("joursDepuis", () => {
+  const maintenant = new Date("2026-09-17T13:00:00");
+
+  it("compte les jours entiers depuis un horodatage SQLite", () => {
+    expect(joursDepuis("2026-09-14 08:30:00", maintenant)).toBe(3);
+  });
+
+  it("renvoie 0 le jour meme", () => {
+    expect(joursDepuis("2026-09-17 09:00:00", maintenant)).toBe(0);
+  });
+
+  it("ne descend pas sous zero sur un horodatage dans le futur", () => {
+    expect(joursDepuis("2026-09-20 09:00:00", maintenant)).toBe(0);
+  });
+
+  it("renvoie null sur une saisie inexploitable", () => {
+    expect(joursDepuis(null, maintenant)).toBeNull();
+    expect(joursDepuis("", maintenant)).toBeNull();
+    expect(joursDepuis("jamais", maintenant)).toBeNull();
   });
 });

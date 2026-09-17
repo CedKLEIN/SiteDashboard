@@ -66,6 +66,21 @@ export function aujourdhuiIso(date = new Date()) {
 }
 
 
+/**
+ * Jours entiers ecoules depuis un horodatage SQLite local ('2026-09-17 08:30:00').
+ * Sert a dire "inchange depuis 3 j" a cote d'une version deployee.
+ */
+export function joursDepuis(horodatage, maintenant = new Date()) {
+  const texte = String(horodatage ?? "").trim();
+  if (!texte) return null;
+
+  // SQLite ecrit 'YYYY-MM-DD HH:MM:SS'; sans le T, Safari et Firefox refusent.
+  const date = new Date(texte.replace(" ", "T"));
+  if (Number.isNaN(date.getTime())) return null;
+
+  return Math.max(0, Math.floor((maintenant - date) / 86_400_000));
+}
+
 /** Tous les mois entre deux dates ISO, bornes incluses: ['2026-01', ...]. */
 export function moisEntre(debutIso, finIso) {
   const mois = [];

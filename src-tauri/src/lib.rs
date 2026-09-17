@@ -21,25 +21,6 @@ fn tracer(niveau: String, message: String) {
     println!("[{niveau}] {message}");
 }
 
-#[derive(serde::Serialize)]
-pub struct ResultatCheck {
-    ok: bool,
-    statut: Option<u16>,
-    latence_ms: u64,
-    erreur: Option<String>,
-}
-
-impl ResultatCheck {
-    fn echec(latence_ms: u64, erreur: String) -> Self {
-        Self {
-            ok: false,
-            statut: None,
-            latence_ms,
-            erreur: Some(erreur),
-        }
-    }
-}
-
 /// Traduit les erreurs reseau en message court et lisible dans l'UI:
 /// `reqwest::Error` en Debug est une chaine interminable inexploitable telle quelle.
 fn message_erreur(e: &reqwest::Error) -> String {
@@ -54,67 +35,402 @@ fn message_erreur(e: &reqwest::Error) -> String {
     }
 }
 
+const AGENT: &str = concat!("SiteDashboard/", env!("CARGO_PKG_VERSION"));
+
+/// Client HTTP commun a tous les checks. `suivre` a false coupe le suivi
+/// automatique des redirections, indispensable des qu'on veut les OBSERVER:
+/// reqwest les avale sinon, et rapporte le statut final.
+fn client_http(suivre: bool) -> Result<reqwest::Client, String> {
+    let politique = if suivre {
+        reqwest::redirect::Policy::default()
+    } else {
+        reqwest::redirect::Policy::none()
+    };
+    reqwest::Client::builder()
+        .timeout(DELAI_CHECK)
+        .redirect(politique)
+        .user_agent(AGENT)
+        .build()
+        .map_err(|e| e.to_string())
+}
+
+fn entetes_de(entetes: &reqwest::header::HeaderMap) -> Vec<(String, String)> {
+    entetes
+        .iter()
+        .map(|(nom, valeur)| {
+            (
+                nom.to_string(),
+                valeur.to_str().unwrap_or("(valeur non textuelle)").to_string(),
+            )
+        })
+        .collect()
+}
+
+/// Resout un `Location` relatif contre l'URL qui l'a renvoye.
+fn resoudre_cible(base: &str, cible: &str) -> String {
+    url::Url::parse(base)
+        .ok()
+        .and_then(|base| base.join(cible).ok())
+        .map(|u| u.to_string())
+        .unwrap_or_else(|| cible.to_string())
+}
+
+/// Les FAITS d'une reponse HTTP: statut, en-tetes, taille, occurrences.
+///
+/// Aucun verdict ici. Rust constate, JS juge (voir `src/lib/assertions.js`).
+/// C'est deja le partage de `verifier_certificat` + `evaluerCertificat`, et
+/// c'est lui qui rend toutes les regles testables sans reseau, dans vitest.
+#[derive(serde::Serialize, Default)]
+pub struct ReponseCheck {
+    statut: Option<u16>,
+    latence_ms: u64,
+    /// Erreur RESEAU uniquement: une assertion en defaut n'en est pas une ici.
+    erreur: Option<String>,
+    entetes: Vec<(String, String)>,
+    /// Taille du corps DECODE, renseignee seulement si le corps a ete lu.
+    taille: Option<usize>,
+    /// Nombre d'apparitions de `doit_contenir`, si un fragment a ete demande.
+    occurrences: Option<usize>,
+}
+
 /// Execute un check HTTP. Ne renvoie jamais Err: un site injoignable est un
 /// resultat de supervision normal, pas une erreur de l'appli.
 #[tauri::command]
 async fn executer_check(
     url: String,
-    statut_attendu: Option<u16>,
     doit_contenir: Option<String>,
-) -> ResultatCheck {
+    lire_corps: bool,
+) -> ReponseCheck {
     let debut = Instant::now();
 
-    let client = match reqwest::Client::builder()
-        .timeout(DELAI_CHECK)
-        .user_agent(concat!("SiteDashboard/", env!("CARGO_PKG_VERSION")))
-        .build()
-    {
+    let client = match client_http(true) {
         Ok(client) => client,
-        Err(e) => return ResultatCheck::echec(0, e.to_string()),
+        Err(e) => {
+            return ReponseCheck {
+                erreur: Some(e),
+                ..Default::default()
+            }
+        }
     };
 
     let reponse = match client.get(&url).send().await {
         Ok(reponse) => reponse,
         Err(e) => {
-            return ResultatCheck::echec(debut.elapsed().as_millis() as u64, message_erreur(&e))
+            return ReponseCheck {
+                latence_ms: debut.elapsed().as_millis() as u64,
+                erreur: Some(message_erreur(&e)),
+                ..Default::default()
+            }
         }
     };
 
-    let statut = reponse.status();
-    let statut_ok = match statut_attendu {
-        Some(attendu) => statut.as_u16() == attendu,
-        None => statut.is_success(),
+    let mut vue = ReponseCheck {
+        statut: Some(reponse.status().as_u16()),
+        entetes: entetes_de(reponse.headers()),
+        ..Default::default()
     };
 
-    // On ne telecharge le corps que si un fragment est attendu: inutile de tirer
-    // toute la page pour un simple controle de disponibilite.
-    let erreur_contenu = match doit_contenir.as_deref().filter(|f| !f.is_empty()) {
-        Some(fragment) => match reponse.text().await {
-            Ok(corps) if corps.contains(fragment) => None,
-            Ok(_) => Some(format!("fragment absent: {fragment}")),
-            Err(e) => Some(message_erreur(&e)),
-        },
-        None => None,
+    // Le corps n'etait telecharge que si un fragment etait attendu. Une taille
+    // minimale seule serait alors silencieusement ignoree: `lire_corps` dit
+    // qu'une assertion porte dessus, meme sans fragment.
+    let fragment = doit_contenir.filter(|f| !f.is_empty());
+    if lire_corps || fragment.is_some() {
+        match reponse.text().await {
+            Ok(corps) => {
+                // Comptage non chevauchant, c'est ce qu'on veut compter ici.
+                vue.occurrences = fragment.as_deref().map(|f| corps.matches(f).count());
+                // Octets du corps DECODE: gzip est actif et Content-Length est
+                // absent en chunked, comparer l'en-tete serait un piege.
+                vue.taille = Some(corps.len());
+            }
+            Err(e) => vue.erreur = Some(message_erreur(&e)),
+        }
+    }
+
+    vue.latence_ms = debut.elapsed().as_millis() as u64;
+    vue
+}
+
+#[derive(serde::Serialize, Default)]
+pub struct ReponseRedirection {
+    statut: Option<u16>,
+    /// `Location` du PREMIER saut, resolu en absolu.
+    cible: Option<String>,
+    latence_ms: u64,
+    erreur: Option<String>,
+}
+
+/// Observe la redirection d'une URL, sans la suivre.
+///
+/// Le cas qui a motive ce type de check: www.denivio.fr servait le site en 200
+/// au lieu de rediriger. Un check HTTP classique serait passe au vert - le bug
+/// ETAIT le 200 - et `statut_attendu = 301` n'y aurait rien change, puisque
+/// reqwest suit les redirections et rapporte le statut final.
+///
+/// Un seul saut, volontairement: le defaut qu'on traque est "ca ne redirige
+/// plus du tout", et une assertion sur la destination finale masquerait un saut
+/// intermediaire ajoute entre-temps. Une cible egale a l'URL de depart est une
+/// boucle, detectee gratuitement cote JS.
+#[tauri::command]
+async fn executer_redirection(url: String) -> ReponseRedirection {
+    let debut = Instant::now();
+
+    let client = match client_http(false) {
+        Ok(client) => client,
+        Err(e) => {
+            return ReponseRedirection {
+                erreur: Some(e),
+                ..Default::default()
+            }
+        }
     };
 
-    ResultatCheck {
-        ok: statut_ok && erreur_contenu.is_none(),
-        statut: Some(statut.as_u16()),
+    let reponse = match client.get(&url).send().await {
+        Ok(reponse) => reponse,
+        Err(e) => {
+            return ReponseRedirection {
+                latence_ms: debut.elapsed().as_millis() as u64,
+                erreur: Some(message_erreur(&e)),
+                ..Default::default()
+            }
+        }
+    };
+
+    let cible = reponse
+        .headers()
+        .get(reqwest::header::LOCATION)
+        .and_then(|v| v.to_str().ok())
+        .map(|cible| resoudre_cible(&url, cible));
+
+    ReponseRedirection {
+        statut: Some(reponse.status().as_u16()),
+        cible,
         latence_ms: debut.elapsed().as_millis() as u64,
-        erreur: message_echec(statut_ok, statut.as_u16(), erreur_contenu),
+        erreur: None,
     }
 }
 
-/// Choisit le message d'echec le plus utile.
+#[derive(serde::Serialize, Default)]
+pub struct ReponseValeur {
+    valeur: Option<String>,
+    statut: Option<u16>,
+    latence_ms: u64,
+    erreur: Option<String>,
+}
+
+/// Extrait une chaine d'une reponse: `json:chemin.pointe` ou `regex:motif`.
 ///
-/// L'ordre compte: sur un 404, le fragment est forcement absent puisque la page
-/// n'existe pas. Annoncer "fragment absent" masquerait la cause reelle et
-/// enverrait chercher un probleme de contenu la ou il n'y a pas de fichier.
-fn message_echec(statut_ok: bool, statut: u16, erreur_contenu: Option<String>) -> Option<String> {
-    if !statut_ok {
-        return Some(format!("statut HTTP {statut}"));
+/// Pour une expression reguliere, c'est le groupe capturant n.1 qui est lu -
+/// la correspondance entiere a defaut de groupe. Un motif sans groupe reste
+/// donc utilisable pour une valeur qui se suffit a elle-meme.
+fn extraire_valeur(corps: &str, extracteur: &str) -> Result<String, String> {
+    if let Some(chemin) = extracteur.strip_prefix("json:") {
+        let racine: serde_json::Value =
+            serde_json::from_str(corps).map_err(|e| format!("JSON illisible: {e}"))?;
+        let mut courant = &racine;
+        for cle in chemin.split('.') {
+            courant = courant
+                .get(cle)
+                .ok_or_else(|| format!("champ absent: {chemin}"))?;
+        }
+        return Ok(match courant {
+            // Une chaine JSON rendue par `to_string` arriverait entre guillemets.
+            serde_json::Value::String(texte) => texte.clone(),
+            autre => autre.to_string(),
+        });
     }
-    erreur_contenu
+
+    if let Some(motif) = extracteur.strip_prefix("regex:") {
+        let expression =
+            regex::Regex::new(motif).map_err(|e| format!("motif invalide: {e}"))?;
+        let capture = expression
+            .captures(corps)
+            .ok_or_else(|| "motif introuvable".to_string())?;
+        let trouvee = capture.get(1).or_else(|| capture.get(0));
+        return trouvee
+            .map(|m| m.as_str().to_string())
+            .ok_or_else(|| "motif introuvable".to_string());
+    }
+
+    Err(format!(
+        "extracteur inconnu: {extracteur} (attendu 'json:...' ou 'regex:...')"
+    ))
+}
+
+/// Lit une valeur publiee par un site - typiquement le `buildId` de /version.json.
+/// Ne rend aucun verdict: un retard de deploiement est une information, pas une panne.
+#[tauri::command]
+async fn lire_valeur(url: String, extracteur: String) -> ReponseValeur {
+    let debut = Instant::now();
+
+    let client = match client_http(true) {
+        Ok(client) => client,
+        Err(e) => {
+            return ReponseValeur {
+                erreur: Some(e),
+                ..Default::default()
+            }
+        }
+    };
+
+    let reponse = match client.get(&url).send().await {
+        Ok(reponse) => reponse,
+        Err(e) => {
+            return ReponseValeur {
+                latence_ms: debut.elapsed().as_millis() as u64,
+                erreur: Some(message_erreur(&e)),
+                ..Default::default()
+            }
+        }
+    };
+
+    let statut = reponse.status().as_u16();
+    let (valeur, erreur) = match reponse.text().await {
+        Ok(corps) => match extraire_valeur(&corps, &extracteur) {
+            Ok(valeur) => (Some(valeur), None),
+            Err(e) => (None, Some(e)),
+        },
+        Err(e) => (None, Some(message_erreur(&e))),
+    };
+
+    ReponseValeur {
+        valeur,
+        statut: Some(statut),
+        latence_ms: debut.elapsed().as_millis() as u64,
+        erreur,
+    }
+}
+
+/// Jours ecoules depuis le 1970-01-01 pour une date civile.
+///
+/// Algorithme de Howard Hinnant (days_from_civil): trois soustractions ne
+/// justifient pas d'embarquer une bibliotheque de dates.
+fn jours_depuis_epoque(annee: i64, mois: i64, jour: i64) -> i64 {
+    let annee = if mois <= 2 { annee - 1 } else { annee };
+    let ere = if annee >= 0 { annee } else { annee - 399 } / 400;
+    let annee_ere = annee - ere * 400; // [0, 399]
+    let mois_decale = if mois > 2 { mois - 3 } else { mois + 9 };
+    let jour_annee = (153 * mois_decale + 2) / 5 + jour - 1; // [0, 365]
+    let jour_ere = annee_ere * 365 + annee_ere / 4 - annee_ere / 100 + jour_annee;
+    ere * 146_097 + jour_ere - 719_468
+}
+
+/// Jours restants avant une date ISO 8601 ("2027-04-05T09:23:12Z").
+/// Negatif si la date est passee, comme `ResultatCertificat::jours_restants`.
+fn jours_jusqua(date_iso: &str) -> Result<i64, String> {
+    let illisible = || format!("date illisible: {date_iso}");
+    let jour = date_iso.get(..10).ok_or_else(illisible)?;
+    let mut parties = jour.split('-').map(|p| p.parse::<i64>());
+
+    let annee = parties.next().and_then(Result::ok).ok_or_else(illisible)?;
+    let mois = parties.next().and_then(Result::ok).ok_or_else(illisible)?;
+    let jour_du_mois = parties.next().and_then(Result::ok).ok_or_else(illisible)?;
+
+    let aujourdhui = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_secs() as i64
+        / 86_400;
+
+    Ok(jours_depuis_epoque(annee, mois, jour_du_mois) - aujourdhui)
+}
+
+#[derive(serde::Serialize, Default)]
+pub struct ReponseDomaine {
+    /// Adresses A/AAAA resolues, dans l'ordre de reponse du resolveur.
+    adresses: Vec<String>,
+    expire_le: Option<String>,
+    /// Negatif si le domaine est deja expire.
+    jours_restants: Option<i64>,
+    latence_ms: u64,
+    /// Echec de resolution DNS: le domaine ne pointe nulle part.
+    erreur: Option<String>,
+    /// Echec cote RDAP seulement. Un TLD sans serveur RDAP n'est pas une panne
+    /// du domaine: le verdict DNS doit continuer de s'appliquer.
+    erreur_expiration: Option<String>,
+}
+
+/// Date d'expiration d'un domaine via RDAP, successeur de WHOIS: JSON sur une
+/// API publique, sans cle. `rdap.org` redirige vers le registre competent.
+async fn lire_expiration_rdap(
+    client: &reqwest::Client,
+    domaine: &str,
+) -> Result<(String, i64), String> {
+    let reponse = client
+        .get(format!("https://rdap.org/domain/{domaine}"))
+        .header("accept", "application/rdap+json")
+        .send()
+        .await
+        .map_err(|e| message_erreur(&e))?;
+
+    if reponse.status() == reqwest::StatusCode::NOT_FOUND {
+        return Err("aucun serveur RDAP pour ce domaine".to_string());
+    }
+    if !reponse.status().is_success() {
+        return Err(format!("RDAP a repondu {}", reponse.status().as_u16()));
+    }
+
+    let texte = reponse.text().await.map_err(|e| message_erreur(&e))?;
+    let corps: serde_json::Value = serde_json::from_str(&texte).map_err(|e| e.to_string())?;
+
+    let date = corps
+        .get("events")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|evenements| {
+            evenements.iter().find(|e| {
+                e.get("eventAction").and_then(serde_json::Value::as_str) == Some("expiration")
+            })
+        })
+        .and_then(|e| e.get("eventDate"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "le registre ne publie pas de date d'expiration".to_string())?;
+
+    Ok((date.to_string(), jours_jusqua(date)?))
+}
+
+/// Ou pointe un domaine, et quand il expire.
+///
+/// L'argument est celui du certificat: l'expiration d'un nom de domaine est
+/// entierement previsible, et se repare beaucoup moins vite.
+///
+/// La resolution passe par `tokio::net::lookup_host`, donc par le resolveur du
+/// systeme: il CACHE, un changement peut mettre un TTL a apparaitre. C'est une
+/// latence a connaitre, pas un bug a corriger.
+#[tauri::command]
+async fn verifier_domaine(domaine: String) -> ReponseDomaine {
+    let debut = Instant::now();
+    let mut vue = ReponseDomaine::default();
+
+    // Le port n'a aucune importance ici: `lookup_host` exige une paire.
+    match tokio::time::timeout(DELAI_CHECK, tokio::net::lookup_host((domaine.as_str(), 443))).await {
+        Ok(Ok(adresses)) => {
+            for adresse in adresses {
+                let ip = adresse.ip().to_string();
+                if !vue.adresses.contains(&ip) {
+                    vue.adresses.push(ip);
+                }
+            }
+            if vue.adresses.is_empty() {
+                vue.erreur = Some("le domaine ne resout vers aucune adresse".to_string());
+            }
+        }
+        Ok(Err(e)) => vue.erreur = Some(format!("resolution impossible: {e}")),
+        Err(_) => vue.erreur = Some("delai depasse".to_string()),
+    }
+
+    match client_http(true) {
+        Ok(client) => match lire_expiration_rdap(&client, &domaine).await {
+            Ok((date, jours)) => {
+                vue.expire_le = Some(date);
+                vue.jours_restants = Some(jours);
+            }
+            Err(e) => vue.erreur_expiration = Some(e),
+        },
+        Err(e) => vue.erreur_expiration = Some(e),
+    }
+
+    vue.latence_ms = debut.elapsed().as_millis() as u64;
+    vue
 }
 
 const TAILLE_EXTRAIT: usize = 4000;
@@ -151,13 +467,12 @@ pub struct Inspection {
 #[tauri::command]
 async fn inspecter_url(url: String) -> Inspection {
     let debut = Instant::now();
-    let agent = concat!("SiteDashboard/", env!("CARGO_PKG_VERSION"));
 
     let mut vue = Inspection {
         url_demandee: url.clone(),
         methode: "GET".to_string(),
         entetes_requete: vec![
-            ("user-agent".to_string(), agent.to_string()),
+            ("user-agent".to_string(), AGENT.to_string()),
             ("accept".to_string(), "*/*".to_string()),
         ],
         ..Default::default()
@@ -165,15 +480,10 @@ async fn inspecter_url(url: String) -> Inspection {
 
     // Redirections suivies a la main: reqwest les avale silencieusement, alors
     // qu'un saut inattendu (http -> https, ajout de www) est souvent l'explication.
-    let client = match reqwest::Client::builder()
-        .timeout(DELAI_CHECK)
-        .redirect(reqwest::redirect::Policy::none())
-        .user_agent(agent)
-        .build()
-    {
+    let client = match client_http(false) {
         Ok(client) => client,
         Err(e) => {
-            vue.erreur = Some(e.to_string());
+            vue.erreur = Some(e);
             return vue;
         }
     };
@@ -203,11 +513,7 @@ async fn inspecter_url(url: String) -> Inspection {
             break reponse;
         };
 
-        let absolue = url::Url::parse(&courante)
-            .ok()
-            .and_then(|base| base.join(&cible).ok())
-            .map(|u| u.to_string())
-            .unwrap_or(cible);
+        let absolue = resoudre_cible(&courante, &cible);
 
         vue.redirections
             .push(format!("{} {} -> {}", reponse.status().as_u16(), courante, absolue));
@@ -225,16 +531,7 @@ async fn inspecter_url(url: String) -> Inspection {
     vue.statut_texte = statut.canonical_reason().map(str::to_string);
     vue.version_http = Some(format!("{:?}", reponse.version()));
     vue.url_finale = Some(reponse.url().to_string());
-    vue.entetes_reponse = reponse
-        .headers()
-        .iter()
-        .map(|(nom, valeur)| {
-            (
-                nom.to_string(),
-                valeur.to_str().unwrap_or("(valeur non textuelle)").to_string(),
-            )
-        })
-        .collect();
+    vue.entetes_reponse = entetes_de(reponse.headers());
     vue.content_type = reponse
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -274,11 +571,7 @@ async fn taux_change(date: String, de: String, vers: String) -> Result<f64, Stri
         return Ok(1.0);
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(DELAI_CHECK)
-        .user_agent(concat!("SiteDashboard/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = client_http(true)?;
 
     let url = format!("https://api.frankfurter.app/{date}?from={de}&to={vers}");
     let reponse = client.get(&url).send().await.map_err(|e| message_erreur(&e))?;
@@ -337,11 +630,7 @@ async fn telecharger_icone(client: &reqwest::Client, url: &url::Url) -> Option<S
 #[tauri::command]
 async fn recuperer_favicon(url: String) -> Option<String> {
     let base = url::Url::parse(&url).ok()?;
-    let client = reqwest::Client::builder()
-        .timeout(DELAI_CHECK)
-        .user_agent(concat!("SiteDashboard/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .ok()?;
+    let client = client_http(true).ok()?;
 
     // Lecture volontairement sommaire du HTML: on cherche un <link rel=...icon...>
     // sans embarquer un parseur complet. En cas d'echec, /favicon.ico prend le relais.
@@ -610,6 +899,30 @@ pub fn run() {
             sql: include_str!("../migrations/009_fin_abonnement.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 10,
+            description: "assertions: en-tetes, redirection attendue, taille et occurrences",
+            sql: include_str!("../migrations/010_assertions.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 11,
+            description: "checks de type valeur: suivi de la version deployee",
+            sql: include_str!("../migrations/011_valeurs.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 12,
+            description: "cadence propre a chaque check",
+            sql: include_str!("../migrations/012_cadence.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 13,
+            description: "checks de type domaine: resolution DNS et expiration RDAP",
+            sql: include_str!("../migrations/013_domaine.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -624,6 +937,9 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             chemin_base,
             executer_check,
+            executer_redirection,
+            lire_valeur,
+            verifier_domaine,
             verifier_certificat,
             inspecter_url,
             recuperer_favicon,
@@ -669,28 +985,105 @@ mod tests {
     }
 
     #[test]
-    fn signale_le_statut_avant_le_fragment() {
-        // Cas reel rencontre: un /config.js inexistant renvoyait 404, et le check
-        // annoncait "fragment absent" - ce qui envoyait chercher un probleme de
-        // contenu alors que le fichier n'existe simplement pas.
-        let message = message_echec(false, 404, Some("fragment absent: window.".to_string()));
-        assert_eq!(message.as_deref(), Some("statut HTTP 404"));
-    }
-
-    #[test]
-    fn signale_le_fragment_quand_le_statut_est_bon() {
-        let message = message_echec(true, 200, Some("fragment absent: window.".to_string()));
-        assert_eq!(message.as_deref(), Some("fragment absent: window."));
-    }
-
-    #[test]
-    fn ne_signale_rien_quand_tout_va_bien() {
-        assert_eq!(message_echec(true, 200, None), None);
-    }
-
-    #[test]
     fn construit_un_data_uri_valide() {
         assert_eq!(data_uri("image/png", b"ab"), "data:image/png;base64,YWI=");
+    }
+
+    // La priorite des messages d'echec vit desormais dans src/lib/assertions.js,
+    // avec les autres assertions: Rust constate, JS juge. Les tests
+    // correspondants sont dans src/lib/assertions.test.js.
+
+    #[test]
+    fn resout_une_cible_relative_contre_son_origine() {
+        assert_eq!(
+            resoudre_cible("https://www.denivio.fr/a/b", "/c"),
+            "https://www.denivio.fr/c"
+        );
+    }
+
+    #[test]
+    fn laisse_une_cible_absolue_intacte() {
+        assert_eq!(
+            resoudre_cible("https://www.denivio.fr/", "https://denivio.fr/"),
+            "https://denivio.fr/"
+        );
+    }
+
+    #[test]
+    fn lit_une_valeur_json_en_profondeur() {
+        let corps = r#"{"build": {"id": "a1b2c3"}, "n": 7}"#;
+        assert_eq!(extraire_valeur(corps, "json:build.id").unwrap(), "a1b2c3");
+        // Un nombre ne doit pas revenir entoure de guillemets
+        assert_eq!(extraire_valeur(corps, "json:n").unwrap(), "7");
+    }
+
+    #[test]
+    fn signale_un_champ_json_absent_sans_paniquer() {
+        let erreur = extraire_valeur(r#"{"a": 1}"#, "json:b.c").unwrap_err();
+        assert!(erreur.contains("champ absent"), "message inattendu: {erreur}");
+    }
+
+    #[test]
+    fn lit_le_premier_groupe_capturant() {
+        let corps = "window.__BUILD__ = \"2026-09-17.4\";";
+        let valeur = extraire_valeur(corps, r#"regex:__BUILD__ = "([^"]+)""#).unwrap();
+        assert_eq!(valeur, "2026-09-17.4");
+    }
+
+    #[test]
+    fn refuse_un_extracteur_sans_prefixe_connu() {
+        assert!(extraire_valeur("{}", "buildId").is_err());
+    }
+
+    #[test]
+    fn compte_les_jours_depuis_l_epoque() {
+        assert_eq!(jours_depuis_epoque(1970, 1, 1), 0);
+        assert_eq!(jours_depuis_epoque(1970, 1, 2), 1);
+        // 2024 est bissextile: le 29 fevrier doit exister
+        assert_eq!(
+            jours_depuis_epoque(2024, 3, 1) - jours_depuis_epoque(2024, 2, 28),
+            2
+        );
+        assert_eq!(jours_depuis_epoque(2000, 1, 1), 10_957);
+    }
+
+    #[test]
+    fn mesure_l_ecart_a_une_date_iso() {
+        let aujourdhui = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64
+            / 86_400;
+        let dans_dix_jours = aujourdhui + 10;
+        // On reconstruit une date civile a partir du jour vise, pour ne pas
+        // ecrire une date en dur qui perimerait.
+        let (annee, mois, jour) = date_civile(dans_dix_jours);
+        let iso = format!("{annee:04}-{mois:02}-{jour:02}T00:00:00Z");
+        assert_eq!(jours_jusqua(&iso).unwrap(), 10);
+    }
+
+    #[test]
+    fn rejette_une_date_illisible() {
+        assert!(jours_jusqua("bientot").is_err());
+    }
+
+    /// Inverse de `jours_depuis_epoque`, utilise uniquement par les tests.
+    fn date_civile(jours: i64) -> (i64, i64, i64) {
+        let jours = jours + 719_468;
+        let ere = if jours >= 0 { jours } else { jours - 146_096 } / 146_097;
+        let jour_ere = jours - ere * 146_097;
+        let annee_ere =
+            (jour_ere - jour_ere / 1460 + jour_ere / 36524 - jour_ere / 146_096) / 365;
+        let annee = annee_ere + ere * 400;
+        let jour_annee = jour_ere - (365 * annee_ere + annee_ere / 4 - annee_ere / 100);
+        let mois_decale = (5 * jour_annee + 2) / 153;
+        let jour = jour_annee - (153 * mois_decale + 2) / 5 + 1;
+        let mois = if mois_decale < 10 {
+            mois_decale + 3
+        } else {
+            mois_decale - 9
+        };
+        (if mois <= 2 { annee + 1 } else { annee }, mois, jour)
     }
 
     /// Reproduit le cas signale: un fichier attendu qui repond 200 en HTML.
@@ -747,6 +1140,38 @@ mod tests {
             "aucune redirection tracee alors que http doit rediriger vers https"
         );
         assert!(vue.url_finale.unwrap().starts_with("https://"));
+    }
+
+    /// La redirection doit etre OBSERVEE, pas suivie: c'est tout l'interet du
+    /// type, et ce qu'un check HTTP classique ne sait pas voir.
+    #[tokio::test]
+    #[ignore]
+    async fn observe_une_vraie_redirection_sans_la_suivre() {
+        let vue = executer_redirection("http://github.com/".to_string()).await;
+
+        assert_eq!(vue.erreur, None);
+        let statut = vue.statut.expect("aucun statut");
+        assert!((300..400).contains(&statut), "statut inattendu: {statut}");
+        assert!(
+            vue.cible.unwrap().starts_with("https://"),
+            "la cible devrait etre l'URL en https"
+        );
+    }
+
+    /// Resolution DNS et expiration RDAP sur un domaine qui existera encore
+    /// longtemps.
+    #[tokio::test]
+    #[ignore]
+    async fn resout_un_vrai_domaine() {
+        let vue = verifier_domaine("github.com".to_string()).await;
+
+        assert_eq!(vue.erreur, None, "resolution DNS echouee");
+        assert!(!vue.adresses.is_empty(), "aucune adresse resolue");
+        assert!(
+            vue.jours_restants.unwrap_or(0) > 0,
+            "expiration non lue: {:?}",
+            vue.erreur_expiration
+        );
     }
 
     /// Test reseau: ignore par defaut pour que `cargo test` reste hors ligne.

@@ -53,6 +53,62 @@ describe("suggestionsRestantes", () => {
     expect(parCle.sitemap.doitContenir).toBe("<urlset");
     expect(parCle.robots.doitContenir).toBe("User-agent");
   });
+
+  it("garde une taille plancher la ou un 200 peut etre retreci", () => {
+    const parCle = Object.fromEntries(CHECKS_SUGGERES.map((s) => [s.cle, s]));
+    // Un config.js vide et un sitemap vide repondent 200 comme les autres.
+    expect(parCle.config.tailleMinOctets).toBeGreaterThan(0);
+    expect(parCle.sitemap.tailleMinOctets).toBeGreaterThan(0);
+  });
+
+  it("propose les en-tetes de securite qui ne laissent aucune autre trace", () => {
+    const [entetes] = suggestionsRestantes("https://denivio.fr", []).filter(
+      (s) => s.cle === "entetes",
+    );
+    const parNom = Object.fromEntries(entetes.entetes.map((r) => [r.nom, r]));
+    expect(parNom["strict-transport-security"].operateur).toBe("present");
+    expect(parNom["content-security-policy"].operateur).toBe("present");
+    // "Server: nginx/1.18.0 (Ubuntu)" etait le seul temoin de la regression.
+    expect(parNom.server).toMatchObject({ operateur: "ne_contient_pas", valeur: "/" });
+  });
+
+  it("vise l'autre forme du domaine pour la redirection www", () => {
+    const parCle = (url) =>
+      Object.fromEntries(suggestionsRestantes(url, []).map((s) => [s.cle, s]));
+
+    expect(parCle("https://denivio.fr")).toMatchObject({
+      www: { url: "https://www.denivio.fr/", cibleAttendue: "https://denivio.fr/" },
+    });
+    // Symetrique: un site canonique en www fait verifier la forme sans www.
+    expect(parCle("https://www.exemple.fr")).toMatchObject({
+      www: { url: "https://exemple.fr/", cibleAttendue: "https://www.exemple.fr/" },
+    });
+  });
+
+  it("ne propose la bascule https qu'a un site deja en https", () => {
+    const cles = (url) => suggestionsRestantes(url, []).map((s) => s.cle);
+    expect(cles("https://denivio.fr")).toContain("https");
+    expect(cles("http://vieux-site.fr")).not.toContain("https");
+  });
+
+  it("interroge le domaine nu, pas la forme www", () => {
+    const [domaine] = suggestionsRestantes("https://www.denivio.fr", []).filter(
+      (s) => s.cle === "domaine",
+    );
+    expect(domaine.domaine).toBe("denivio.fr");
+  });
+
+  it("masque une redirection deja surveillee malgre son type", () => {
+    const restantes = suggestionsRestantes("https://denivio.fr", [
+      { type: "redirection", url: "https://www.denivio.fr/" },
+    ]);
+    expect(restantes.map((s) => s.cle)).not.toContain("www");
+    // Un check HTTP sur la meme URL ne verifierait pas la meme chose
+    const avecHttp = suggestionsRestantes("https://denivio.fr", [
+      { type: "http", url: "https://www.denivio.fr/" },
+    ]);
+    expect(avecHttp.map((s) => s.cle)).toContain("www");
+  });
 });
 
 describe("urlDepuisChemin", () => {

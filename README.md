@@ -53,7 +53,9 @@ Deux règles non négociables, qui évitent 90 % des bugs de ce genre d'appli :
 | `abonnements` | coûts récurrents (partageables aussi), avec leur date de premier paiement |
 | `abonnement_tarifs` | historique des prix d'un abonnement, chacun avec sa date d'entrée en vigueur |
 | `depense_sites` / `abonnement_sites` | quels sites portent la ligne, et pour quelle part |
-| `checks` | ce qu'on vérifie sur un site : une URL, un statut attendu, un fragment de texte |
+| `checks` | ce qu'on vérifie sur un site : une URL, un statut attendu, un fragment de texte, une taille minimale, une cible de redirection, un domaine… |
+| `check_entetes` | les en-têtes qu'une réponse doit (ou ne doit pas) porter |
+| `check_valeurs` | une ligne par **changement** de valeur lue (version déployée), jamais purgée |
 | `verifications` | le résultat de chaque check, horodaté (purgé au-delà de 30 jours) |
 | `sites.favicon` | icône du site, stockée en data URI (pas en URL : elle doit s'afficher même site tombé) |
 | `revenu_sites` | même partage côté recettes |
@@ -219,15 +221,20 @@ détail propose ensuite un **catalogue de checks courants en un clic**
 ([`src/lib/checksSuggeres.js`](src/lib/checksSuggeres.js)), tiré de ce qui est réellement
 déployé sur Denivio et HistorySite :
 
-| Check | Chemin | Contenu vérifié |
+| Check | Cible | Ce qui est vérifié |
 |---|---|---|
-| Page d'accueil | `/` | — |
-| Configuration runtime | `/config.js` | `window.` |
+| Page d'accueil | `/` | le site répond et sert sa page |
+| Configuration runtime | `/config.js` | contient `window.`, et pèse plus de 64 o |
 | Santé de l'API | `/healthz` | — |
-| Sitemap | `/sitemap.xml` | `<urlset` |
+| Sitemap | `/sitemap.xml` | contient `<urlset`, et pèse plus de 1 Ko |
 | robots.txt | `/robots.txt` | `User-agent` |
 | Manifest PWA | `/manifest.webmanifest` | — |
+| En-têtes de sécurité | `/` | HSTS et CSP présents, `Server` sans version |
+| Redirection www | l'autre forme du domaine | redirige bien vers le site |
+| Bascule en https | `http://…` | redirige bien vers `https://` |
 | Certificat TLS | (le domaine) | expiration |
+| Nom de domaine | (le domaine) | où il pointe, et quand il expire |
+| Version déployée | `/version.json` | affiche le `buildId` — sans verdict |
 
 Le `doitContenir` compte autant que le statut. Le cas qui a motivé le catalogue est
 `/config.js` : le conteneur le réécrit à chaque démarrage depuis son `.env`
@@ -237,6 +244,106 @@ sitemap proxyfié qui renvoie 200 avec une page d'erreur HTML.
 
 Une suggestion déjà surveillée disparaît de la liste. Les checks sur mesure s'ajoutent
 toujours par le formulaire en dessous.
+
+### Ce qu'un statut et un fragment ne voient pas
+
+Les cinq dernières entrées du catalogue existent parce qu'un 200 avec le bon contenu ne dit
+toujours rien des en-têtes, des redirections ni de la version en ligne. Chacune vient d'une
+panne réellement constatée, qu'aucun check ne signalait.
+
+**Les en-têtes de réponse.** Un durcissement du proxy (`server_tokens off`, limitation de
+débit) était commité depuis des jours mais jamais monté sur le VPS. Le site répondait 200 et
+servait ses pages ; le seul témoin visible était `Server: nginx/1.18.0 (Ubuntu)` au lieu de
+`nginx`. Une protection qui disparaît ne change ni le statut ni le corps — c'est la
+catégorie la plus rentable, parce qu'une régression de sécurité est **par nature
+silencieuse**. Les règles se saisissent une par ligne, le `!` niant la règle :
+
+    strict-transport-security       -> doit être présent
+    !x-powered-by                   -> doit être absent
+    content-type: application/json  -> doit contenir cette valeur
+    !server: /                      -> ne doit pas contenir cette valeur
+
+La dernière forme est indispensable : on veut interdire un numéro de version sans figer pour
+autant la valeur attendue.
+
+**La redirection, observée plutôt que suivie.** `www.denivio.fr` servait le site en 200 au
+lieu de rediriger, depuis la mise en ligne : 4417 URL publiées à deux adresses. Un check
+classique serait **passé au vert**, puisque le bug *était* le 200 — et régler
+`statut_attendu = 301` n'y aurait rien changé, reqwest suivant les redirections pour ne
+rapporter que le statut final. Le check `redirection` ne suit rien : il lit le code 3xx
+**et** le `Location` du premier saut.
+
+Un seul saut, volontairement : le défaut qu'on traque est « ça ne redirige plus du tout », et
+une assertion sur la destination finale masquerait un saut intermédiaire ajouté entre-temps.
+La cible est comparée **avant** le code exact — rediriger au mauvais endroit est plus grave
+que rediriger au bon endroit en 302 plutôt qu'en 301. Une cible égale à l'URL de départ est
+une boucle, détectée au passage.
+
+**La taille et le nombre d'occurrences.** Le même piège que `/config.js`, en version
+dégradée : un 200 sur un contenu *rétréci*. Le `sitemap.xml` est généré depuis la base et
+porte 4417 URL ; s'il se vidait, il répondrait 200, contiendrait toujours `<urlset`, et
+resterait vert avec 5 URL. La taille comparée est celle du **corps décodé**, pas le
+`Content-Length` : gzip est actif et l'en-tête est absent sur une réponse en chunked.
+
+**La version déployée.** Établir que la production datait du 14/09 alors que `main` avait
+trois jours d'avance a pris un vrai moment — le site allait très bien, il était seulement en
+retard. Un check `valeur` extrait une chaîne (`json:buildId` ou `regex:motif`) et l'affiche
+avec sa date de dernier changement, **sans rendre de verdict** : un retard de déploiement
+n'est pas une panne, c'est une information.
+
+Les valeurs vivent dans `check_valeurs`, une ligne par changement, et pas dans
+`verifications` — qui est purgée à 30 jours. Un build inchangé depuis six semaines y
+afficherait « inchangé depuis 30 jours », un chiffre faux qui a l'air vrai. Ces checks sont
+aussi **exclus** de l'état des sites et du taux de disponibilité : toujours OK, ils
+diluteraient le ratio — un site avec un seul vrai check en échec et deux checks `valeur`
+passerait de rouge à orange.
+
+**Le nom de domaine.** Un domaine qu'on n'utilise plus résolvait toujours vers le VPS, et
+atterrissait sur un vhost par défaut avec un certificat qui ne le couvre pas. L'argument est
+celui du certificat : l'expiration d'un nom de domaine est entièrement prévisible, et se
+répare beaucoup moins vite. Le check compare les adresses A/AAAA à une cible attendue, et lit
+la date d'expiration par **RDAP** — le successeur de WHOIS, qui répond en JSON sur une API
+publique, sans clé.
+
+Deux limites assumées : le résolveur du système **cache**, donc un changement peut mettre un
+TTL à apparaître ; et un TLD sans serveur RDAP ne fait pas échouer le check — crier sur une
+absence de donnée userait l'alerte pour rien.
+
+### Où se décide le verdict
+
+**Rust constate, JS juge.** Les commandes renvoient les *faits* d'une réponse — statut,
+en-têtes, taille, occurrences, cible de redirection — et ne décident rien. Les verdicts
+vivent dans [`src/lib/assertions.js`](src/lib/assertions.js).
+
+C'était déjà le partage de `verifier_certificat` + `evaluerCertificat`. L'étendre aux trois
+nouvelles familles d'assertions évite d'avoir **deux endroits qui décident**, donc deux
+endroits à corriger quand une règle change — et rend toutes les règles testables sans réseau.
+
+L'ordre des messages d'échec prolonge la règle en place depuis le début :
+
+1. **statut** — sur un 404, tout le reste est mécaniquement faux ;
+2. **contenu** (fragment, occurrences, taille) — une mauvaise page explique des en-têtes
+   manquants, l'inverse n'est pas vrai ;
+3. **en-têtes** — la règle en défaut, plus « +N autres » s'il y en a plusieurs. Lister trois
+   en-têtes dans une carte de site la rendrait illisible ; le détail est dans le diagnostic.
+
+### La cadence de chaque check
+
+Le cycle tourne à la minute, mais tous les checks n'ont pas à tourner aussi souvent :
+interroger RDAP 1440 fois par jour pour une date qui bouge une fois par an est abusif et se
+fait rate-limiter. Une poignée de main TLS complète chaque minute, pour une date qui change
+tous les 90 jours, ne valait pas mieux.
+
+| Type | Intervalle minimal |
+|---|---|
+| `http`, `redirection` | à chaque cycle |
+| `valeur` | 15 min |
+| `tls` | 6 h |
+| `domaine` | 12 h |
+
+Un check sauté **garde son dernier résultat** : l'état d'un site se lit sur la dernière
+vérification de chaque check, pas sur son âge. Un domaine reste donc vert entre deux
+interrogations.
 
 ### Diagnostiquer un check qui échoue
 
@@ -328,24 +435,32 @@ Pour sauvegarder : copier ce fichier.
 
 `npm run test` couvre deux niveaux :
 
-- la **logique pure** (répartition au centime, états de supervision, verdict sur certificat,
-  formats) ;
+- la **logique pure** (répartition au centime, états de supervision, verdicts d'assertion —
+  en-têtes, redirections, taille, domaine —, verdict sur certificat, formats) ;
 - les **requêtes SQL réelles** ([`src/lib/queries.test.js`](src/lib/queries.test.js)) : le
   module `db` est remplacé par un adaptateur vers `node:sqlite`, et les vraies fonctions de
   `queries.js` tournent sur le schéma produit par les **vraies migrations**, en mémoire. Une
   jointure cassée ou une colonne renommée fait donc échouer les tests.
 
-Côté Rust, `cargo test` couvre le parsing des attributs HTML et la priorité des messages
-d'échec. Trois tests réseau sont marqués `#[ignore]` pour que la suite reste hors ligne ;
+Côté Rust, `cargo test` couvre le parsing des attributs HTML, la résolution d'une cible de
+redirection, l'extraction d'une valeur (`json:` et `regex:`) et le calcul de jours entre deux
+dates. Les tests réseau sont marqués `#[ignore]` pour que la suite reste hors ligne ;
 `cargo test -- --ignored` les lance et vérifie la récupération réelle d'une icône,
-l'inspection complète d'une URL et le suivi des redirections.
+l'inspection complète d'une URL, le suivi des redirections, une redirection observée sans
+être suivie et la résolution d'un vrai domaine.
 
 Ce qui n'est **pas** couvert : le parcours à la souris dans l'application.
 
 ## Suite envisagée
 
 - **Icône en zone de notification + démarrage automatique** : aujourd'hui la supervision ne
-  tourne que fenêtre ouverte, donc une panne nocturne passe inaperçue
+  tourne que fenêtre ouverte, donc une panne nocturne passe inaperçue — et tant que ce n'est
+  pas fait, les checks ne voient que ce qui casse pendant qu'on regarde. Ça passe devant tout
+  le reste
+- **Fraîcheur des sauvegardes, espace disque, RAM** : le vrai risque ouvert, et le seul que
+  ce tableau de bord ne peut pas voir — tout passe par HTTP ici, et ces signaux ne sont pas
+  sur le web. Le pont le moins coûteux serait un endpoint d'état côté API, protégé par un
+  jeton, que le check `valeur` lirait ; mais ça touche le site supervisé, pas SiteDashboard
 - Alertes système au changement d'état (et seulement au changement, sinon c'est du bruit)
 - Import CSV par fournisseur (la plupart exportent du CSV) → `source = 'csv'`
 - Connecteurs API là où ça vaut le coup (Stripe, facturation cloud) → `source = 'api'`

@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Bouton, Carte, Champ, EtatVide, Kpi } from "../components/ui";
+import { Bouton, Carte, Champ, EtatVide, Kpi, Selecteur } from "../components/ui";
 import {
   basculerCheck,
   coutFixeDuSite,
@@ -28,14 +28,69 @@ import {
   SEUIL_CERT_JOURS,
   tauxDisponibilite,
 } from "../lib/statut";
+import { parserRegles, SEUIL_DOMAINE_JOURS } from "../lib/assertions";
 import { suggestionsRestantes, urlDepuisChemin } from "../lib/checksSuggeres";
 import Diagnostic from "../components/Diagnostic";
-import { formatMontant } from "../lib/format";
+import { formatMontant, joursDepuis } from "../lib/format";
 
-const CHECK_VIDE = { libelle: "", chemin: "", statutAttendu: "", doitContenir: "" };
+const CHECK_VIDE = {
+  type: "http",
+  libelle: "",
+  chemin: "",
+  statutAttendu: "",
+  doitContenir: "",
+  occurrencesMin: "",
+  tailleMin: "",
+  entetes: "",
+  cibleAttendue: "",
+  extracteur: "",
+  domaine: "",
+};
+
+const LIBELLES_TYPE = {
+  http: "HTTP",
+  redirection: "REDIR",
+  tls: "TLS",
+  domaine: "DNS",
+  valeur: "VALEUR",
+};
 
 function heure(horodatage) {
   return String(horodatage ?? "").slice(11, 16);
+}
+
+/** Ce que le check verifie, en une ligne, sous son libelle. */
+function resumeAssertions(check) {
+  const bouts = [];
+  if (check.statut_attendu) bouts.push(`statut ${check.statut_attendu}`);
+  if (check.doit_contenir) {
+    bouts.push(
+      check.occurrences_min > 1
+        ? `${check.occurrences_min}x "${check.doit_contenir}"`
+        : `contient "${check.doit_contenir}"`,
+    );
+  }
+  if (check.taille_min_octets) bouts.push(`≥ ${check.taille_min_octets} o`);
+  if (check.entetes?.length) bouts.push(`${check.entetes.length} en-tete(s)`);
+  if (check.cible_attendue) bouts.push(`vers ${check.cible_attendue}`);
+  if (check.domaine) bouts.push(check.domaine);
+  return bouts.join(" · ");
+}
+
+/**
+ * Le dernier resultat, en clair.
+ *
+ * Les types qui n'ont pas de statut HTTP rangent leur message dans `erreur`,
+ * y compris quand tout va bien: "valide encore 68 jours" ou "301 vers
+ * https://denivio.fr/" est l'information utile, pas un code.
+ */
+function dernierResultat(check) {
+  if (!check.dernier_ok) return check.derniere_erreur ?? "echec";
+  if (check.type === "tls") return `valide encore ${check.derniers_jours} jour(s)`;
+  if (check.type === "redirection" || check.type === "domaine") {
+    return check.derniere_erreur ?? "OK";
+  }
+  return `HTTP ${check.dernier_statut}`;
 }
 
 export default function DetailSite({
@@ -82,6 +137,8 @@ export default function DetailSite({
     evenement.preventDefault();
     setErreur("");
 
+    const { type } = formulaire;
+
     // L'URL de base vient du site: on ne saisit que ce qui vient apres.
     const url = urlDepuisChemin(site.url, formulaire.chemin);
     if (!url) {
@@ -93,14 +150,42 @@ export default function DetailSite({
       return;
     }
 
-    const statut = formulaire.statutAttendu.trim();
-    await creerCheck({
-      siteId: site.id,
-      libelle: formulaire.libelle.trim() || "Check",
-      url,
-      statutAttendu: statut ? Number(statut) : null,
-      doitContenir: formulaire.doitContenir.trim() || null,
-    });
+    const manquant = {
+      redirection: !formulaire.cibleAttendue.trim() && "Indique vers quelle URL rediriger.",
+      valeur: !formulaire.extracteur.trim() && "Indique quoi extraire, par exemple json:buildId.",
+      domaine: !formulaire.domaine.trim() && "Indique le nom de domaine a surveiller.",
+    }[type];
+    if (manquant) {
+      setErreur(manquant);
+      return;
+    }
+
+    const entier = (saisie) => (saisie.trim() ? Number(saisie.trim()) : null);
+    const siHttp = (valeur) => (type === "http" ? valeur : null);
+
+    try {
+      await creerCheck({
+        siteId: site.id,
+        libelle: formulaire.libelle.trim() || "Check",
+        url,
+        type,
+        statutAttendu:
+          type === "http" || type === "redirection" ? entier(formulaire.statutAttendu) : null,
+        doitContenir: siHttp(formulaire.doitContenir.trim() || null),
+        occurrencesMin: siHttp(entier(formulaire.occurrencesMin)),
+        tailleMinOctets: siHttp(entier(formulaire.tailleMin)),
+        entetes: type === "http" ? parserRegles(formulaire.entetes) : [],
+        cibleAttendue: type === "redirection" ? formulaire.cibleAttendue.trim() : null,
+        extracteur: type === "valeur" ? formulaire.extracteur.trim() : null,
+        domaine: type === "domaine" ? formulaire.domaine.trim() : null,
+        seuilJours: type === "domaine" ? SEUIL_DOMAINE_JOURS : null,
+      });
+    } catch (e) {
+      // creerCheck refuse par exemple un nombre d'occurrences sans fragment:
+      // le controle est en base, pas seulement ici.
+      setErreur(String(e?.message ?? e));
+      return;
+    }
 
     setFormulaire(CHECK_VIDE);
     await recharger();
@@ -112,8 +197,15 @@ export default function DetailSite({
       libelle: suggestion.libelle,
       url: suggestion.url,
       type: suggestion.type,
-      doitContenir: suggestion.doitContenir,
-      seuilJours: suggestion.type === "tls" ? SEUIL_CERT_JOURS : null,
+      doitContenir: suggestion.doitContenir ?? null,
+      tailleMinOctets: suggestion.tailleMinOctets ?? null,
+      occurrencesMin: suggestion.occurrencesMin ?? null,
+      entetes: suggestion.entetes ?? [],
+      cibleAttendue: suggestion.cibleAttendue ?? null,
+      extracteur: suggestion.extracteur ?? null,
+      domaine: suggestion.domaine ?? null,
+      seuilJours:
+        { tls: SEUIL_CERT_JOURS, domaine: SEUIL_DOMAINE_JOURS }[suggestion.type] ?? null,
     });
     await recharger();
   }
@@ -138,10 +230,15 @@ export default function DetailSite({
     await recharger();
   }
 
+  // Les checks `valeur` ne rendent aucun verdict: les compter ici diluerait
+  // l'etat, exactement comme dans `etatsDesSites`.
+  const supervises = checks.filter((c) => c.type !== "valeur");
+  const informations = checks.filter((c) => c.type === "valeur");
+
   const etat = etatSite({
-    nb_checks: checks.filter((c) => c.actif).length,
-    nb_resultats: checks.filter((c) => c.actif && c.derniere_verif).length,
-    nb_ok: checks.filter((c) => c.actif && c.dernier_ok).length,
+    nb_checks: supervises.filter((c) => c.actif).length,
+    nb_resultats: supervises.filter((c) => c.actif && c.derniere_verif).length,
+    nb_ok: supervises.filter((c) => c.actif && c.dernier_ok).length,
   });
 
   const suggestions = suggestionsRestantes(site.url, checks);
@@ -269,7 +366,7 @@ export default function DetailSite({
       </Carte>
 
       <Carte titre="Checks">
-        {checks.length === 0 ? (
+        {supervises.length === 0 ? (
           <EtatVide>Aucun check. Ajoute-en un ci-dessous.</EtatVide>
         ) : (
           <table className="w-full text-sm">
@@ -284,7 +381,7 @@ export default function DetailSite({
               </tr>
             </thead>
             <tbody>
-              {checks.map((check) => (
+              {supervises.map((check) => (
                 <tr
                   key={check.id}
                   className={`border-b border-bord/50 last:border-0 ${check.actif ? "" : "opacity-50"}`}
@@ -298,9 +395,14 @@ export default function DetailSite({
                   </td>
                   <td className="py-2">
                     {check.libelle}
-                    {check.type === "tls" && (
+                    {check.type !== "http" && (
                       <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-texte-doux">
-                        TLS
+                        {LIBELLES_TYPE[check.type] ?? check.type}
+                      </span>
+                    )}
+                    {resumeAssertions(check) && (
+                      <span className="block max-w-72 truncate text-[11px] text-texte-doux">
+                        {resumeAssertions(check)}
                       </span>
                     )}
                   </td>
@@ -309,14 +411,10 @@ export default function DetailSite({
                     {check.derniere_verif ? (
                       <span className="flex items-center gap-2">
                         <span
-                          className="size-2 rounded-full"
+                          className="size-2 shrink-0 rounded-full"
                           style={{ background: check.dernier_ok ? "#34d399" : "#f97362" }}
                         />
-                        {check.dernier_ok
-                          ? check.type === "tls"
-                            ? `valide encore ${check.derniers_jours} jour(s)`
-                            : `HTTP ${check.dernier_statut}`
-                          : (check.derniere_erreur ?? "echec")}
+                        {dernierResultat(check)}
                         <span className="text-texte-doux">a {heure(check.derniere_verif)}</span>
                       </span>
                     ) : (
@@ -390,6 +488,17 @@ export default function DetailSite({
         )}
 
         <form onSubmit={ajouterCheck} className="mt-4 flex flex-wrap items-end gap-3">
+          <Selecteur
+            label="Type"
+            value={formulaire.type}
+            onChange={(e) => maj("type", e.target.value)}
+            className="w-36"
+          >
+            <option value="http">HTTP</option>
+            <option value="redirection">Redirection</option>
+            <option value="valeur">Valeur</option>
+            <option value="domaine">Domaine</option>
+          </Selecteur>
           <Champ
             label="Libelle"
             placeholder="API sante"
@@ -414,25 +523,150 @@ export default function DetailSite({
               />
             </span>
           </label>
-          <Champ
-            label="Statut attendu"
-            placeholder="200"
-            inputMode="numeric"
-            value={formulaire.statutAttendu}
-            onChange={(e) => maj("statutAttendu", e.target.value)}
-            className="w-32"
-          />
-          <Champ
-            label="Doit contenir"
-            placeholder="texte attendu"
-            value={formulaire.doitContenir}
-            onChange={(e) => maj("doitContenir", e.target.value)}
-            className="w-44"
-          />
+
+          {(formulaire.type === "http" || formulaire.type === "redirection") && (
+            <Champ
+              label="Statut attendu"
+              placeholder={formulaire.type === "redirection" ? "301" : "200"}
+              inputMode="numeric"
+              value={formulaire.statutAttendu}
+              onChange={(e) => maj("statutAttendu", e.target.value)}
+              className="w-32"
+            />
+          )}
+
+          {formulaire.type === "http" && (
+            <>
+              <Champ
+                label="Doit contenir"
+                placeholder="texte attendu"
+                value={formulaire.doitContenir}
+                onChange={(e) => maj("doitContenir", e.target.value)}
+                className="w-44"
+              />
+              <Champ
+                label="Occurrences min"
+                placeholder="1"
+                inputMode="numeric"
+                title="Nombre minimal d'apparitions du texte attendu"
+                value={formulaire.occurrencesMin}
+                onChange={(e) => maj("occurrencesMin", e.target.value)}
+                className="w-32"
+              />
+              <Champ
+                label="Taille min (octets)"
+                placeholder="1024"
+                inputMode="numeric"
+                title="Taille du corps decode, pas le Content-Length"
+                value={formulaire.tailleMin}
+                onChange={(e) => maj("tailleMin", e.target.value)}
+                className="w-36"
+              />
+              <label className="flex w-full flex-col gap-1">
+                <span className="text-xs text-texte-doux">
+                  En-tetes attendus — une regle par ligne : <code>nom</code> present,{" "}
+                  <code>!nom</code> absent, <code>nom: valeur</code> contient,{" "}
+                  <code>!nom: valeur</code> ne contient pas
+                </span>
+                <textarea
+                  rows={3}
+                  spellCheck={false}
+                  placeholder={"strict-transport-security\ncontent-security-policy\n!server: /"}
+                  value={formulaire.entetes}
+                  onChange={(e) => maj("entetes", e.target.value)}
+                  className="rounded-lg border border-bord bg-surface-2 px-2.5 py-1.5 font-mono text-xs text-texte outline-none focus:border-accent"
+                />
+              </label>
+            </>
+          )}
+
+          {formulaire.type === "redirection" && (
+            <Champ
+              label="Doit rediriger vers"
+              placeholder="https://denivio.fr/"
+              value={formulaire.cibleAttendue}
+              onChange={(e) => maj("cibleAttendue", e.target.value)}
+              className="w-72"
+            />
+          )}
+
+          {formulaire.type === "valeur" && (
+            <Champ
+              label="Extracteur"
+              placeholder="json:buildId"
+              title="json:chemin.pointe ou regex:motif (groupe capturant n.1)"
+              value={formulaire.extracteur}
+              onChange={(e) => maj("extracteur", e.target.value)}
+              className="w-56"
+            />
+          )}
+
+          {formulaire.type === "domaine" && (
+            <>
+              <Champ
+                label="Domaine"
+                placeholder="denivio.fr"
+                value={formulaire.domaine}
+                onChange={(e) => maj("domaine", e.target.value)}
+                className="w-48"
+              />
+              <Champ
+                label="Doit resoudre vers"
+                placeholder="51.83.12.4 (facultatif)"
+                value={formulaire.cibleAttendue}
+                onChange={(e) => maj("cibleAttendue", e.target.value)}
+                className="w-56"
+              />
+            </>
+          )}
+
           <Bouton type="submit">Ajouter un check</Bouton>
         </form>
         {erreur && <p className="mt-2 text-xs text-depense">{erreur}</p>}
       </Carte>
+
+      {informations.length > 0 && (
+        <Carte titre="Informations">
+          <p className="mb-3 text-xs text-texte-doux">
+            Ces checks n'emettent aucun verdict : un retard de deploiement n'est pas une panne,
+            c'est une information.
+          </p>
+          <ul className="flex flex-col gap-2 text-sm">
+            {informations.map((check) => {
+              const jours = joursDepuis(check.valeur_depuis);
+              return (
+                <li key={check.id} className="flex items-center gap-2.5">
+                  <span className="w-40 shrink-0 truncate text-texte-doux">{check.libelle}</span>
+                  <span className="flex-1 truncate font-mono text-xs">
+                    {check.valeur_courante ?? (check.derniere_erreur || "—")}
+                  </span>
+                  {check.valeur_depuis && (
+                    <span className="shrink-0 text-xs text-texte-doux">
+                      {jours === 0 ? "change aujourd'hui" : `inchange depuis ${jours} j`}
+                    </span>
+                  )}
+                  <Bouton
+                    variante="fantome"
+                    className="px-1.5 py-1"
+                    title="Voir la requete et la reponse"
+                    onClick={() => inspecter(check)}
+                  >
+                    <Search size={14} />
+                  </Bouton>
+                  <Bouton
+                    variante="danger"
+                    className="px-1.5 py-1"
+                    title="Supprimer"
+                    onClick={() => retirerCheck(check.id)}
+                  >
+                    <Trash2 size={14} />
+                  </Bouton>
+                </li>
+              );
+            })}
+          </ul>
+        </Carte>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Carte titre="Incidents recents">
