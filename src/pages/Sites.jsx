@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, ImageIcon, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Bouton, Carte, Champ, EtatVide, Pastille } from "../components/ui";
+import { choisirImageLocale } from "../lib/icones";
 import {
   creerSite,
   listerSites,
@@ -99,14 +99,10 @@ export default function Sites({ onModification }) {
 
   async function importerIcone(site) {
     setErreur("");
-    const chemin = await open({
-      multiple: false,
-      filters: [{ name: "Image", extensions: ["png", "jpg", "jpeg", "svg", "gif", "webp", "ico"] }],
-    });
-    if (!chemin) return;
-
     try {
-      const favicon = await invoke("importer_image", { chemin });
+      const favicon = await choisirImageLocale();
+      if (!favicon) return;
+
       await majFaviconSite(site.id, favicon);
       await recharger();
       onModification?.();
@@ -206,11 +202,12 @@ export default function Sites({ onModification }) {
                 </Bouton>
                 <Bouton
                   variante="fantome"
-                  className="px-1.5 py-1"
-                  title="Importer une image locale"
+                  className="flex items-center gap-1.5 px-2 py-1 text-xs"
+                  title="Choisir une image sur le disque"
                   onClick={() => importerIcone(site)}
                 >
                   <ImageIcon size={14} />
+                  Importer
                 </Bouton>
                 <Bouton
                   variante="danger"

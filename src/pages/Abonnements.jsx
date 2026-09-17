@@ -20,6 +20,7 @@ import {
   supprimerTarif,
   trouverOuCreerFournisseur,
 } from "../lib/queries";
+import { choisirImageLocale } from "../lib/icones";
 import { coutMensuelEquivalent, totalPaye } from "../lib/abonnements";
 import { aujourdhuiIso, formatMontant, parseMontant } from "../lib/format";
 
@@ -232,22 +233,32 @@ export default function Abonnements({ onModification }) {
     onModification?.();
   }
 
-  async function recupererIconeFournisseur(abonnement) {
+  /**
+   * Icone d'un fournisseur: on tente son site, et a defaut on ouvre le
+   * selecteur de fichier.
+   *
+   * Sans ce repli, un fournisseur dont le site ne sert pas d'icone exploitable
+   * etait un cul-de-sac: le message d'echec ne laissait rien a faire, alors que
+   * la commande d'import existait deja pour les sites.
+   */
+  async function iconeFournisseur(abonnement) {
     setErreur("");
-    if (!abonnement.fournisseur_url) {
-      setErreur(`Aucune URL connue pour ${abonnement.fournisseur_nom ?? "ce fournisseur"}.`);
-      return;
+
+    const favicon = abonnement.fournisseur_url
+      ? await invoke("recuperer_favicon", { url: abonnement.fournisseur_url }).catch(() => null)
+      : null;
+
+    try {
+      const image = favicon ?? (await choisirImageLocale());
+      // Selection annulee: on ne touche a rien et on ne crie pas.
+      if (!image) return;
+
+      await majFaviconFournisseur(abonnement.fournisseur_id, image);
+      await recharger();
+      onModification?.();
+    } catch (e) {
+      setErreur(String(e));
     }
-    const favicon = await invoke("recuperer_favicon", {
-      url: abonnement.fournisseur_url,
-    }).catch(() => null);
-    if (!favicon) {
-      setErreur(`Aucune icone trouvee sur ${abonnement.fournisseur_url}.`);
-      return;
-    }
-    await majFaviconFournisseur(abonnement.fournisseur_id, favicon);
-    await recharger();
-    onModification?.();
   }
 
   async function confirmerArret(abonnementId) {
@@ -511,16 +522,17 @@ export default function Abonnements({ onModification }) {
                         </span>
                       </td>
                       <td className="py-2 pl-2 text-right whitespace-nowrap">
-                        {a.fournisseur_url && !a.fournisseur_favicon && (
-                          <Bouton
-                            variante="fantome"
-                            className="mr-1 px-1.5 py-1"
-                            title="Recuperer l'icone du fournisseur"
-                            onClick={() => recupererIconeFournisseur(a)}
-                          >
-                            <ImageIcon size={14} />
-                          </Bouton>
-                        )}
+                        {/* Toujours affiche: le bouton servait aussi a REMPLACER
+                            une icone mal devinee, et un fournisseur sans URL
+                            n'avait aucun moyen d'en recevoir une. */}
+                        <Bouton
+                          variante="fantome"
+                          className="mr-1 px-1.5 py-1"
+                          title="Icone du fournisseur : cherchee sur son site, sinon a importer"
+                          onClick={() => iconeFournisseur(a)}
+                        >
+                          <ImageIcon size={14} />
+                        </Bouton>
                         <Bouton
                           variante="fantome"
                           className="mr-1 px-1.5 py-1"
