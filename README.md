@@ -416,6 +416,55 @@ Le schéma vit dans [`src-tauri/migrations/001_init.sql`](src-tauri/migrations/0
 joué au démarrage par le plugin SQL. Pour le faire évoluer : ajouter un fichier
 `00N_*.sql` et une entrée `Migration` dans [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs).
 
+## Rapports des agents
+
+L'onglet **Agents** suit les tâches planifiées de Claude Code (indexation, santé de la prod,
+tri Sentry, audit hebdomadaire…). Chaque passage d'un agent dépose un fichier JSON :
+
+    ~/.claude/rapports-agents/<site>/<AAAA-MM-JJ>/<agent>.json
+
+```json
+{
+  "site": "denivio.fr",
+  "agent": "sante-prod-denivio-quotidienne",
+  "titre": "Santé de la prod",
+  "date": "2026-10-24",
+  "debut": "2026-10-24T07:41:00+02:00",
+  "fin": "2026-10-24T07:52:00+02:00",
+  "statut": "ok",
+  "resume": "Tout répond, certificat valide encore 61 jours.",
+  "points": [{ "niveau": "attention", "texte": "/catalogs en 2,8 s (×2 depuis hier)" }],
+  "fichier": "C:\\Users\\cedao\\Documents\\Projet\\SportSite\\sante-prod-denivio.md"
+}
+```
+
+`statut` (et `niveau` d'un point) vaut `ok`, `attention` (l'agent a fait son travail et
+signale quelque chose à regarder) ou `echec` (l'agent n'a pas pu faire son travail, ou a
+trouvé une panne). `fichier` pointe vers le journal détaillé de l'agent, qu'un clic ouvre
+dans l'explorateur.
+
+Une ligne par **site et par jour**, la plus récente d'abord, avec un verdict
+([`src/lib/rapportsAgents.js`](src/lib/rapportsAgents.js)) :
+
+| Icône | Verdict |
+|---|---|
+| cercle coché, vert | tous les rapports sont OK |
+| triangle d'alerte, orange | un point à regarder, ou un échec isolé |
+| croix cerclée, rouge | au moins la moitié des rapports sont en échec |
+
+Un « à regarder » ne rend jamais la journée rouge : seuls les échecs comptent pour le rouge.
+Un fichier illisible (JSON invalide, statut inconnu, plus de 256 Ko) n'est **pas** ignoré :
+il devient un rapport en échec — un agent qui écrit n'importe quoi est un agent qui a cassé.
+Le site, la date et l'agent sont repris du chemin quand le JSON les omet, et un rapport se
+rattache à un site suivi par son **domaine** (`denivio.fr` ↔ `https://www.denivio.fr`), à
+défaut par son nom.
+
+Même partage que la supervision : Rust lit les fichiers (`lire_rapports_agents`, 30 derniers
+jours), JS valide et juge. Aucun rapport n'est copié en base — le dossier fait foi, et
+supprimer un fichier le retire de l'écran. Limite assumée : un agent qui n'a **pas tourné**
+ne laisse aucun fichier, donc rien ne le signale encore ; il faudrait connaître le calendrier
+de chaque tâche pour le voir manquer.
+
 ## Préférences
 
 La fréquence de vérification se règle entre 30 secondes et 1 heure, dans une liste fermée
@@ -440,7 +489,9 @@ Pour sauvegarder : copier ce fichier.
 - les **requêtes SQL réelles** ([`src/lib/queries.test.js`](src/lib/queries.test.js)) : le
   module `db` est remplacé par un adaptateur vers `node:sqlite`, et les vraies fonctions de
   `queries.js` tournent sur le schéma produit par les **vraies migrations**, en mémoire. Une
-  jointure cassée ou une colonne renommée fait donc échouer les tests.
+  jointure cassée ou une colonne renommée fait donc échouer les tests ;
+- le **rendu de l'onglet Agents** ([`src/pages/Agents.test.jsx`](src/pages/Agents.test.jsx)),
+  avec Testing Library et une commande `lire_rapports_agents` simulée.
 
 Côté Rust, `cargo test` couvre le parsing des attributs HTML, la résolution d'une cible de
 redirection, l'extraction d'une valeur (`json:` et `regex:`) et le calcul de jours entre deux

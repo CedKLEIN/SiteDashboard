@@ -1,7 +1,8 @@
 import { CircleAlert, CircleCheck, CircleDashed, CircleOff, CircleX } from "lucide-react";
 import { couleurEtat, etatSite, iconeEtat, libelleEtat } from "../lib/statut";
 
-const ICONES = {
+// Exportee: la page des rapports d'agents reprend les memes formes pour ses verdicts
+export const ICONES = {
   ok: CircleCheck,
   alerte: CircleAlert,
   ko: CircleX,

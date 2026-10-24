@@ -8,6 +8,7 @@ import Abonnements from "./pages/Abonnements";
 import Sites from "./pages/Sites";
 import Preferences, { INTERVALLE_DEFAUT_S } from "./pages/Preferences";
 import DetailSite from "./pages/DetailSite";
+import Agents from "./pages/Agents";
 import { lancerCycle } from "./lib/monitoring";
 import { lirePreference, listerSites, purgerVerifications } from "./lib/queries";
 import { tracer } from "./lib/trace";
@@ -95,6 +96,7 @@ export default function App() {
     revenus: <Revenus onModification={signalerModification} />,
     abonnements: <Abonnements onModification={signalerModification} />,
     sites: <Sites onModification={signalerModification} />,
+    agents: <Agents sites={sites} rafraichissement={revision} />,
     preferences: (
       <Preferences onModification={signalerModification} cheminBase={cheminBase} />
     ),

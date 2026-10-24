@@ -707,6 +707,108 @@ fn importer_image(chemin: String) -> Result<String, String> {
     Ok(data_uri(type_mime, &octets))
 }
 
+/// Un rapport d'agent depasse rarement quelques Ko: au-dela, c'est un fichier
+/// qui n'a rien a faire la, et le lire bloquerait l'ecran pour rien.
+const TAILLE_MAX_RAPPORT: u64 = 256 * 1024;
+
+#[derive(serde::Serialize, Default)]
+struct FichierRapport {
+    chemin: String,
+    contenu: Option<String>,
+    erreur: Option<String>,
+}
+
+#[derive(serde::Serialize, Default)]
+struct DossierRapports {
+    dossier: String,
+    existe: bool,
+    fichiers: Vec<FichierRapport>,
+}
+
+/// Dossier commun ou les agents planifies deposent leurs rapports:
+/// `~/.claude/rapports-agents/<site>/<AAAA-MM-JJ>/<agent>.json`.
+fn dossier_rapports(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let home = app.path().home_dir().map_err(|e| e.to_string())?;
+    Ok(home.join(".claude").join("rapports-agents"))
+}
+
+/// Les sous-dossiers d'un dossier, tries par nom. Un dossier illisible est
+/// traite comme vide: un site sans rapport ne doit pas faire echouer les autres.
+fn sous_dossiers(dossier: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut liste: Vec<_> = std::fs::read_dir(dossier)
+        .map(|entrees| {
+            entrees
+                .filter_map(Result::ok)
+                .map(|e| e.path())
+                .filter(|p| p.is_dir())
+                .collect()
+        })
+        .unwrap_or_default();
+    liste.sort();
+    liste
+}
+
+/// Lit les rapports d'agents depuis `depuis` (date ISO incluse).
+///
+/// Rust constate, JS juge: on renvoie le texte brut de chaque fichier, et c'est
+/// `src/lib/rapportsAgents.js` qui le valide et en tire un verdict. Un fichier
+/// illisible remonte avec son erreur au lieu d'etre ignore: un agent qui ecrit
+/// un rapport casse doit se voir, pas disparaitre de l'ecran.
+#[tauri::command]
+fn lire_rapports_agents(app: tauri::AppHandle, depuis: String) -> Result<DossierRapports, String> {
+    Ok(lire_rapports(&dossier_rapports(&app)?, &depuis))
+}
+
+fn lire_rapports(racine: &std::path::Path, depuis: &str) -> DossierRapports {
+    let mut resultat = DossierRapports {
+        dossier: racine.to_string_lossy().into_owned(),
+        existe: racine.is_dir(),
+        ..Default::default()
+    };
+
+    for dossier_site in sous_dossiers(racine) {
+        for dossier_jour in sous_dossiers(&dossier_site) {
+            let jour = dossier_jour
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or_default();
+            // Les noms sont des dates ISO: l'ordre lexicographique est l'ordre chronologique
+            if jour.len() != 10 || jour < depuis {
+                continue;
+            }
+            let Ok(entrees) = std::fs::read_dir(&dossier_jour) else {
+                continue;
+            };
+            for entree in entrees.filter_map(Result::ok) {
+                let chemin = entree.path();
+                let est_json = chemin
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .is_some_and(|e| e.eq_ignore_ascii_case("json"));
+                if !est_json || !chemin.is_file() {
+                    continue;
+                }
+                let mut fichier = FichierRapport {
+                    chemin: chemin.to_string_lossy().into_owned(),
+                    ..Default::default()
+                };
+                match entree.metadata() {
+                    Ok(m) if m.len() > TAILLE_MAX_RAPPORT => {
+                        fichier.erreur = Some(format!("fichier trop lourd ({} Ko)", m.len() / 1024));
+                    }
+                    _ => match std::fs::read_to_string(&chemin) {
+                        Ok(texte) => fichier.contenu = Some(texte),
+                        Err(e) => fichier.erreur = Some(e.to_string()),
+                    },
+                }
+                resultat.fichiers.push(fichier);
+            }
+        }
+    }
+
+    resultat
+}
+
 /// Verificateur permissif, utilise UNIQUEMENT pour inspecter un certificat.
 ///
 /// Un certificat deja expire fait echouer la poignee de main standard: on ne
@@ -944,6 +1046,7 @@ pub fn run() {
             inspecter_url,
             recuperer_favicon,
             importer_image,
+            lire_rapports_agents,
             taux_change,
             tracer
         ])
@@ -982,6 +1085,36 @@ mod tests {
     #[test]
     fn renvoie_none_quand_l_attribut_est_absent() {
         assert_eq!(valeur_attribut(r#"link rel="icon""#, "href"), None);
+    }
+
+    #[test]
+    fn lit_les_rapports_d_agents_depuis_une_date() {
+        let racine = std::env::temp_dir().join(format!("rapports-agents-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&racine);
+        let ecrire = |chemin: &str, contenu: &str| {
+            let p = racine.join(chemin);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, contenu).unwrap();
+        };
+        ecrire("denivio.fr/2026-10-24/sante.json", r#"{"statut":"ok"}"#);
+        ecrire("denivio.fr/2026-10-24/notes.md", "pas un rapport");
+        ecrire("denivio.fr/2026-09-01/ancien.json", r#"{"statut":"ok"}"#);
+        ecrire("denivio.fr/brouillon/x.json", "{}");
+
+        let resultat = lire_rapports(&racine, "2026-10-01");
+        let _ = std::fs::remove_dir_all(&racine);
+
+        assert!(resultat.existe);
+        assert_eq!(resultat.fichiers.len(), 1);
+        assert!(resultat.fichiers[0].chemin.ends_with("sante.json"));
+        assert_eq!(resultat.fichiers[0].contenu.as_deref(), Some(r#"{"statut":"ok"}"#));
+    }
+
+    #[test]
+    fn un_dossier_de_rapports_absent_n_est_pas_une_erreur() {
+        let resultat = lire_rapports(std::path::Path::new("Z:/n-existe/pas"), "2026-01-01");
+        assert!(!resultat.existe);
+        assert!(resultat.fichiers.is_empty());
     }
 
     #[test]

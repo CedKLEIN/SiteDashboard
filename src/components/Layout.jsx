@@ -1,5 +1,6 @@
 import {
   BadgeEuro,
+  Bot,
   Globe,
   LayoutDashboard,
   Receipt,
@@ -13,6 +14,7 @@ const ONGLETS = [
   { cle: "revenus", libelle: "Revenus", Icone: BadgeEuro },
   { cle: "abonnements", libelle: "Abonnements", Icone: Repeat },
   { cle: "sites", libelle: "Sites", Icone: Globe },
+  { cle: "agents", libelle: "Agents", Icone: Bot },
   { cle: "preferences", libelle: "Preferences", Icone: Settings },
 ];
 
