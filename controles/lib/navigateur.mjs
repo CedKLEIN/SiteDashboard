@@ -6,11 +6,25 @@
 import { chromium } from "playwright-core";
 
 /**
+ * Edge d'abord : toujours present sous Windows, alors que le Chromium de
+ * Playwright depend d'un telechargement qui peut manquer (ou n'etre visible que
+ * dans l'espace prive d'une appli du Store). Edge headless s'annonce lui aussi
+ * « HeadlessChrome », donc reste exclu des statistiques.
+ */
+export async function lancerNavigateur() {
+  try {
+    return await chromium.launch({ channel: "msedge" });
+  } catch {
+    return chromium.launch();
+  }
+}
+
+/**
  * Ouvre chaque page et releve : erreurs de console et de page, requetes /api
  * en 4xx/5xx ou en echec, presence d'un <h1>. Une seule session pour toutes.
  */
 export async function inspecterPages(base, chemins) {
-  const navigateur = await chromium.launch();
+  const navigateur = await lancerNavigateur();
   try {
     const resultats = [];
     for (const chemin of chemins) {
@@ -66,7 +80,7 @@ const mediane = (valeurs) => {
  * fois) et renvoie la mediane de chaque indicateur.
  */
 export async function mesurerPerformance(url, { passes = 3, pauseMs = 2000 } = {}) {
-  const navigateur = await chromium.launch();
+  const navigateur = await lancerNavigateur();
   const releves = [];
   try {
     for (let i = 0; i < passes; i += 1) {

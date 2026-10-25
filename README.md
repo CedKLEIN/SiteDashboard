@@ -35,6 +35,26 @@ npm run lint       # oxlint
 npm run app:build  # build release : installeurs .msi et -setup.exe dans src-tauri/target/release/bundle
 ```
 
+### Contrôles automatiques (remplacent des agents Claude)
+
+Santé prod et audit hebdo (Denivio, HistorySite) et soumission Bing (Denivio) sont des
+scripts Node dans `controles/`, lancés par SiteDashboard selon l'horaire de
+`controles/registre.json` (un passage manqué appli fermée est rattrapé à la réouverture).
+Ils écrivent le même rapport que les agents (`~/.claude/rapports-agents/…`) : onglet
+Agents, notifications et historique inchangés. **Claude n'est appelé qu'en cas d'anomalie
+nouvelle** (`claude -p`, lecture seule, dans le dossier du projet) ; tout vert, il n'est
+pas contacté.
+
+```bash
+node controles/lancer.mjs sante-prod-denivio-quotidienne --essai   # affiche, n'écrit rien
+node controles/lancer.mjs audit-hebdo-roisempereurs --sans-claude  # passage réel, sans Claude
+```
+
+Prérequis : Node et Edge (navigateur des mesures, toujours présent sous Windows) ;
+Claude Code en ligne de commande pour les analyses (`npm install -g @anthropic-ai/claude-code`
+puis `claude` une fois pour se connecter, **depuis un terminal Windows**, pas depuis l'appli
+Claude) ; pour Bing, `%USERPROFILE%\.sitedashboard\bing.json` = `{"cle": "<clé API Bing Webmaster>"}`.
+
 ### Voir l'interface dans un navigateur (aperçu) et la capturer
 
 ```bash
