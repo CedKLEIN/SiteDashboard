@@ -21,7 +21,7 @@ import {
   trouverOuCreerFournisseur,
 } from "../lib/queries";
 import { choisirImageLocale } from "../lib/icones";
-import { coutMensuelEquivalent, totalPaye } from "../lib/abonnements";
+import { coutMensuelEquivalent, echeanceAJour, totalPaye } from "../lib/abonnements";
 import { aujourdhuiIso, formatMontant, parseMontant } from "../lib/format";
 
 const FORMULAIRE_VIDE = {
@@ -503,7 +503,7 @@ export default function Abonnements({ onModification }) {
                       <td className="py-2 tabular-nums text-texte-doux">{a.debut ?? "—"}</td>
                       <td className="py-2 tabular-nums text-texte-doux">{a.fin ?? "—"}</td>
                       <td className="py-2 tabular-nums text-texte-doux">
-                        {a.prochaine_echeance ?? "—"}
+                        {echeanceAJour(a.prochaine_echeance, a.periodicite, aujourdhui, a.fin) ?? "—"}
                       </td>
                       <td className="py-2 text-right tabular-nums">
                         {formatMontant(a.montant_cents, a.devise)}

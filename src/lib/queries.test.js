@@ -320,6 +320,28 @@ describe("abonnements", () => {
 
     expect(await echeancesProches(45)).toHaveLength(0);
   });
+
+  it("avance une echeance saisie et deja passee au prochain renouvellement", async () => {
+    const [denivio] = await creerDeuxSites();
+    await ajouterAbonnement({
+      siteIds: [denivio],
+      libelle: "VPS",
+      montantCents: 1080,
+      debut: "2025-07-29",
+      prochaineEcheance: "2026-09-29",
+    });
+    await ajouterAbonnement({
+      siteIds: [denivio],
+      libelle: "Domaine",
+      montantCents: 600,
+      periodicite: "annuel",
+      debut: "2026-09-12",
+      prochaineEcheance: "2027-07-27",
+    });
+
+    const echeances = await echeancesProches(45, "2026-10-25");
+    expect(echeances.map((e) => [e.libelle, e.prochaine_echeance])).toEqual([["VPS", "2026-10-29"]]);
+  });
 });
 
 describe("supervision", () => {

@@ -84,6 +84,27 @@ export function prochaineEcheance(debut, periodicite, aujourdhui) {
 }
 
 /**
+ * L'echeance saisie, avancee au prochain renouvellement si elle est passee.
+ *
+ * `prochaine_echeance` est une date saisie une fois et jamais mise a jour: au
+ * mois suivant, le tableau de bord annoncait "a venir" un prelevement deja fait.
+ * On garde la date saisie comme ancre (c'est la vraie date de renouvellement,
+ * que `debut` ne donne pas toujours) et on l'avance d'une periode a la fois.
+ * Plus de renouvellement a partir de la date de fin (exclusive, comme pour
+ * `echeancesDues`).
+ */
+export function echeanceAJour(echeance, periodicite, aujourdhui, fin = null) {
+  if (!echeance) return null;
+  const pas = PAS[periodicite] ?? PAS.mensuel;
+  let date = echeance;
+  // Depuis l'ancre a chaque fois: avancer de proche en proche ferait deriver
+  // un 31 vers le 28 apres un passage en fevrier.
+  for (let i = 1; date < aujourdhui && i <= 2000; i += 1) date = ajouterMois(echeance, i * pas);
+  if (fin && date >= fin) return null;
+  return date;
+}
+
+/**
  * Echeances effectivement dues par un abonnement jusqu'a une date.
  *
  * La date de fin est EXCLUSIVE: "arrete a partir du 1er avril" signifie que le

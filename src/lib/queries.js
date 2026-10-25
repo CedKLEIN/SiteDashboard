@@ -1,6 +1,8 @@
 import { execute, select } from "./db";
 import { partsPourSites, redistribuer } from "./repartition";
 import { intervalleParDefaut } from "./assertions";
+import { echeanceAJour } from "./abonnements";
+import { aujourdhuiIso } from "./format";
 
 /* ---------------------------------------------------------------- sites */
 
@@ -588,18 +590,28 @@ export async function coutFixeDuSite(siteId) {
   return Math.round(ligne.total_cents);
 }
 
-/** Abonnements actifs a echeance dans les n prochains jours. */
-export function echeancesProches(jours = 45) {
-  return select(
+/**
+ * Abonnements actifs a echeance dans les n prochains jours, l'echeance saisie
+ * etant avancee au prochain renouvellement si elle est passee (voir
+ * `echeanceAJour`). Le filtre se fait donc ici et non en SQL.
+ */
+export async function echeancesProches(jours = 45, aujourdhui = aujourdhuiIso()) {
+  const abonnements = await select(
     `SELECT a.*, f.nom AS fournisseur_nom, ${TARIF_COURANT}, ${SITES_DE_L_ABONNEMENT}
      FROM abonnements a
      LEFT JOIN fournisseurs f ON f.id = a.fournisseur_id
-     WHERE a.actif = 1
-       AND a.prochaine_echeance IS NOT NULL
-       AND a.prochaine_echeance <= date('now', $1)
-     ORDER BY a.prochaine_echeance`,
-    [`+${jours} days`],
+     WHERE a.actif = 1 AND a.prochaine_echeance IS NOT NULL`,
   );
+  const [a, m, j] = aujourdhui.split("-").map(Number);
+  const limite = aujourdhuiIso(new Date(a, m - 1, j + jours));
+
+  return abonnements
+    .map((ab) => ({
+      ...ab,
+      prochaine_echeance: echeanceAJour(ab.prochaine_echeance, ab.periodicite, aujourdhui, ab.fin),
+    }))
+    .filter((ab) => ab.prochaine_echeance && ab.prochaine_echeance <= limite)
+    .sort((x, y) => x.prochaine_echeance.localeCompare(y.prochaine_echeance));
 }
 
 /* -------------------------------------------------------- supervision */

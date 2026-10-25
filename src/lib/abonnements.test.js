@@ -4,6 +4,7 @@ import {
   abonnementsParSite,
   ajouterMois,
   coutMensuelEquivalent,
+  echeanceAJour,
   echeancesPassees,
   prochaineEcheance,
   tarifApplicable,
@@ -124,6 +125,30 @@ describe("coutMensuelEquivalent", () => {
 
   it("divise un annuel par douze", () => {
     expect(coutMensuelEquivalent({ montant_cents: 1200, periodicite: "annuel" })).toBe(100);
+  });
+});
+
+describe("echeanceAJour", () => {
+  it("avance une echeance passee au prochain renouvellement", () => {
+    // Les cas de la base reelle au 25/10/2026
+    expect(echeanceAJour("2026-09-29", "mensuel", "2026-10-25")).toBe("2026-10-29");
+    expect(echeanceAJour("2026-09-21", "mensuel", "2026-10-25")).toBe("2026-11-21");
+    expect(echeanceAJour("2025-07-27", "annuel", "2026-10-25")).toBe("2027-07-27");
+  });
+
+  it("laisse une echeance a venir ou du jour telle quelle", () => {
+    expect(echeanceAJour("2027-07-27", "annuel", "2026-10-25")).toBe("2027-07-27");
+    expect(echeanceAJour("2026-10-25", "mensuel", "2026-10-25")).toBe("2026-10-25");
+  });
+
+  it("ne derive pas en passant par un mois court", () => {
+    expect(echeanceAJour("2026-01-31", "mensuel", "2026-03-15")).toBe("2026-03-31");
+  });
+
+  it("n'annonce plus rien a partir de la date de fin", () => {
+    expect(echeanceAJour("2026-09-29", "mensuel", "2026-10-25", "2026-10-29")).toBeNull();
+    expect(echeanceAJour("2026-09-29", "mensuel", "2026-10-25", "2026-10-30")).toBe("2026-10-29");
+    expect(echeanceAJour(null, "mensuel", "2026-10-25")).toBeNull();
   });
 });
 

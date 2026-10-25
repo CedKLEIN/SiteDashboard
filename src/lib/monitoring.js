@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
-import { checksActifs, enregistrerValeur, enregistrerVerification } from "./queries";
+import {
+  checksActifs,
+  enregistrerValeur,
+  enregistrerVerification,
+  purgerVerifications,
+} from "./queries";
+import { tracer } from "./trace";
 import { evaluerCertificat } from "./statut";
 import { evaluerDomaine, evaluerRedirection, evaluerReponse } from "./assertions";
 
@@ -9,6 +15,30 @@ import { evaluerDomaine, evaluerRedirection, evaluerReponse } from "./assertions
  * les requetes envoyees aux sites pour rien.
  */
 let enCours = false;
+
+/** Jour (AAAA-MM-JJ) de la derniere purge de l'historique. */
+let jourDernierePurge = null;
+
+/** Profondeur de l'historique des verifications, en jours. */
+export const JOURS_HISTORIQUE_VERIFICATIONS = 30;
+
+/**
+ * Purge l'historique au premier cycle de chaque jour.
+ *
+ * Faite seulement au demarrage, elle ne tournait jamais pour une appli
+ * laissee ouverte des semaines : la table grossissait sans limite (une ligne
+ * par check et par minute). Un echec est trace sans bloquer le cycle.
+ */
+async function purgerSiNouveauJour(maintenant) {
+  const jour = maintenant.toISOString().slice(0, 10);
+  if (jour === jourDernierePurge) return;
+  jourDernierePurge = jour;
+  try {
+    await purgerVerifications(JOURS_HISTORIQUE_VERIFICATIONS);
+  } catch (erreur) {
+    tracer("supervision", `purge impossible: ${erreur}`);
+  }
+}
 
 /**
  * Lance le bon type de verification et normalise le resultat pour la base.
@@ -98,6 +128,7 @@ export async function lancerCycle() {
   enCours = true;
 
   try {
+    await purgerSiNouveauJour(new Date());
     const checks = await checksActifs();
 
     // En serie volontairement: on supervise une poignee de sites, et on prefere

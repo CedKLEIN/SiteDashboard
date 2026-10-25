@@ -12,7 +12,7 @@ import Agents from "./pages/Agents";
 import { lancerCycle } from "./lib/monitoring";
 import { nbAgentsEnRetard } from "./lib/tachesPlanifiees";
 import { useAgentsAttendus } from "./lib/useAgentsAttendus";
-import { lirePreference, listerSites, purgerVerifications } from "./lib/queries";
+import { lirePreference, listerSites } from "./lib/queries";
 import { tracer } from "./lib/trace";
 
 
@@ -54,7 +54,6 @@ export default function App() {
     invoke("chemin_base")
       .then(setCheminBase)
       .catch(() => setCheminBase(""));
-    purgerVerifications(30).catch(() => {});
   }, []);
 
   useEffect(() => {
