@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fermerChrome, preparerChrome } from "./chrome.mjs";
 import { trouverClaude } from "./claude.mjs";
 import { cheminRapport, ecrireRapport, isoLocal, jourLocal } from "./commun.mjs";
 
@@ -29,7 +30,7 @@ export function lireConsigne(id) {
 export function preambule(controle, maintenant = new Date()) {
   return `Session lancée automatiquement par SiteDashboard (tâche « ${controle.titre} », site ${controle.site}), le ${maintenant.toLocaleDateString("fr-FR")} à ${maintenant.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.
 Personne n'est là pour répondre : agis seul, fais des choix raisonnables et note-les. Produis TOUJOURS le rapport JSON demandé dans la consigne, même si tu t'arrêtes en cours ou échoues.
-${controle.chrome ? "Navigateur : utilise Chrome (outils mcp__claude-in-chrome__*), où mes connexions sont ouvertes. Ouvre un nouvel onglet, ne ferme pas les miens. S'il n'est pas disponible, écris un rapport en échec qui le dit." : ""}
+${controle.chrome ? "Navigateur : utilise Chrome (outils mcp__claude-in-chrome__*), où mes connexions sont ouvertes. Travaille dans tes propres onglets et ferme-les tous avant de terminer ; ne touche pas aux miens. S'il n'est pas disponible, écris un rapport en échec qui le dit." : ""}
 
 `;
 }
@@ -80,6 +81,10 @@ export async function lancerAgent(controle, { essai = false } = {}) {
   const journal = path.join(DOSSIER_JOURNAUX, `${controle.id}-${jourLocal(debut)}.log`);
   writeFileSync(journal, `=== ${isoLocal(debut)} ${controle.id}\n`, "utf8");
 
+  // Chrome ferme : SiteDashboard l'ouvre pour l'agent, et le referme apres
+  const chrome = controle.chrome ? await preparerChrome() : { ouvertParNous: false };
+  if (chrome.message) appendFileSync(journal, `[SiteDashboard] ${chrome.message}\n`);
+
   const args = ["-p", "--output-format", "text", "--permission-mode", "auto"];
   if (controle.chrome) args.push("--chrome");
   const { code, sortie } = await new Promise((resolve) => {
@@ -105,6 +110,10 @@ export async function lancerAgent(controle, { essai = false } = {}) {
     });
     processus.stdin.end(texte);
   });
+  if (chrome.ouvertParNous) {
+    await fermerChrome();
+    appendFileSync(journal, "\n[SiteDashboard] Chrome refermé\n");
+  }
 
   // La session a-t-elle ecrit son rapport pendant ce passage ?
   const rapport = cheminRapport(controle.site, controle.id, debut);

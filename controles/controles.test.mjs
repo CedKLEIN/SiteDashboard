@@ -7,6 +7,7 @@ import { defautsSeo, locs } from "./sante-prod.mjs";
 import { aSoumettre, ordonner } from "./bing.mjs";
 import { avecAnalyse } from "./lancer.mjs";
 import { preambule } from "./lib/agent.mjs";
+import { chromeDansListe, trouverChrome } from "./lib/chrome.mjs";
 
 describe("agents Claude", () => {
   it("previent la session qu'elle tourne seule, et lui donne Chrome si besoin", () => {
@@ -15,7 +16,19 @@ describe("agents Claude", () => {
     expect(texte).toContain("Session lancée automatiquement par SiteDashboard (tâche « Indexation Google », site denivio.fr), le 26/10/2026 à 09:00");
     expect(texte).toContain("Produis TOUJOURS le rapport JSON");
     expect(texte).toContain("mcp__claude-in-chrome__*");
+    expect(texte).toContain("ferme-les tous avant de terminer");
     expect(preambule({ ...controle, chrome: false })).not.toContain("Chrome");
+  });
+});
+
+describe("Chrome pour les agents", () => {
+  it("reconnait Chrome dans la sortie de tasklist", () => {
+    expect(chromeDansListe("\r\nchrome.exe                   12345 Console    1    250 000 Ko\r\n")).toBe(true);
+    expect(chromeDansListe("INFO : aucune tâche en service ne correspond aux critères spécifiés.\r\n")).toBe(false);
+  });
+
+  it("cherche chrome.exe dans l'installation par utilisateur puis pour tous", () => {
+    expect(trouverChrome({ LOCALAPPDATA: "Z:\\absent", ProgramFiles: "Z:\\absent2" })).toBeNull();
   });
 });
 
