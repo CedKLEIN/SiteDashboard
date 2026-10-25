@@ -50,7 +50,7 @@ describe("suggestionsRestantes", () => {
   it("verifie le contenu la ou un 200 ne prouve rien", () => {
     const parCle = Object.fromEntries(CHECKS_SUGGERES.map((s) => [s.cle, s]));
     expect(parCle.config.doitContenir).toBe("window.");
-    expect(parCle.sitemap.doitContenir).toBe("<urlset");
+    expect(parCle.sitemap.doitContenir).toBe("sitemaps.org/schemas/sitemap");
     expect(parCle.robots.doitContenir).toBe("User-agent");
   });
 

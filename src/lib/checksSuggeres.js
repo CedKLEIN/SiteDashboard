@@ -40,12 +40,15 @@ export const CHECKS_SUGGERES = [
     libelle: "Sitemap",
     chemin: "/sitemap.xml",
     // Un sitemap servi par l'API peut repondre 200 avec une page d'erreur HTML:
-    // on verifie donc que c'est bien du XML de sitemap.
-    doitContenir: "<urlset",
+    // on verifie donc que c'est bien du XML de sitemap. Pas `<urlset`: passe
+    // 50 000 URL, sitemap.xml devient un <sitemapindex> (Denivio, octobre 2026)
+    // et le check echouait sur un site sain. L'espace de noms est dans les deux.
+    doitContenir: "sitemaps.org/schemas/sitemap",
     // Un sitemap genere depuis la base contient des milliers d'URL. S'il se
-    // vidait, il repondrait 200 et contiendrait toujours <urlset: seule la
-    // taille trahit un catalogue tombe a quelques lignes.
-    tailleMinOctets: 1024,
+    // vidait, il repondrait 200 et garderait son espace de noms: seule la
+    // taille trahit un catalogue tombe a quelques lignes. Le plancher reste
+    // sous un index de 2 entrees (~300 octets) et au-dessus d'un sitemap vide.
+    tailleMinOctets: 256,
     description: "Presence et validite minimale du sitemap (SEO)",
   },
   {
