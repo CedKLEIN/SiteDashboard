@@ -7,6 +7,7 @@ import {
   nbAgentsEnRetard,
   plusLongueDuree,
   rapportPromis,
+  libelleAttendu,
   situationAgent,
   texteAttendu,
 } from "./tachesPlanifiees";
@@ -17,9 +18,17 @@ describe("texteAttendu", () => {
     expect(texteAttendu({ ...base, situation: "bloque", rapport: null })).toBe(
       "Sante — denivio.fr — Bloque ? (09:04) : Lance a 09:04",
     );
-    expect(texteAttendu({ ...base, heure: null, situation: "recu", rapport: {}, message: "RAS" })).toBe(
-      "Sante — denivio.fr — Rapport recu : RAS",
+    expect(
+      texteAttendu({ ...base, heure: null, situation: "recu", rapport: { statut: "ok" }, message: "RAS" }),
+    ).toBe("Sante — denivio.fr — Recu · OK : RAS");
+  });
+
+  it("dit toujours qu'un rapport est recu, quel que soit son statut", () => {
+    expect(libelleAttendu({ situation: "recu", rapport: { statut: "attention" } })).toBe(
+      "Recu · a regarder",
     );
+    expect(libelleAttendu({ situation: "recu", rapport: { statut: "echec" } })).toBe("Recu · en echec");
+    expect(libelleAttendu({ situation: "en_cours", rapport: null })).toBe("En cours");
   });
 });
 
@@ -219,7 +228,20 @@ describe("agentsAttendus", () => {
       maintenant: MAINTENANT,
     });
     expect(attendus[0]).toMatchObject({ situation: "recu", rapport, titre: "Sante" });
+    // Sans heure dans le rapport, on garde celle du lancement
+    expect(attendus[0].heure).toBe("08:04");
     expect(attendus[1].situation).toBe("en_cours");
+  });
+
+  it("affiche l'heure du vrai passage quand l'agent a ete relance apres un blocage", () => {
+    const rapport = {
+      agent: "sante-prod",
+      date: "2026-10-25",
+      statut: "ok",
+      debut: "2026-10-25T09:53:51+01:00",
+    };
+    const [sante] = agentsAttendus({ taches, config: reglages, rapports: [rapport], maintenant: MAINTENANT });
+    expect(sante.heure).toBe("09:53");
   });
 
   it("n'attend rien sans le fichier de config de Claude", () => {

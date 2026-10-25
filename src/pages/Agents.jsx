@@ -17,7 +17,7 @@ import {
   texteJournee,
   texteRapport,
 } from "../lib/rapportsAgents";
-import { SITUATIONS, texteAttendu } from "../lib/tachesPlanifiees";
+import { SITUATIONS, libelleAttendu, texteAttendu } from "../lib/tachesPlanifiees";
 import { tracer } from "../lib/trace";
 
 const LIBELLES_VERDICT = {
@@ -159,7 +159,7 @@ function LigneJournee({ ligne, site, ouverte, onBasculer }) {
 function LigneAttendu({ attendu, site }) {
   const { rapport, situation } = attendu;
   const etat = rapport ? STATUTS_RAPPORT[rapport.statut].etat : SITUATIONS[situation].etat;
-  const libelle = rapport ? STATUTS_RAPPORT[rapport.statut].libelle : SITUATIONS[situation].libelle;
+  const libelle = libelleAttendu(attendu);
   const enRetard = situation === "bloque" || situation === "non_lance";
 
   return (

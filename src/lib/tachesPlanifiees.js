@@ -218,7 +218,12 @@ export function agentsAttendus({ taches = [], config = "", rapports = [], mainte
       agent: promis.agent,
       titre: rapport?.titre || promis.titre || reglage.nom || tache.id,
       prevueA,
-      heure: lanceA ? heureLocale(lanceA) : (heureRapport(rapport?.debut) ?? prevueA),
+      // L'heure du rapport d'abord: un agent relance apres un blocage a son
+      // vrai passage plus tard que le lancement retenu par Claude
+      heure:
+        heureRapport(rapport?.debut) ??
+        heureRapport(rapport?.fin) ??
+        (lanceA ? heureLocale(lanceA) : prevueA),
       situation,
       message,
       rapport,
@@ -228,9 +233,20 @@ export function agentsAttendus({ taches = [], config = "", rapports = [], mainte
   return attendus.sort((a, b) => String(a.prevueA ?? "").localeCompare(String(b.prevueA ?? "")));
 }
 
+const STATUTS_RECUS = { ok: "OK", attention: "a regarder", echec: "en echec" };
+
+/**
+ * Le libelle d'un agent attendu. Un rapport recu le dit toujours: afficher son
+ * seul statut ("A regarder") le faisait passer pour un agent qui n'a pas fini.
+ */
+export function libelleAttendu(attendu) {
+  if (!attendu.rapport) return SITUATIONS[attendu.situation].libelle;
+  return `Recu · ${STATUTS_RECUS[attendu.rapport.statut] ?? attendu.rapport.statut}`;
+}
+
 /** Un agent attendu en une ligne de texte, pret a coller. */
 export function texteAttendu(attendu) {
-  const libelle = attendu.rapport ? "Rapport recu" : SITUATIONS[attendu.situation].libelle;
+  const libelle = libelleAttendu(attendu);
   const heure = attendu.heure ? ` (${attendu.heure})` : "";
   return `${attendu.titre} — ${attendu.site} — ${libelle}${heure} : ${attendu.message}`;
 }

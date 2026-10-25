@@ -105,7 +105,7 @@ describe("page Agents", () => {
     expect(await screen.findByText("Attendus aujourd'hui")).toBeTruthy();
     expect(screen.getByText("Bloque ?")).toBeTruthy();
     expect(screen.getByText("Lance a 09:04, toujours sans rapport apres 1 h")).toBeTruthy();
-    expect(screen.getByText("OK")).toBeTruthy();
+    expect(screen.getByText("Recu · OK")).toBeTruthy();
     expect(screen.getAllByText("Denivio")).toHaveLength(2);
   });
 
