@@ -11,7 +11,64 @@ import {
   sauvegarder,
 } from "../lib/sauvegarde";
 import { JOURS_HISTORIQUE_VERIFICATIONS } from "../lib/monitoring";
+import { notificationTest } from "../lib/notifications";
+import { CLE_NOTIFICATIONS } from "../lib/useNotifications";
 import { tracer } from "../lib/trace";
+
+/** Notifications Windows : activation et essai. */
+function Notifications() {
+  const [actives, setActives] = useState(true);
+  const [essai, setEssai] = useState(null);
+
+  useEffect(() => {
+    let annule = false;
+    lirePreference(CLE_NOTIFICATIONS, "1").then((v) => {
+      if (!annule) setActives(v !== "0");
+    });
+    return () => {
+      annule = true;
+    };
+  }, []);
+
+  async function basculer(valeur) {
+    setActives(valeur);
+    await ecrirePreference(CLE_NOTIFICATIONS, valeur ? "1" : "0");
+  }
+
+  async function tester() {
+    try {
+      setEssai((await notificationTest()) ? "envoyee" : "refusee");
+    } catch (e) {
+      tracer("notification", `essai impossible: ${e}`);
+      setEssai("refusee");
+    }
+  }
+
+  return (
+    <Carte titre="Notifications">
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={actives} onChange={(e) => basculer(e.target.checked)} />
+        Notifier dans Windows quand un site tombe ou revient, et quand un agent est bloque, pas
+        lance ou en echec
+      </label>
+      <p className="mt-2 text-xs text-texte-doux">
+        Une seule notification par changement : un site en panne ne sonne pas a chaque minute.
+        Comme la supervision, elles ne partent que pendant que l&apos;application est ouverte.
+      </p>
+      <div className="mt-3 flex items-center gap-3">
+        <Bouton variante="fantome" onClick={tester}>
+          Envoyer une notification de test
+        </Bouton>
+        {essai === "envoyee" && <span className="text-xs text-revenu">Envoyee</span>}
+        {essai === "refusee" && (
+          <span className="text-xs text-depense">
+            Refusee par Windows : verifie Parametres &gt; Systeme &gt; Notifications
+          </span>
+        )}
+      </div>
+    </Carte>
+  );
+}
 
 /** '2026-10-25T12:05:00.000Z' -> '25/10/2026 a 14:05' (heure locale) */
 function dateLisible(iso) {
@@ -178,6 +235,8 @@ export default function Preferences({ onModification, cheminBase }) {
           La supervision ne tourne que pendant que l&apos;application est ouverte.
         </p>
       </Carte>
+
+      <Notifications />
 
       <Carte titre="Donnees">
         <p className="text-xs text-texte-doux">

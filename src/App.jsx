@@ -12,10 +12,9 @@ import Agents from "./pages/Agents";
 import { lancerCycle } from "./lib/monitoring";
 import { nbAgentsEnRetard } from "./lib/tachesPlanifiees";
 import { useAgentsAttendus } from "./lib/useAgentsAttendus";
+import { useNotifications } from "./lib/useNotifications";
 import { lirePreference, listerSites } from "./lib/queries";
 import { tracer } from "./lib/trace";
-
-
 
 export default function App() {
   const [onglet, setOnglet] = useState("dashboard");
@@ -90,6 +89,7 @@ export default function App() {
   }, [verifier, intervalleS]);
 
   const agents = useAgentsAttendus(revision);
+  useNotifications(revision, agents.attendus);
 
   const site = sites.find((s) => s.id === siteOuvert);
 
