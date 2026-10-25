@@ -60,6 +60,7 @@ export function lireConfigTaches(texte) {
       actif: t.enabled !== false,
       dernierLancement: typeof t.lastRunAt === "string" ? t.lastRunAt : null,
       nom: typeof t.displayName === "string" ? t.displayName : null,
+      creeLe: Number.isFinite(t.createdAt) ? new Date(t.createdAt) : null,
     });
   }
   return config;
@@ -138,6 +139,12 @@ export function plusLongueDuree(rapports, agent) {
   return max;
 }
 
+/** 'HH:MM' -> ce moment-la le jour de `jour` (heure locale). */
+function momentDuJour(heure, jour) {
+  const [h, m] = heure.split(":").map(Number);
+  return new Date(jour.getFullYear(), jour.getMonth(), jour.getDate(), h, m);
+}
+
 function heureLocale(date) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
@@ -167,9 +174,7 @@ export function situationAgent({ prevueA, lanceA, rapport, dureeMaxMin = 0, main
   }
 
   if (prevueA) {
-    const [h, m] = prevueA.split(":").map(Number);
-    const prevue = new Date(maintenant.getFullYear(), maintenant.getMonth(), maintenant.getDate(), h, m);
-    if (minutesDepuis(prevue, maintenant) > MARGE_LANCEMENT_MIN) {
+    if (minutesDepuis(momentDuJour(prevueA, maintenant), maintenant) > MARGE_LANCEMENT_MIN) {
       return { situation: "non_lance", message: `Prevu a ${prevueA}, pas encore lance` };
     }
     return { situation: "prevu", message: `Prevu a ${prevueA}` };
@@ -202,6 +207,10 @@ export function agentsAttendus({ taches = [], config = "", rapports = [], mainte
         ? lancement
         : null;
     if (!prevueA && !lanceA) continue;
+    // Une tache creee apres son heure du jour n'avait rien a faire aujourd'hui
+    if (!lanceA && prevueA && reglage.creeLe && reglage.creeLe > momentDuJour(prevueA, maintenant)) {
+      continue;
+    }
 
     const rapport = rapports.find((r) => r.agent === promis.agent && r.date === aujourdhui) ?? null;
     const { situation, message } = situationAgent({

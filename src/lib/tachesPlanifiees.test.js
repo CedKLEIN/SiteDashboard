@@ -84,6 +84,7 @@ describe("lireConfigTaches", () => {
       actif: true,
       dernierLancement: "2026-10-25T07:04:00Z",
       nom: null,
+      creeLe: null,
     });
     expect(c.get("b").actif).toBe(false);
     expect(c.size).toBe(2);
@@ -242,6 +243,17 @@ describe("agentsAttendus", () => {
     };
     const [sante] = agentsAttendus({ taches, config: reglages, rapports: [rapport], maintenant: MAINTENANT });
     expect(sante.heure).toBe("09:53");
+  });
+
+  it("n'attend pas une tache creee apres son heure du jour", () => {
+    const nouvelle = [{ id: "seo", skill: "rapports-agents\\x.fr\\<AAAA-MM-JJ>\\seo.json" }];
+    const creeA = (h, m) =>
+      config([{ id: "seo", cronExpression: "45 7 * * *", enabled: true, createdAt: new Date(2026, 9, 25, h, m).getTime() }]);
+
+    expect(agentsAttendus({ taches: nouvelle, config: creeA(9, 0), maintenant: MAINTENANT })).toEqual([]);
+    // Creee avant son heure : elle etait bien attendue, et elle est en retard
+    const [attendu] = agentsAttendus({ taches: nouvelle, config: creeA(7, 0), maintenant: MAINTENANT });
+    expect(attendu.situation).toBe("non_lance");
   });
 
   it("n'attend rien sans le fichier de config de Claude", () => {
