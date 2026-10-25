@@ -5,6 +5,7 @@ import {
   enregistrerVerification,
   purgerVerifications,
 } from "./queries";
+import { sauvegarderSiBesoin } from "./sauvegarde";
 import { tracer } from "./trace";
 import { evaluerCertificat } from "./statut";
 import { evaluerDomaine, evaluerRedirection, evaluerReponse } from "./assertions";
@@ -16,23 +17,31 @@ import { evaluerDomaine, evaluerRedirection, evaluerReponse } from "./assertions
  */
 let enCours = false;
 
-/** Jour (AAAA-MM-JJ) de la derniere purge de l'historique. */
-let jourDernierePurge = null;
+/** Jour (AAAA-MM-JJ) du dernier entretien de la base. */
+let jourDernierEntretien = null;
 
 /** Profondeur de l'historique des verifications, en jours. */
 export const JOURS_HISTORIQUE_VERIFICATIONS = 30;
 
 /**
- * Purge l'historique au premier cycle de chaque jour.
+ * Entretien de la base au premier cycle de chaque jour : sauvegarde si la
+ * derniere date d'une semaine, puis purge de l'historique.
  *
- * Faite seulement au demarrage, elle ne tournait jamais pour une appli
+ * La purge, faite seulement au demarrage, ne tournait jamais pour une appli
  * laissee ouverte des semaines : la table grossissait sans limite (une ligne
- * par check et par minute). Un echec est trace sans bloquer le cycle.
+ * par check et par minute). La sauvegarde passe avant pour garder l'historique
+ * le plus long. Un echec est trace sans bloquer le cycle.
  */
-async function purgerSiNouveauJour(maintenant) {
+async function entretienQuotidien(maintenant) {
   const jour = maintenant.toISOString().slice(0, 10);
-  if (jour === jourDernierePurge) return;
-  jourDernierePurge = jour;
+  if (jour === jourDernierEntretien) return;
+  jourDernierEntretien = jour;
+  try {
+    const chemin = await sauvegarderSiBesoin(maintenant);
+    if (chemin) tracer("sauvegarde", `base sauvegardee: ${chemin}`);
+  } catch (erreur) {
+    tracer("sauvegarde", `sauvegarde impossible: ${erreur}`);
+  }
   try {
     await purgerVerifications(JOURS_HISTORIQUE_VERIFICATIONS);
   } catch (erreur) {
@@ -128,7 +137,7 @@ export async function lancerCycle() {
   enCours = true;
 
   try {
-    await purgerSiNouveauJour(new Date());
+    await entretienQuotidien(new Date());
     const checks = await checksActifs();
 
     // En serie volontairement: on supervise une poignee de sites, et on prefere

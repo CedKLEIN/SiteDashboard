@@ -1,6 +1,111 @@
 import { useEffect, useState } from "react";
-import { Carte, Selecteur } from "../components/ui";
+import { invoke } from "@tauri-apps/api/core";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { FolderOpen, HardDriveDownload } from "lucide-react";
+import { Bouton, BoutonCopier, Carte, Selecteur } from "../components/ui";
 import { ecrirePreference, lirePreference } from "../lib/queries";
+import {
+  JOURS_ENTRE_SAUVEGARDES,
+  SAUVEGARDES_GARDEES,
+  derniereSauvegarde,
+  sauvegarder,
+} from "../lib/sauvegarde";
+import { JOURS_HISTORIQUE_VERIFICATIONS } from "../lib/monitoring";
+import { tracer } from "../lib/trace";
+
+/** '2026-10-25T12:05:00.000Z' -> '25/10/2026 a 14:05' (heure locale) */
+function dateLisible(iso) {
+  const date = new Date(iso ?? "");
+  if (Number.isNaN(date.getTime())) return null;
+  return `${date.toLocaleDateString("fr-FR")} a ${date.toLocaleTimeString("fr-FR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+}
+
+/** Sauvegardes : derniere copie, dossier, et copie a la demande. */
+function Sauvegardes() {
+  const [derniere, setDerniere] = useState(null);
+  const [dossier, setDossier] = useState("");
+  const [enCours, setEnCours] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  useEffect(() => {
+    let annule = false;
+    Promise.all([derniereSauvegarde(), invoke("dossier_sauvegardes")])
+      .then(([date, chemin]) => {
+        if (annule) return;
+        setDerniere(date);
+        setDossier(chemin);
+      })
+      .catch((e) => tracer("sauvegarde", `lecture impossible: ${e}`));
+    return () => {
+      annule = true;
+    };
+  }, []);
+
+  async function sauvegarderMaintenant() {
+    setEnCours(true);
+    setMessage(null);
+    try {
+      const chemin = await sauvegarder();
+      setDerniere(new Date().toISOString());
+      setMessage({ ok: true, texte: `Sauvegarde ecrite : ${chemin}` });
+    } catch (e) {
+      setMessage({ ok: false, texte: `Sauvegarde impossible : ${e}` });
+    } finally {
+      setEnCours(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 border-t border-bord/50 pt-3">
+      <p className="text-sm font-medium">Sauvegardes automatiques</p>
+      <p className="mt-1 text-xs text-texte-doux">
+        Une copie de la base tous les {JOURS_ENTRE_SAUVEGARDES} jours, pendant que
+        l&apos;application tourne ; les {SAUVEGARDES_GARDEES} plus recentes sont gardees.
+        Pour restaurer : ferme l&apos;application et remplace le fichier de la base par une
+        sauvegarde renommee <span className="font-mono">sitedashboard.db</span>.
+      </p>
+      <p className="mt-2 text-xs">
+        Derniere sauvegarde :{" "}
+        <span className="text-texte">{dateLisible(derniere) ?? "aucune pour l'instant"}</span>
+      </p>
+      {dossier && (
+        <p className="mt-1 flex items-center gap-1 text-[11px] break-all text-texte-doux">
+          {dossier}
+          <BoutonCopier texte={dossier} titre="Copier le chemin du dossier" />
+        </p>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Bouton onClick={sauvegarderMaintenant} disabled={enCours}>
+          <span className="flex items-center gap-1.5">
+            <HardDriveDownload size={14} />
+            {enCours ? "Sauvegarde..." : "Sauvegarder maintenant"}
+          </span>
+        </Bouton>
+        {dossier && (
+          <Bouton
+            variante="fantome"
+            onClick={() =>
+              revealItemInDir(dossier).catch((e) => tracer("sauvegarde", `ouverture impossible: ${e}`))
+            }
+          >
+            <span className="flex items-center gap-1.5">
+              <FolderOpen size={14} />
+              Ouvrir le dossier
+            </span>
+          </Bouton>
+        )}
+      </div>
+      {message && (
+        <p className={`mt-2 text-xs break-all ${message.ok ? "text-revenu" : "text-depense"}`}>
+          {message.texte}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export const INTERVALLE_DEFAUT_S = 60;
 
@@ -76,17 +181,20 @@ export default function Preferences({ onModification, cheminBase }) {
 
       <Carte titre="Donnees">
         <p className="text-xs text-texte-doux">
-          Toutes les donnees vivent dans un seul fichier SQLite. Pour sauvegarder, copie-le ;
-          pour repartir de zero, supprime-le et relance l&apos;application.
+          Toutes les donnees vivent dans un seul fichier SQLite ; pour repartir de zero,
+          supprime-le et relance l&apos;application.
         </p>
         {cheminBase && (
-          <p className="mt-2 rounded-lg bg-fond px-2.5 py-2 text-[11px] break-all text-texte-doux">
+          <p className="mt-2 flex items-center gap-1 rounded-lg bg-fond px-2.5 py-2 text-[11px] break-all text-texte-doux">
             {cheminBase}
+            <BoutonCopier texte={cheminBase} titre="Copier le chemin de la base" />
           </p>
         )}
         <p className="mt-3 text-xs text-texte-doux">
-          L&apos;historique de supervision est purge au-dela de 30 jours.
+          L&apos;historique de supervision est purge au-dela de {JOURS_HISTORIQUE_VERIFICATIONS}{" "}
+          jours.
         </p>
+        <Sauvegardes />
       </Carte>
     </div>
   );

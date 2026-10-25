@@ -7,6 +7,7 @@ mod devises;
 mod domaine;
 mod icones;
 mod reseau;
+mod sauvegarde;
 
 use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -133,6 +134,9 @@ pub fn run() {
             agents::lire_rapports_agents,
             agents::lire_taches_planifiees,
             devises::taux_change,
+            sauvegarde::chemin_sauvegarde,
+            sauvegarde::nettoyer_sauvegardes,
+            sauvegarde::dossier_sauvegardes,
             tracer
         ])
         .run(tauri::generate_context!())
