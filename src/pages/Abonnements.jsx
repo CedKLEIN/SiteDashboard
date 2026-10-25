@@ -3,13 +3,12 @@ import { History, Image as ImageIcon, Pencil, Play, Square, Trash2, X } from "lu
 import { invoke } from "@tauri-apps/api/core";
 import { Bouton, Carte, Champ, EtatVide, Kpi, Selecteur } from "../components/ui";
 import RepartitionSites, { partsCentsDepuisSaisie } from "../components/RepartitionSites";
+import HistoriqueTarifs from "../components/HistoriqueTarifs";
 import {
   ajouterAbonnement,
-  ajouterTarif,
   arreterAbonnement,
   reprendreAbonnement,
   majAbonnement,
-  majTarif,
   partsAbonnement,
   listerAbonnements,
   listerFournisseurs,
@@ -17,7 +16,6 @@ import {
   listerTarifs,
   majFaviconFournisseur,
   supprimerAbonnement,
-  supprimerTarif,
   trouverOuCreerFournisseur,
 } from "../lib/queries";
 import { choisirImageLocale } from "../lib/icones";
@@ -37,8 +35,6 @@ const FORMULAIRE_VIDE = {
   prochaineEcheance: "",
 };
 
-const TARIF_VIDE = { debut: aujourdhuiIso(), montant: "" };
-
 export default function Abonnements({ onModification }) {
   const [sites, setSites] = useState([]);
   const [fournisseurs, setFournisseurs] = useState([]);
@@ -47,9 +43,7 @@ export default function Abonnements({ onModification }) {
   const [formulaire, setFormulaire] = useState(FORMULAIRE_VIDE);
   const [erreur, setErreur] = useState("");
   const [historiqueOuvert, setHistoriqueOuvert] = useState(null);
-  const [nouveauTarif, setNouveauTarif] = useState(TARIF_VIDE);
   const [enEdition, setEnEdition] = useState(null);
-  const [tarifEnEdition, setTarifEnEdition] = useState(null);
   const [arretEnCours, setArretEnCours] = useState(null);
 
   async function recharger() {
@@ -197,50 +191,6 @@ export default function Abonnements({ onModification }) {
     onModification?.();
   }
 
-  async function enregistrerTarif(abonnementId) {
-    setErreur("");
-    const montantCents = parseMontant(nouveauTarif.montant);
-    if (montantCents === null || montantCents <= 0) {
-      setErreur("Nouveau tarif invalide.");
-      return;
-    }
-    await ajouterTarif(abonnementId, { debut: nouveauTarif.debut, montantCents });
-    setNouveauTarif(TARIF_VIDE);
-    await recharger();
-    onModification?.();
-  }
-
-  async function enregistrerCorrection() {
-    setErreur("");
-    const montantCents = parseMontant(tarifEnEdition.montant);
-    if (montantCents === null || montantCents <= 0) {
-      setErreur("Montant invalide.");
-      return;
-    }
-    await majTarif(tarifEnEdition.id, { debut: tarifEnEdition.debut, montantCents });
-    setTarifEnEdition(null);
-    await recharger();
-    onModification?.();
-  }
-
-  async function retirerTarif(abonnementId, tarifId) {
-    if (tarifsDe(abonnementId).length <= 1) {
-      setErreur("Un abonnement doit garder au moins un tarif.");
-      return;
-    }
-    await supprimerTarif(tarifId);
-    await recharger();
-    onModification?.();
-  }
-
-  /**
-   * Icone d'un fournisseur: on tente son site, et a defaut on ouvre le
-   * selecteur de fichier.
-   *
-   * Sans ce repli, un fournisseur dont le site ne sert pas d'icone exploitable
-   * etait un cul-de-sac: le message d'echec ne laissait rien a faire, alors que
-   * la commande d'import existait deja pour les sites.
-   */
   async function iconeFournisseur(abonnement) {
     setErreur("");
 
@@ -589,104 +539,15 @@ export default function Abonnements({ onModification }) {
                     {ouvert && (
                       <tr className="border-b border-bord/50">
                         <td colSpan={11} className="bg-surface-2/40 px-3 py-3">
-                          <p className="mb-2 text-xs font-medium text-texte-doux">
-                            Historique des tarifs — chaque ligne s&apos;applique a partir de sa
-                            date, les echeances anterieures gardent l&apos;ancien prix
-                          </p>
-                          <ul className="mb-3 flex flex-col gap-1">
-                            {sesTarifs.map((t) =>
-                              tarifEnEdition?.id === t.id ? (
-                                <li key={t.id} className="flex items-end gap-2 text-sm">
-                                  <Champ
-                                    label="A partir du"
-                                    type="date"
-                                    value={tarifEnEdition.debut}
-                                    onChange={(e) =>
-                                      setTarifEnEdition((x) => ({ ...x, debut: e.target.value }))
-                                    }
-                                    className="w-40"
-                                  />
-                                  <Champ
-                                    label="Montant"
-                                    inputMode="decimal"
-                                    value={tarifEnEdition.montant}
-                                    onChange={(e) =>
-                                      setTarifEnEdition((x) => ({ ...x, montant: e.target.value }))
-                                    }
-                                    className="w-28"
-                                  />
-                                  <Bouton
-                                    className="px-2 py-1 text-xs"
-                                    onClick={enregistrerCorrection}
-                                  >
-                                    Corriger
-                                  </Bouton>
-                                  <Bouton
-                                    variante="fantome"
-                                    className="px-2 py-1 text-xs"
-                                    onClick={() => setTarifEnEdition(null)}
-                                  >
-                                    Annuler
-                                  </Bouton>
-                                </li>
-                              ) : (
-                                <li key={t.id} className="flex items-center gap-3 text-sm">
-                                  <span className="w-24 tabular-nums text-texte-doux">
-                                    {t.debut}
-                                  </span>
-                                  <span className="tabular-nums">
-                                    {formatMontant(t.montant_cents, a.devise)}
-                                  </span>
-                                  <Bouton
-                                    variante="fantome"
-                                    className="px-1.5 py-0.5"
-                                    title="Corriger ce tarif"
-                                    onClick={() =>
-                                      setTarifEnEdition({
-                                        id: t.id,
-                                        debut: t.debut,
-                                        montant: (t.montant_cents / 100).toFixed(2),
-                                      })
-                                    }
-                                  >
-                                    <Pencil size={12} />
-                                  </Bouton>
-                                  <Bouton
-                                    variante="danger"
-                                    className="px-1.5 py-0.5"
-                                    title="Supprimer ce tarif"
-                                    onClick={() => retirerTarif(a.id, t.id)}
-                                  >
-                                    <Trash2 size={12} />
-                                  </Bouton>
-                                </li>
-                              ),
-                            )}
-                          </ul>
-                          <div className="flex flex-wrap items-end gap-3">
-                            <Champ
-                              label="A partir du"
-                              type="date"
-                              value={nouveauTarif.debut}
-                              onChange={(e) =>
-                                setNouveauTarif((t) => ({ ...t, debut: e.target.value }))
-                              }
-                              className="w-40"
-                            />
-                            <Champ
-                              label="Nouveau montant (€)"
-                              inputMode="decimal"
-                              placeholder="11,00"
-                              value={nouveauTarif.montant}
-                              onChange={(e) =>
-                                setNouveauTarif((t) => ({ ...t, montant: e.target.value }))
-                              }
-                              className="w-36"
-                            />
-                            <Bouton onClick={() => enregistrerTarif(a.id)}>
-                              Ajouter ce tarif
-                            </Bouton>
-                          </div>
+                          <HistoriqueTarifs
+                            abonnement={a}
+                            tarifs={sesTarifs}
+                            onErreur={setErreur}
+                            onModifie={async () => {
+                              await recharger();
+                              onModification?.();
+                            }}
+                          />
                         </td>
                       </tr>
                     )}
