@@ -3,7 +3,14 @@
   "plugins": ["react", "unicorn", "typescript"],
   "env": { "browser": true, "es2024": true },
   "rules": {
-    "no-unused-vars": "warn"
+    "no-unused-vars": "warn",
+    "no-undef": "error"
   },
+  "overrides": [
+    {
+      "files": ["**/*.test.js", "**/*.test.jsx", "scripts/**"],
+      "env": { "node": true }
+    }
+  ],
   "ignorePatterns": ["dist", "src-tauri/target"]
 }
