@@ -12,6 +12,7 @@ import Agents from "./pages/Agents";
 import { lancerCycle } from "./lib/monitoring";
 import { nbAgentsEnRetard } from "./lib/tachesPlanifiees";
 import { useAgentsAttendus } from "./lib/useAgentsAttendus";
+import { useControles } from "./lib/useControles";
 import { useNotifications } from "./lib/useNotifications";
 import { resumeMiseAJour, useMiseAJour } from "./lib/miseAJour";
 import { lirePreference, listerSites } from "./lib/queries";
@@ -89,7 +90,8 @@ export default function App() {
     return () => clearInterval(minuterie);
   }, [verifier, intervalleS]);
 
-  const agents = useAgentsAttendus(revision);
+  const controles = useControles(revision, signalerModification);
+  const agents = useAgentsAttendus(revision, controles.derniers);
   useNotifications(revision, agents.attendus);
   const miseAJour = useMiseAJour();
 
@@ -107,6 +109,7 @@ export default function App() {
         rafraichissement={revision}
         attendus={agents.attendus}
         configTrouvee={agents.configTrouvee}
+        controles={controles}
       />
     ),
     preferences: (

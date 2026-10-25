@@ -8,7 +8,7 @@
   },
   "overrides": [
     {
-      "files": ["**/*.test.js", "**/*.test.jsx", "scripts/**"],
+      "files": ["**/*.test.js", "**/*.test.jsx", "scripts/**", "controles/**"],
       "env": { "node": true }
     }
   ],

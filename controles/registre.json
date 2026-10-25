@@ -1,0 +1,52 @@
+[
+  {
+    "id": "sante-prod-denivio-quotidienne",
+    "site": "denivio.fr",
+    "titre": "Santé de la prod",
+    "script": "sante-prod.mjs",
+    "config": "denivio",
+    "cron": "30 7 * * *",
+    "projet": "C:\\Users\\cedao\\Documents\\Projet\\SportSite",
+    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\SportSite\\sante-prod-denivio.md"
+  },
+  {
+    "id": "sante-prod-roisempereurs-quotidienne",
+    "site": "roisempereurs.fr",
+    "titre": "Santé de la prod",
+    "script": "sante-prod.mjs",
+    "config": "roisempereurs",
+    "cron": "45 7 * * *",
+    "projet": "C:\\Users\\cedao\\Documents\\Projet\\HistorySite",
+    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\HistorySite\\sante-prod-roisempereurs.md"
+  },
+  {
+    "id": "audit-hebdo-denivio",
+    "site": "denivio.fr",
+    "titre": "Audit hebdomadaire",
+    "script": "audit-hebdo.mjs",
+    "config": "denivio",
+    "cron": "0 7 * * 1",
+    "projet": "C:\\Users\\cedao\\Documents\\Projet\\SportSite",
+    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\SportSite\\audit-hebdo-denivio.md"
+  },
+  {
+    "id": "audit-hebdo-roisempereurs",
+    "site": "roisempereurs.fr",
+    "titre": "Audit hebdomadaire",
+    "script": "audit-hebdo.mjs",
+    "config": "roisempereurs",
+    "cron": "30 7 * * 1",
+    "projet": "C:\\Users\\cedao\\Documents\\Projet\\HistorySite",
+    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\HistorySite\\audit-hebdo-roisempereurs.md"
+  },
+  {
+    "id": "bing-denivio-quotidien",
+    "site": "denivio.fr",
+    "titre": "Soumission Bing",
+    "script": "bing.mjs",
+    "config": "denivio",
+    "cron": "0 9 * * *",
+    "projet": "C:\\Users\\cedao\\Documents\\Projet\\SportSite",
+    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\SportSite\\indexation-bing-soumises.txt"
+  }
+]

@@ -2,6 +2,7 @@
 
 mod agents;
 mod certificat;
+mod controles;
 mod checks;
 mod devises;
 mod domaine;
@@ -141,6 +142,7 @@ pub fn run() {
             sauvegarde::dossier_sauvegardes,
             mise_a_jour::etat_mise_a_jour,
             mise_a_jour::lancer_mise_a_jour,
+            controles::lancer_controle,
             tracer
         ])
         .run(tauri::generate_context!())

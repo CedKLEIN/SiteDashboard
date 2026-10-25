@@ -13,11 +13,11 @@ const COMMIT_INSTALLE: &str = env!("SITEDASHBOARD_COMMIT");
 /// Fenetre de console masquee pour les appels a git, nouvelle console visible
 /// pour l'installeur (drapeaux de CreateProcess).
 #[cfg(windows)]
-const SANS_FENETRE: u32 = 0x0800_0000;
+pub(crate) const SANS_FENETRE: u32 = 0x0800_0000;
 #[cfg(windows)]
 const NOUVELLE_CONSOLE: u32 = 0x0000_0010;
 
-fn depot() -> PathBuf {
+pub(crate) fn depot() -> PathBuf {
     // CARGO_MANIFEST_DIR = <depot>/src-tauri au moment de la compilation
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()

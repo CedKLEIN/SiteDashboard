@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ChevronDown, ChevronRight, CircleDashed, FolderOpen, RefreshCw } from "lucide-react";
 import { ICONES } from "../components/CarteSite";
+import ControlesAutomatiques from "../components/ControlesAutomatiques";
 import { Bouton, BoutonCopier, Carte, EtatVide } from "../components/ui";
 import { couleurEtat, iconeEtat, libelleEtat } from "../lib/statut";
 import {
@@ -222,6 +223,7 @@ export default function Agents({
   rafraichissement,
   attendus = [],
   configTrouvee = true,
+  controles = null,
 }) {
   const [dossier, setDossier] = useState({ dossier: "", existe: true, fichiers: [] });
   const [chargement, setChargement] = useState(true);
@@ -294,6 +296,8 @@ export default function Agents({
       </div>
 
       <AttendusAujourdhui attendus={attendus} configTrouvee={configTrouvee} sites={sites} />
+
+      <ControlesAutomatiques controles={controles} />
 
       {sitesAvecRapports.length > 1 && (
         <div className="flex flex-wrap gap-1.5">
