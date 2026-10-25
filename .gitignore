@@ -26,6 +26,10 @@ dist-ssr
 # Tauri
 src-tauri/target
 
+# Mode apercu (copie de la base, rapports) et captures d'ecran : donnees personnelles
+.apercu/
+captures/
+
 # Base locale de dev eventuelle
 *.db
 *.db-journal

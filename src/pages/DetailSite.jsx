@@ -36,10 +36,17 @@ import {
   dernierResultat,
   heure,
   LIBELLES_TYPE,
+  regrouperIncidents,
   resumeAssertions,
   texteCheck,
+  tonDisponibilite,
 } from "../lib/affichageChecks";
-import { formatMontant, joursDepuis } from "../lib/format";
+
+/** '10:01' ou '09:52 → 10:01' pour un incident regroupe. */
+function plageIncident({ debut, fin }) {
+  return debut === fin ? heure(fin) : `${heure(debut)} → ${heure(fin)}`;
+}
+import { dateFr, formatMontant, joursDepuis } from "../lib/format";
 
 export default function DetailSite({
   site,
@@ -54,6 +61,7 @@ export default function DetailSite({
   const [diagnostic, setDiagnostic] = useState(null);
   const [coutFixe, setCoutFixe] = useState(0);
   const [uniteCout, setUniteCout] = useState("mois");
+  const [formulaireOuvert, setFormulaireOuvert] = useState(false);
 
   const recharger = useCallback(async () => {
     const [c, h, d, fixe] = await Promise.all([
@@ -139,7 +147,10 @@ export default function DetailSite({
     latence: v.ok ? v.latence_ms : null,
   }));
 
-  const incidents = historique.filter((v) => !v.ok).slice(-10).reverse();
+  // Toute la fenetre de 24 h, les echecs identiques consecutifs regroupes
+  const incidents = regrouperIncidents(historique.filter((v) => !v.ok).reverse()).slice(0, 8);
+  const checksActifs = supervises.filter((c) => c.actif && c.derniere_verif);
+  const checksOk = checksActifs.filter((c) => c.dernier_ok).length;
 
   return (
     <div className="flex flex-col gap-5">
@@ -168,16 +179,16 @@ export default function DetailSite({
           className="ml-auto flex items-center gap-2"
         >
           <RefreshCw size={14} className={verificationEnCours ? "animate-spin" : ""} />
-          Verifier maintenant
+          Vérifier maintenant
         </Bouton>
       </div>
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Kpi
-          libelle="Disponibilite 24 h"
-          valeur={disponibilite == null ? "—" : `${disponibilite.toFixed(1)} %`}
-          detail={`${historique.length} verification(s)`}
-          ton={disponibilite != null && disponibilite < 99 ? "depense" : "revenu"}
+          libelle="Disponibilité 24 h"
+          valeur={disponibilite == null ? "—" : `${disponibilite.toFixed(1).replace(".", ",")} %`}
+          detail={`${historique.length} vérification(s)`}
+          ton={tonDisponibilite(disponibilite)}
         />
         <Kpi
           libelle="Latence moyenne"
@@ -186,7 +197,7 @@ export default function DetailSite({
         <Kpi
           libelle={
             <span className="flex items-center gap-1.5">
-              Cout fixe /
+              Coût fixe /
               <button
                 type="button"
                 onClick={() => setUniteCout(uniteCout === "mois" ? "an" : "mois")}
@@ -202,16 +213,22 @@ export default function DetailSite({
           ton="depense"
         />
         <Kpi
-          libelle="Depenses recentes"
-          valeur={formatMontant(depenses.reduce((t, d) => t + (d.part_cents ?? d.montant_cents), 0))}
-          detail={`${depenses.length} derniere(s) ligne(s)`}
-          ton="depense"
+          libelle="Checks"
+          valeur={checksActifs.length === 0 ? "—" : `${checksOk} / ${checksActifs.length} OK`}
+          detail={
+            checksActifs.length === 0
+              ? "aucun check vérifié"
+              : checksOk === checksActifs.length
+                ? "tous au vert"
+                : `${checksActifs.length - checksOk} en échec`
+          }
+          ton={checksActifs.length === 0 ? "neutre" : checksOk === checksActifs.length ? "revenu" : "depense"}
         />
       </div>
 
       <Carte titre="Latence sur 24 h">
         {serie.length === 0 ? (
-          <EtatVide>Aucune verification sur les dernieres 24 h.</EtatVide>
+          <EtatVide>Aucune vérification sur les dernières 24 h.</EtatVide>
         ) : (
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
@@ -257,9 +274,9 @@ export default function DetailSite({
             <thead>
               <tr className="border-b border-bord text-left text-xs uppercase text-texte-doux">
                 <th className="py-2 font-medium">Actif</th>
-                <th className="py-2 font-medium">Libelle</th>
+                <th className="py-2 font-medium">Libellé</th>
                 <th className="py-2 font-medium">URL</th>
-                <th className="py-2 font-medium">Dernier resultat</th>
+                <th className="py-2 font-medium">Dernier résultat</th>
                 <th className="py-2 text-right font-medium">Latence</th>
                 <th />
               </tr>
@@ -299,10 +316,10 @@ export default function DetailSite({
                           style={{ background: check.dernier_ok ? "#34d399" : "#f97362" }}
                         />
                         {dernierResultat(check)}
-                        <span className="text-texte-doux">a {heure(check.derniere_verif)}</span>
+                        <span className="text-texte-doux">à {heure(check.derniere_verif)}</span>
                       </span>
                     ) : (
-                      <span className="text-texte-doux">jamais verifie</span>
+                      <span className="text-texte-doux">jamais vérifié</span>
                     )}
                   </td>
                   <td className="py-2 text-right tabular-nums text-texte-doux">
@@ -311,13 +328,13 @@ export default function DetailSite({
                   <td className="py-2 pl-2 text-right whitespace-nowrap">
                     <BoutonCopier
                       texte={() => texteCheck(check)}
-                      titre="Copier ce check et son resultat"
+                      titre="Copier ce check et son résultat"
                       className="mr-1 align-middle"
                     />
                     <Bouton
                       variante="fantome"
                       className="mr-1 px-1.5 py-1"
-                      title="Voir la requete, la reponse et le certificat"
+                      title="Voir la requête, la réponse et le certificat"
                       onClick={() => inspecter(check)}
                     >
                       <Search size={14} />
@@ -352,7 +369,7 @@ export default function DetailSite({
         {suggestions.length > 0 && (
           <div className="mt-4 border-t border-bord/50 pt-3">
             <p className="mb-2 text-xs text-texte-doux">
-              Checks courants a ajouter en un clic :
+              Checks courants à ajouter en un clic :
             </p>
             <div className="flex flex-wrap gap-2">
               {suggestions.map((s) => (
@@ -367,7 +384,7 @@ export default function DetailSite({
                   {s.libelle}
                   {s.doitContenir && (
                     <span className="rounded bg-surface-2 px-1 py-0.5 text-[10px]">
-                      contenu verifie
+                      contenu vérifié
                     </span>
                   )}
                 </button>
@@ -376,13 +393,32 @@ export default function DetailSite({
           </div>
         )}
 
-        <FormulaireCheck site={site} onAjoute={recharger} />
+        <div className="mt-4 border-t border-bord/50 pt-3">
+          {formulaireOuvert ? (
+            <FormulaireCheck
+              site={site}
+              onAjoute={async () => {
+                await recharger();
+                setFormulaireOuvert(false);
+              }}
+            />
+          ) : (
+            <Bouton
+              variante="fantome"
+              className="flex items-center gap-1.5 text-xs"
+              onClick={() => setFormulaireOuvert(true)}
+            >
+              <Plus size={13} />
+              Ajouter un check personnalisé
+            </Bouton>
+          )}
+        </div>
       </Carte>
 
       {informations.length > 0 && (
         <Carte titre="Informations">
           <p className="mb-3 text-xs text-texte-doux">
-            Ces checks n'emettent aucun verdict : un retard de deploiement n'est pas une panne,
+            Ces checks n'émettent aucun verdict : un retard de déploiement n'est pas une panne,
             c'est une information.
           </p>
           <ul className="flex flex-col gap-2 text-sm">
@@ -396,7 +432,7 @@ export default function DetailSite({
                   </span>
                   {check.valeur_depuis && (
                     <span className="shrink-0 text-xs text-texte-doux">
-                      {jours === 0 ? "change aujourd'hui" : `inchange depuis ${jours} j`}
+                      {jours === 0 ? "changé aujourd'hui" : `inchangé depuis ${jours} j`}
                     </span>
                   )}
                   <BoutonCopier
@@ -408,7 +444,7 @@ export default function DetailSite({
                   <Bouton
                     variante="fantome"
                     className="px-1.5 py-1"
-                    title="Voir la requete et la reponse"
+                    title="Voir la requête et la réponse"
                     onClick={() => inspecter(check)}
                   >
                     <Search size={14} />
@@ -430,13 +466,13 @@ export default function DetailSite({
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Carte
-          titre="Incidents recents"
+          titre="Incidents récents"
           action={
             incidents.length > 0 && (
               <BoutonCopier
                 texte={() =>
                   incidents
-                    .map((i) => `${heure(i.verifie_le)} — ${i.check_libelle} — ${i.erreur ?? "echec"}`)
+                    .map((i) => `${plageIncident(i)} — ${i.check_libelle} — ${i.erreur}${i.nombre > 1 ? ` (x${i.nombre})` : ""}`)
                     .join("\n")
                 }
                 titre="Copier les incidents"
@@ -448,14 +484,21 @@ export default function DetailSite({
             <EtatVide>Aucun incident sur 24 h.</EtatVide>
           ) : (
             <ul className="flex flex-col gap-2 text-sm">
-              {incidents.map((incident, index) => (
-                <li key={`${incident.verifie_le}-${index}`} className="flex items-center gap-2.5">
-                  <span className="w-12 shrink-0 tabular-nums text-texte-doux">
-                    {heure(incident.verifie_le)}
+              {incidents.map((incident) => (
+                <li key={`${incident.fin}-${incident.check_libelle}`} className="flex items-center gap-2.5">
+                  <span className="w-28 shrink-0 tabular-nums text-texte-doux">
+                    {plageIncident(incident)}
                   </span>
-                  <span className="flex-1 truncate">{incident.check_libelle}</span>
-                  <span className="truncate text-xs text-depense">
-                    {incident.erreur ?? "echec"}
+                  <span className="flex-1 truncate">
+                    {incident.check_libelle}
+                    {incident.nombre > 1 && (
+                      <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-texte-doux">
+                        ×{incident.nombre}
+                      </span>
+                    )}
+                  </span>
+                  <span className="truncate text-xs text-depense" title={incident.erreur}>
+                    {incident.erreur}
                   </span>
                 </li>
               ))}
@@ -463,18 +506,18 @@ export default function DetailSite({
           )}
         </Carte>
 
-        <Carte titre="Dernieres depenses">
+        <Carte titre="Dernières dépenses">
           {depenses.length === 0 ? (
-            <EtatVide>Aucune depense pour ce site.</EtatVide>
+            <EtatVide>Aucune dépense pour ce site.</EtatVide>
           ) : (
             <ul className="flex flex-col gap-2 text-sm">
               {depenses.map((d) => (
                 <li key={d.id} className="flex items-center gap-2.5">
-                  <span className="w-20 shrink-0 tabular-nums text-texte-doux">{d.date}</span>
+                  <span className="w-20 shrink-0 tabular-nums text-texte-doux">{dateFr(d.date)}</span>
                   <span className="flex-1 truncate">
                     {d.fournisseur_nom ?? d.libelle ?? d.categorie}
                     {d.nb_sites > 1 && (
-                      <span className="text-texte-doux"> · partagee ({d.sites_noms})</span>
+                      <span className="text-texte-doux"> · partagée ({d.sites_noms})</span>
                     )}
                   </span>
                   <span className="tabular-nums">

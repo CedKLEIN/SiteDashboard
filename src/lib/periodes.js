@@ -7,9 +7,9 @@
  */
 export const PERIODES = [
   { cle: "mois", libelle: "Ce mois" },
-  { cle: "annee", libelle: "Cette annee" },
+  { cle: "annee", libelle: "Cette année" },
   { cle: "12mois", libelle: "12 derniers mois" },
-  { cle: "annee_precedente", libelle: "Annee derniere" },
+  { cle: "annee_precedente", libelle: "Année dernière" },
   { cle: "toujours", libelle: "Depuis toujours" },
 ];
 

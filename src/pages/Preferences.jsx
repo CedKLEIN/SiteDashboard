@@ -35,22 +35,22 @@ function MiseAJour({ etat, verifier }) {
 
   return (
     <Carte
-      titre="Mise a jour"
+      titre="Mise à jour"
       action={
         <Bouton variante="fantome" className="px-2 py-1 text-xs" onClick={verifier}>
           <span className="flex items-center gap-1.5">
             <RefreshCw size={12} />
-            Verifier
+            Vérifier
           </span>
         </Bouton>
       }
     >
       <p className="text-xs text-texte-doux">
-        Version installee : <span className="font-mono text-texte">{commitCourt(etat?.commit_installe)}</span>
+        Version installée : <span className="font-mono text-texte">{commitCourt(etat?.commit_installe)}</span>
         {etat?.commit_depot && (
           <>
             {" "}
-            · depot ({etat.branche ?? "?"}) :{" "}
+            · dépôt ({etat.branche ?? "?"}) :{" "}
             <span className="font-mono text-texte">{commitCourt(etat.commit_depot)}</span>
           </>
         )}
@@ -70,8 +70,8 @@ function MiseAJour({ etat, verifier }) {
       )}
       {etat?.modifications_locales > 0 && (
         <p className="mt-2 text-xs text-texte-doux">
-          {etat.modifications_locales} fichier(s) modifie(s) non commite(s) dans le depot : ils
-          seraient compiles aussi.
+          {etat.modifications_locales} fichier(s) modifié(s) non commité(s) dans le dépôt : ils
+          seraient compilés aussi.
         </p>
       )}
 
@@ -79,13 +79,13 @@ function MiseAJour({ etat, verifier }) {
         <Bouton onClick={lancer} disabled={!resume.disponible || lancee}>
           <span className="flex items-center gap-1.5">
             <Download size={14} />
-            Mettre a jour
+            Mettre à jour
           </span>
         </Bouton>
         <p className="text-xs text-texte-doux">
           {lancee
-            ? "Mise a jour lancee : suis la console. L'appli va se fermer puis se rouvrir (quelques minutes)."
-            : "Compile le depot local, ferme l'appli, installe la nouvelle version et la relance."}
+            ? "Mise à jour lancée : suis la console. L'appli va se fermer puis se rouvrir (quelques minutes)."
+            : "Compile le dépôt local, ferme l'appli, installe la nouvelle version et la relance."}
         </p>
       </div>
       {erreur && <p className="mt-2 text-xs text-depense">{erreur}</p>}
@@ -126,21 +126,21 @@ function Notifications() {
     <Carte titre="Notifications">
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={actives} onChange={(e) => basculer(e.target.checked)} />
-        Notifier dans Windows quand un site tombe ou revient, et quand un agent est bloque, pas
-        lance ou en echec
+        Notifier dans Windows quand un site tombe ou revient, et quand un agent est bloqué, pas
+        lancé ou en échec
       </label>
       <p className="mt-2 text-xs text-texte-doux">
-        Une seule notification par changement : un site en panne ne sonne pas a chaque minute.
+        Une seule notification par changement : un site en panne ne sonne pas à chaque minute.
         Comme la supervision, elles ne partent que pendant que l&apos;application est ouverte.
       </p>
       <div className="mt-3 flex items-center gap-3">
         <Bouton variante="fantome" onClick={tester}>
           Envoyer une notification de test
         </Bouton>
-        {essai === "envoyee" && <span className="text-xs text-revenu">Envoyee</span>}
+        {essai === "envoyee" && <span className="text-xs text-revenu">Envoyée</span>}
         {essai === "refusee" && (
           <span className="text-xs text-depense">
-            Refusee par Windows : verifie Parametres &gt; Systeme &gt; Notifications
+            Refusée par Windows : vérifie Paramètres &gt; Système &gt; Notifications
           </span>
         )}
       </div>
@@ -188,11 +188,11 @@ function Sauvegardes() {
       setDerniere(new Date().toISOString());
       const etat =
         integrite.etat === "grave"
-          ? ` — attention, base abimee : ${integrite.messages[0]}`
+          ? ` — attention, base abîmée : ${integrite.messages[0]}`
           : integrite.repare
-            ? ` — ${integrite.avant} defaut(s) d'index repare(s) avant la copie`
+            ? ` — ${integrite.avant} défaut(s) d'index réparé(s) avant la copie`
             : "";
-      setMessage({ ok: integrite.etat !== "grave", texte: `Sauvegarde ecrite : ${chemin}${etat}` });
+      setMessage({ ok: integrite.etat !== "grave", texte: `Sauvegarde écrite : ${chemin}${etat}` });
     } catch (e) {
       setMessage({ ok: false, texte: `Sauvegarde impossible : ${e}` });
     } finally {
@@ -205,12 +205,12 @@ function Sauvegardes() {
       <p className="text-sm font-medium">Sauvegardes automatiques</p>
       <p className="mt-1 text-xs text-texte-doux">
         Une copie de la base tous les {JOURS_ENTRE_SAUVEGARDES} jours, pendant que
-        l&apos;application tourne ; les {SAUVEGARDES_GARDEES} plus recentes sont gardees.
+        l&apos;application tourne ; les {SAUVEGARDES_GARDEES} plus récentes sont gardées.
         Pour restaurer : ferme l&apos;application et remplace le fichier de la base par une
-        sauvegarde renommee <span className="font-mono">sitedashboard.db</span>.
+        sauvegarde renommée <span className="font-mono">sitedashboard.db</span>.
       </p>
       <p className="mt-2 text-xs">
-        Derniere sauvegarde :{" "}
+        Dernière sauvegarde :{" "}
         <span className="text-texte">{dateLisible(derniere) ?? "aucune pour l'instant"}</span>
       </p>
       {dossier && (
@@ -291,14 +291,14 @@ export default function Preferences({ onModification, cheminBase, miseAJour }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <h1 className="text-lg font-semibold">Preferences</h1>
+      <h1 className="text-lg font-semibold">Préférences</h1>
 
       {miseAJour && <MiseAJour etat={miseAJour.etat} verifier={miseAJour.verifier} />}
 
       <Carte titre="Supervision">
         <div className="flex flex-wrap items-end gap-4">
           <Selecteur
-            label="Frequence de verification"
+            label="Fréquence de vérification"
             value={intervalle}
             onChange={(e) => changer(e.target.value)}
             className="w-48"
@@ -309,14 +309,14 @@ export default function Preferences({ onModification, cheminBase, miseAJour }) {
               </option>
             ))}
           </Selecteur>
-          {enregistre && <span className="pb-2 text-xs text-revenu">Enregistre</span>}
+          {enregistre && <span className="pb-2 text-xs text-revenu">Enregistré</span>}
         </div>
 
         <p className="mt-3 text-xs text-texte-doux">
-          Chaque check actif est rejoue a cette frequence, soit{" "}
-          <span className="text-texte">{parHeure} requete(s) par heure et par check</span>. Une
-          frequence elevee ne detecte pas mieux les pannes durables : elle ne raccourcit que le
-          delai avant de les voir, au prix de requetes supplementaires sur tes sites.
+          Chaque check actif est rejoué à cette fréquence, soit{" "}
+          <span className="text-texte">{parHeure} requête(s) par heure et par check</span>. Une
+          fréquence élevée ne détecte pas mieux les pannes durables : elle ne raccourcit que le
+          délai avant de les voir, au prix de requêtes supplémentaires sur tes sites.
         </p>
         <p className="mt-1 text-xs text-texte-doux">
           La supervision ne tourne que pendant que l&apos;application est ouverte.
@@ -325,9 +325,9 @@ export default function Preferences({ onModification, cheminBase, miseAJour }) {
 
       <Notifications />
 
-      <Carte titre="Donnees">
+      <Carte titre="Données">
         <p className="text-xs text-texte-doux">
-          Toutes les donnees vivent dans un seul fichier SQLite ; pour repartir de zero,
+          Toutes les données vivent dans un seul fichier SQLite ; pour repartir de zéro,
           supprime-le et relance l&apos;application.
         </p>
         {cheminBase && (
@@ -337,7 +337,7 @@ export default function Preferences({ onModification, cheminBase, miseAJour }) {
           </p>
         )}
         <p className="mt-3 text-xs text-texte-doux">
-          L&apos;historique de supervision est purge au-dela de {JOURS_HISTORIQUE_VERIFICATIONS}{" "}
+          L&apos;historique de supervision est purgé au-delà de {JOURS_HISTORIQUE_VERIFICATIONS}{" "}
           jours.
         </p>
         <Sauvegardes />

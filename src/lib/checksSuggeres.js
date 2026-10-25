@@ -30,10 +30,10 @@ export const CHECKS_SUGGERES = [
   },
   {
     cle: "sante",
-    libelle: "Sante de l'API",
+    libelle: "Santé de l'API",
     chemin: "/healthz",
     doitContenir: null,
-    description: "Endpoint de sante applicatif (souvent /healthz ou /health)",
+    description: "Endpoint de santé applicatif (souvent /healthz ou /health)",
   },
   {
     cle: "sitemap",
@@ -64,7 +64,7 @@ export const CHECKS_SUGGERES = [
     chemin: "/",
     type: "tls",
     doitContenir: null,
-    description: "Alerte avant l'expiration du certificat, pas apres la panne",
+    description: "Alerte avant l'expiration du certificat, pas après la panne",
   },
   {
     cle: "manifest",
@@ -75,7 +75,7 @@ export const CHECKS_SUGGERES = [
   },
   {
     cle: "entetes",
-    libelle: "En-tetes de securite",
+    libelle: "En-têtes de sécurité",
     chemin: "/",
     doitContenir: null,
     // Le cas qui a motive ces regles: un durcissement nginx commite mais jamais
@@ -87,7 +87,7 @@ export const CHECKS_SUGGERES = [
       { nom: "content-security-policy", operateur: "present", valeur: null },
       { nom: "server", operateur: "ne_contient_pas", valeur: "/" },
     ],
-    description: "HSTS, CSP, et un en-tete Server qui n'annonce pas sa version",
+    description: "HSTS, CSP, et un en-tête Server qui n'annonce pas sa version",
   },
   {
     cle: "www",
@@ -133,7 +133,7 @@ export const CHECKS_SUGGERES = [
   },
   {
     cle: "version",
-    libelle: "Version deployee",
+    libelle: "Version déployée",
     chemin: "/version.json",
     type: "valeur",
     extracteur: "json:buildId",

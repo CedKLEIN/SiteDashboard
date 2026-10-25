@@ -9,7 +9,7 @@ describe("resumeMiseAJour", () => {
   it("ne propose la mise a jour que s'il y a des commits plus recents", () => {
     expect(resumeMiseAJour({ nouveaux: [], modifications_locales: 3 })).toEqual({
       disponible: false,
-      libelle: "A jour",
+      libelle: "À jour",
     });
     expect(resumeMiseAJour({ nouveaux: ["abc Corrige X"] })).toEqual({
       disponible: true,
@@ -21,7 +21,7 @@ describe("resumeMiseAJour", () => {
   it("dit pourquoi la verification n'a pas pu se faire", () => {
     expect(resumeMiseAJour({ erreur: "git introuvable", nouveaux: [] })).toEqual({
       disponible: false,
-      libelle: "Verification impossible : git introuvable",
+      libelle: "Vérification impossible : git introuvable",
     });
     expect(resumeMiseAJour(null).disponible).toBe(false);
   });

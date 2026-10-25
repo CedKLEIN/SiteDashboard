@@ -14,27 +14,27 @@ import {
 
 describe("texteAttendu", () => {
   it("resume un agent attendu en une ligne", () => {
-    const base = { titre: "Sante", site: "denivio.fr", heure: "09:04", message: "Lance a 09:04" };
+    const base = { titre: "Santé", site: "denivio.fr", heure: "09:04", message: "Lancé à 09:04" };
     expect(texteAttendu({ ...base, situation: "bloque", rapport: null })).toBe(
-      "Sante — denivio.fr — Bloque ? (09:04) : Lance a 09:04",
+      "Santé — denivio.fr — Bloqué ? (09:04) : Lancé à 09:04",
     );
     expect(
       texteAttendu({ ...base, heure: null, situation: "recu", rapport: { statut: "ok" }, message: "RAS" }),
-    ).toBe("Sante — denivio.fr — Recu · OK : RAS");
+    ).toBe("Santé — denivio.fr — Reçu · OK : RAS");
   });
 
   it("dit toujours qu'un rapport est recu, quel que soit son statut", () => {
     expect(libelleAttendu({ situation: "recu", rapport: { statut: "attention" } })).toBe(
-      "Recu · a regarder",
+      "Reçu · à regarder",
     );
-    expect(libelleAttendu({ situation: "recu", rapport: { statut: "echec" } })).toBe("Recu · en echec");
+    expect(libelleAttendu({ situation: "recu", rapport: { statut: "echec" } })).toBe("Reçu · en échec");
     expect(libelleAttendu({ situation: "en_cours", rapport: null })).toBe("En cours");
   });
 });
 
 const SKILL_SANTE = `Etapes...
 8. Rapport pour SiteDashboard : ecris \`C:\\Users\\moi\\.claude\\rapports-agents\\denivio.fr\\<AAAA-MM-JJ>\\sante-prod.json\`.
-Contenu : {"site":"denivio.fr","agent":"sante-prod","titre":"Sante de la prod","date":"AAAA-MM-JJ"}`;
+Contenu : {"site":"denivio.fr","agent":"sante-prod","titre":"Santé de la prod","date":"AAAA-MM-JJ"}`;
 
 // Dimanche 25 octobre 2026, 9 h 30 (heure locale)
 const MAINTENANT = new Date(2026, 9, 25, 9, 30);
@@ -52,7 +52,7 @@ describe("rapportPromis", () => {
     expect(rapportPromis(SKILL_SANTE)).toEqual({
       site: "denivio.fr",
       agent: "sante-prod",
-      titre: "Sante de la prod",
+      titre: "Santé de la prod",
     });
   });
 
@@ -157,13 +157,13 @@ describe("situationAgent", () => {
   it("un agent lance recemment est en cours", () => {
     const r = situationAgent({ lanceA: new Date(2026, 9, 25, 9, 4), maintenant: MAINTENANT });
     expect(r.situation).toBe("en_cours");
-    expect(r.message).toBe("Lance a 09:04");
+    expect(r.message).toBe("Lancé à 09:04");
   });
 
   it("un agent lance depuis trop longtemps sans rapport est presume bloque", () => {
     const r = situationAgent({ lanceA: new Date(2026, 9, 25, 8, 30), maintenant: MAINTENANT });
     expect(r.situation).toBe("bloque");
-    expect(r.message).toMatch(/Lance a 08:30, toujours sans rapport apres 1 h/);
+    expect(r.message).toMatch(/Lancé à 08:30, toujours sans rapport après 1 h/);
   });
 
   it("allonge le seuil pour un agent habituellement long", () => {
@@ -176,7 +176,7 @@ describe("situationAgent", () => {
   it("une heure prevue depassee sans lancement donne un agent pas lance", () => {
     expect(situationAgent({ prevueA: "08:00", maintenant: MAINTENANT })).toEqual({
       situation: "non_lance",
-      message: "Prevu a 08:00, pas encore lance",
+      message: "Prévu à 08:00, pas encore lancé",
     });
     expect(situationAgent({ prevueA: "09:15", maintenant: MAINTENANT }).situation).toBe("prevu");
   });
@@ -210,7 +210,7 @@ describe("agentsAttendus", () => {
     const sante = attendus.find((a) => a.id === "sante-prod");
     expect(sante).toMatchObject({
       site: "denivio.fr",
-      titre: "Sante de la prod",
+      titre: "Santé de la prod",
       prevueA: "07:30",
       heure: "08:04",
       situation: "bloque",
@@ -220,7 +220,7 @@ describe("agentsAttendus", () => {
   });
 
   it("rattache le rapport du jour a son agent", () => {
-    const rapport = { agent: "sante-prod", date: "2026-10-25", statut: "ok", titre: "Sante", resume: "RAS" };
+    const rapport = { agent: "sante-prod", date: "2026-10-25", statut: "ok", titre: "Santé", resume: "RAS" };
     const hier = { agent: "seo", date: "2026-10-24", statut: "ok", titre: "SEO" };
     const attendus = agentsAttendus({
       taches,
@@ -228,7 +228,7 @@ describe("agentsAttendus", () => {
       rapports: [rapport, hier],
       maintenant: MAINTENANT,
     });
-    expect(attendus[0]).toMatchObject({ situation: "recu", rapport, titre: "Sante" });
+    expect(attendus[0]).toMatchObject({ situation: "recu", rapport, titre: "Santé" });
     // Sans heure dans le rapport, on garde celle du lancement
     expect(attendus[0].heure).toBe("08:04");
     expect(attendus[1].situation).toBe("en_cours");

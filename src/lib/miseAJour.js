@@ -13,10 +13,10 @@ export const INTERVALLE_VERIFICATION_MS = 15 * 60 * 1000;
  * compilees aussi, d'ou l'avertissement, mais ce n'est pas une nouvelle version).
  */
 export function resumeMiseAJour(etat) {
-  if (!etat) return { disponible: false, libelle: "Verification..." };
-  if (etat.erreur) return { disponible: false, libelle: `Verification impossible : ${etat.erreur}` };
+  if (!etat) return { disponible: false, libelle: "Vérification..." };
+  if (etat.erreur) return { disponible: false, libelle: `Vérification impossible : ${etat.erreur}` };
   const n = etat.nouveaux?.length ?? 0;
-  if (n === 0) return { disponible: false, libelle: "A jour" };
+  if (n === 0) return { disponible: false, libelle: "À jour" };
   return {
     disponible: true,
     libelle: n === 1 ? "1 nouveau commit" : `${n} nouveaux commits`,

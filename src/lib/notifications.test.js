@@ -20,8 +20,8 @@ describe("changements", () => {
     expect(etat.aEnvoyer).toEqual([]);
 
     etat = changements(elementsSites([site(2)]), etat.suivant);
-    expect(etat.aEnvoyer.map((n) => n.titre)).toEqual(["Denivio : un check echoue"]);
-    expect(etat.aEnvoyer[0].corps).toBe("1 check(s) en echec sur 3.");
+    expect(etat.aEnvoyer.map((n) => n.titre)).toEqual(["Denivio : un check échoue"]);
+    expect(etat.aEnvoyer[0].corps).toBe("1 check(s) en échec sur 3.");
 
     // Toujours en echec au cycle suivant : rien de nouveau
     etat = changements(elementsSites([site(2)]), etat.suivant);
@@ -43,20 +43,20 @@ describe("changements", () => {
   it("alerte sur un agent bloque, pas lance ou en echec, sans annoncer son retour", () => {
     const agent = (situation, rapport = null) => ({
       id: "sante",
-      titre: "Sante",
+      titre: "Santé",
       site: "denivio.fr",
       situation,
-      message: "Lance a 09:04",
+      message: "Lancé à 09:04",
       rapport,
     });
     let etat = changements(elementsAgents([agent("bloque")]));
-    expect(etat.aEnvoyer.map((n) => n.titre)).toEqual(["Agent bloque : Sante (denivio.fr)"]);
+    expect(etat.aEnvoyer.map((n) => n.titre)).toEqual(["Agent bloqué : Santé (denivio.fr)"]);
 
     etat = changements(elementsAgents([agent("recu", { statut: "ok" })]), etat.suivant);
     expect(etat.aEnvoyer).toEqual([]);
 
     etat = changements(elementsAgents([agent("recu", { statut: "echec", resume: "Sentry non lu" })]));
-    expect(etat.aEnvoyer).toEqual([{ titre: "Agent en echec : Sante (denivio.fr)", corps: "Sentry non lu" }]);
+    expect(etat.aEnvoyer).toEqual([{ titre: "Agent en échec : Santé (denivio.fr)", corps: "Sentry non lu" }]);
   });
 });
 

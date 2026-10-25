@@ -28,7 +28,7 @@ describe("FormulaireCheck", () => {
     const onAjoute = vi.fn();
     render(<FormulaireCheck site={{ id: 3, url: "https://denivio.fr/" }} onAjoute={onAjoute} />);
 
-    fireEvent.change(champ("Libelle"), { target: { value: "Sitemap 1" } });
+    fireEvent.change(champ("Libellé"), { target: { value: "Sitemap 1" } });
     fireEvent.change(champ("Chemin"), { target: { value: "/sitemap-1.xml" } });
     fireEvent.change(champ("Doit contenir"), { target: { value: "<loc>" } });
     fireEvent.change(champ("Occurrences min"), { target: { value: "45000" } });
@@ -48,7 +48,7 @@ describe("FormulaireCheck", () => {
       }),
     );
     // Le formulaire repart a vide
-    expect(champ("Libelle").value).toBe("");
+    expect(champ("Libellé").value).toBe("");
   });
 
   it("exige la cible d'une redirection", async () => {

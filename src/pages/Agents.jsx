@@ -21,9 +21,9 @@ import { SITUATIONS, libelleAttendu, texteAttendu } from "../lib/tachesPlanifiee
 import { tracer } from "../lib/trace";
 
 const LIBELLES_VERDICT = {
-  ok: "Tout s'est bien passe",
-  partiel: "Des points a regarder",
-  ko: "Trop d'agents ont echoue",
+  ok: "Tout s'est bien passé",
+  partiel: "Des points à regarder",
+  ko: "Trop d'agents ont échoué",
 };
 
 /** '2026-10-24' -> 'samedi 24 octobre 2026' */
@@ -54,8 +54,8 @@ function IconeEtat({ etat, taille = 18 }) {
 function resumeCompte({ ok, attention, echec }) {
   const morceaux = [];
   if (ok) morceaux.push(`${ok} OK`);
-  if (attention) morceaux.push(`${attention} a regarder`);
-  if (echec) morceaux.push(`${echec} en echec`);
+  if (attention) morceaux.push(`${attention} à regarder`);
+  if (echec) morceaux.push(`${echec} en échec`);
   return morceaux.join(" · ");
 }
 
@@ -140,7 +140,7 @@ function LigneJournee({ ligne, site, ouverte, onBasculer }) {
         <div className="border-t border-bord p-3">
           <div className="mb-2 flex justify-end">
             <span className="flex items-center gap-1 text-[11px] text-texte-doux">
-              Copier toute la journee
+              Copier toute la journée
               <BoutonCopier texte={() => texteJournee(ligne)} titre="Copier tous les rapports du jour" />
             </span>
           </div>
@@ -191,7 +191,7 @@ function AttendusAujourdhui({ attendus, configTrouvee, sites }) {
     return (
       <Carte>
         <p className="text-xs text-texte-doux">
-          Horaires des taches planifiees introuvables : impossible de dire quels rapports
+          Horaires des tâches planifiées introuvables : impossible de dire quels rapports
           manquent aujourd'hui.
         </p>
       </Carte>
@@ -282,7 +282,7 @@ export default function Agents({
         <div>
           <h1 className="text-lg font-semibold">Agents</h1>
           <p className="text-xs text-texte-doux">
-            Rapports des taches planifiees, sur les {JOURS_HISTORIQUE} derniers jours
+            Rapports des tâches planifiées, sur les {JOURS_HISTORIQUE} derniers jours
           </p>
         </div>
         <Bouton variante="fantome" onClick={charger} disabled={chargement}>
@@ -330,7 +330,7 @@ export default function Agents({
         <Carte>
           <EtatVide>
             {dossier.existe
-              ? "Aucun rapport sur la periode."
+              ? "Aucun rapport sur la période."
               : "Aucun agent n'a encore depose de rapport."}
           </EtatVide>
         </Carte>

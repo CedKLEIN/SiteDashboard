@@ -14,7 +14,7 @@ import {
 
 describe("texteRapport et texteJournee", () => {
   const complet = {
-    titre: "Sante de la prod",
+    titre: "Santé de la prod",
     site: "denivio.fr",
     date: "2026-10-25",
     debut: "2026-10-25T09:04:00+01:00",
@@ -31,10 +31,10 @@ describe("texteRapport et texteJournee", () => {
   it("met un rapport en texte, points et fichier de suivi compris", () => {
     expect(texteRapport(complet)).toBe(
       [
-        "Sante de la prod — denivio.fr — 2026-10-25 09:04 — A regarder",
+        "Santé de la prod — denivio.fr — 2026-10-25 09:04 — À regarder",
         "Une page lente",
         "- [OK] API OK",
-        "- [A regarder] /cols lente (2 s)",
+        "- [À regarder] /cols lente (2 s)",
         "Fichier : C:\\suivi.md",
       ].join("\n"),
     );
@@ -74,7 +74,7 @@ describe("lireRapport", () => {
       fichier({
         site: "denivio.fr",
         agent: "sante-prod-denivio-quotidienne",
-        titre: "Sante de la prod",
+        titre: "Santé de la prod",
         date: "2026-10-24",
         debut: "2026-10-24T07:41:00+02:00",
         statut: "attention",
@@ -84,7 +84,7 @@ describe("lireRapport", () => {
       }),
     );
     expect(r.statut).toBe("attention");
-    expect(r.titre).toBe("Sante de la prod");
+    expect(r.titre).toBe("Santé de la prod");
     expect(r.points).toEqual([
       { niveau: "attention", texte: "/catalogs en 3 s" },
       { niveau: "ok", texte: "Sitemap OK" },

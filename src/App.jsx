@@ -36,7 +36,7 @@ export default function App() {
       tracer(
         "supervision",
         resultat.ignore
-          ? "cycle ignore: le precedent tourne encore"
+          ? "cycle ignore: le précédent tourne encore"
           : `cycle termine: ${resultat.checks} check(s)`,
       );
       // Un cycle ignore (le precedent tourne encore) n'a rien ecrit a relire
@@ -127,7 +127,6 @@ export default function App() {
     <Layout
       ongletActif={siteOuvert ? null : onglet}
       onChangerOnglet={changerOnglet}
-      cheminBase={cheminBase}
       verificationEnCours={verificationEnCours}
       intervalleS={intervalleS}
       alertes={{ agents: nbAgentsEnRetard(agents.attendus) }}

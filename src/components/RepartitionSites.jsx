@@ -47,7 +47,7 @@ export default function RepartitionSites({
   return (
     <div className="flex min-w-64 flex-col gap-2">
       <SelecteurSites
-        label="Sites concernes"
+        label="Sites concernés"
         sites={sites}
         selection={selection}
         onBasculer={onBasculerSite}
@@ -56,7 +56,7 @@ export default function RepartitionSites({
 
       {partageable && !manuel && (
         <Bouton variante="fantome" className="self-start px-2 py-1 text-xs" onClick={passerEnManuel}>
-          Repartir manuellement
+          Répartir manuellement
         </Bouton>
       )}
 
@@ -83,7 +83,7 @@ export default function RepartitionSites({
             <span className={ecart === 0 ? "text-revenu" : "text-depense"}>
               total des parts : {formatMontant(somme)}
               {ecart !== 0 &&
-                ` — il ${ecart > 0 ? "faut retirer" : "reste a repartir"} ${formatMontant(
+                ` — il ${ecart > 0 ? "faut retirer" : "reste à répartir"} ${formatMontant(
                   Math.abs(ecart),
                 )}`}
             </span>

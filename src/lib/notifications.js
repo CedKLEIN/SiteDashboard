@@ -21,21 +21,21 @@ function alerteSite(site) {
   if (etat !== "ko" && etat !== "partiel") return null;
   const echecs = site.nb_resultats - site.nb_ok;
   return {
-    titre: etat === "ko" ? `${site.nom} est en panne` : `${site.nom} : un check echoue`,
+    titre: etat === "ko" ? `${site.nom} est en panne` : `${site.nom} : un check échoue`,
     corps:
       etat === "ko"
-        ? `Tous ses checks echouent (${site.nb_resultats}).`
-        : `${echecs} check(s) en echec sur ${site.nb_resultats}.`,
+        ? `Tous ses checks échouent (${site.nb_resultats}).`
+        : `${echecs} check(s) en échec sur ${site.nb_resultats}.`,
   };
 }
 
 /** Ce qui merite une alerte, pour un agent attendu : bloque, pas lance, ou rapport en echec. */
 function alerteAgent(attendu) {
   const nom = `${attendu.titre} (${attendu.site})`;
-  if (attendu.situation === "bloque") return { titre: `Agent bloque : ${nom}`, corps: attendu.message };
-  if (attendu.situation === "non_lance") return { titre: `Agent pas lance : ${nom}`, corps: attendu.message };
+  if (attendu.situation === "bloque") return { titre: `Agent bloqué : ${nom}`, corps: attendu.message };
+  if (attendu.situation === "non_lance") return { titre: `Agent pas lancé : ${nom}`, corps: attendu.message };
   if (attendu.rapport?.statut === "echec") {
-    return { titre: `Agent en echec : ${nom}`, corps: attendu.rapport.resume || attendu.message };
+    return { titre: `Agent en échec : ${nom}`, corps: attendu.rapport.resume || attendu.message };
   }
   return null;
 }
@@ -96,8 +96,8 @@ async function autorise() {
 export async function alerterBaseAbimee(messages) {
   if (!(await autorise())) return;
   sendNotification({
-    title: "SiteDashboard : base de donnees abimee",
-    body: `${messages[0] ?? "controle d'integrite en echec"} - restaure une sauvegarde (Preferences > Donnees).`,
+    title: "SiteDashboard : base de données abîmée",
+    body: `${messages[0] ?? "contrôle d'intégrité en échec"} - restaure une sauvegarde (Préférences > Données).`,
   });
 }
 
@@ -106,7 +106,7 @@ export async function notificationTest() {
   if (!(await autorise())) return false;
   sendNotification({
     title: "SiteDashboard",
-    body: "Les notifications fonctionnent : un site qui tombe ou un agent bloque s'affichera ici.",
+    body: "Les notifications fonctionnent : un site qui tombe ou un agent bloqué s'affichera ici.",
   });
   return true;
 }

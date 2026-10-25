@@ -104,8 +104,8 @@ export default function FormulaireCheck({ site, onAjoute }) {
           <option value="domaine">Domaine</option>
         </Selecteur>
         <Champ
-          label="Libelle"
-          placeholder="API sante"
+          label="Libellé"
+          placeholder="API santé"
           value={formulaire.libelle}
           onChange={(e) => maj("libelle", e.target.value)}
           className="w-40"
@@ -168,7 +168,7 @@ export default function FormulaireCheck({ site, onAjoute }) {
             />
             <label className="flex w-full flex-col gap-1">
               <span className="text-xs text-texte-doux">
-                En-tetes attendus — une regle par ligne : <code>nom</code> present,{" "}
+                En-têtes attendus — une règle par ligne : <code>nom</code> présent,{" "}
                 <code>!nom</code> absent, <code>nom: valeur</code> contient,{" "}
                 <code>!nom: valeur</code> ne contient pas
               </span>

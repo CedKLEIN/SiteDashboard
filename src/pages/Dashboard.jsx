@@ -25,7 +25,7 @@ import {
   premiereDate,
   seriesParMois,
 } from "../lib/queries";
-import { aujourdhuiIso, formatMontant } from "../lib/format";
+import { aujourdhuiIso, dateFr, formatMontant } from "../lib/format";
 import { construireSerie } from "../lib/series";
 import { abonnementsParMois, abonnementsParSite, coutMensuelEquivalent } from "../lib/abonnements";
 import { bornesPeriode, PERIODES, PERIODE_DEFAUT } from "../lib/periodes";
@@ -239,7 +239,7 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Kpi
-          libelle="Depenses"
+          libelle="Dépenses"
           valeur={formatMontant(totalDepensesCents)}
           detail={`dont ${formatMontant(totalAbonnementsCents)} d'abonnements`}
           ton="depense"
@@ -251,20 +251,20 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
           ton={margeCents >= 0 ? "revenu" : "depense"}
         />
         <Kpi
-          libelle="Recurrent / mois"
+          libelle="Récurrent / mois"
           valeur={formatMontant(recurrentCents)}
           detail={`${abonnements.filter((a) => a.actif).length} abonnement(s) actif(s)`}
         />
       </div>
 
-      <Carte titre="Cumul sur la periode">
+      <Carte titre="Cumul sur la période">
         {serie.length === 0 ? (
-          <EtatVide>Aucune ecriture sur cette periode.</EtatVide>
+          <EtatVide>Aucune écriture sur cette période.</EtatVide>
         ) : (
           <>
             <p className="mb-2 text-xs text-texte-doux">
-              Les deux courbes ne peuvent que monter : ce qui compte est l&apos;ecart entre elles,
-              et le moment ou les revenus rattrapent les depenses.
+              Les deux courbes ne peuvent que monter : ce qui compte est l&apos;écart entre elles,
+              et le moment où les revenus rattrapent les dépenses.
             </p>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
@@ -293,7 +293,7 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
                   <Line
                     type="monotone"
                     dataKey="cumulDepenses"
-                    name="Depenses cumulees"
+                    name="Dépenses cumulées"
                     stroke={COULEURS.depenses}
                     strokeWidth={2}
                     dot={false}
@@ -301,7 +301,7 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
                   <Line
                     type="monotone"
                     dataKey="cumulRevenus"
-                    name="Revenus cumules"
+                    name="Revenus cumulés"
                     stroke={COULEURS.revenus}
                     strokeWidth={2}
                     dot={false}
@@ -340,7 +340,7 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar
                 dataKey="depenses"
-                name="Depenses ponctuelles"
+                name="Dépenses ponctuelles"
                 stackId="depenses"
                 fill={COULEURS.depenses}
               />
@@ -358,9 +358,9 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
       </Carte>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Carte titre="Depenses de la periode par site">
+        <Carte titre="Dépenses de la période par site">
           {sitesAvecDepenses.length === 0 ? (
-            <EtatVide>Aucune depense sur cette periode.</EtatVide>
+            <EtatVide>Aucune dépense sur cette période.</EtatVide>
           ) : (
             <ul className="flex flex-col gap-2">
               {sitesAvecDepenses.map((site) => (
@@ -383,15 +383,15 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
           )}
         </Carte>
 
-        <Carte titre="Echeances sous 45 jours">
+        <Carte titre="Échéances sous 45 jours">
           {echeances.length === 0 ? (
-            <EtatVide>Aucun renouvellement a venir.</EtatVide>
+            <EtatVide>Aucun renouvellement à venir.</EtatVide>
           ) : (
             <ul className="flex flex-col gap-2">
               {echeances.map((e) => (
                 <li key={e.id} className="flex items-center gap-2.5 text-sm">
                   <span className="w-20 shrink-0 tabular-nums text-texte-doux">
-                    {e.prochaine_echeance}
+                    {dateFr(e.prochaine_echeance)}
                   </span>
                   <span className="flex-1 truncate">
                     {e.libelle}

@@ -59,6 +59,7 @@ export function Kpi({ libelle, valeur, detail, ton = "neutre" }) {
     neutre: "text-texte",
     depense: "text-depense",
     revenu: "text-revenu",
+    alerte: "text-[#fbbf24]",
   };
   return (
     <div className="rounded-xl border border-bord bg-surface p-4">

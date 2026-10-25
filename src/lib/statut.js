@@ -24,7 +24,7 @@ export const ETATS = {
   ok: { libelle: "OK", couleur: "#34d399", icone: "ok" },
   partiel: { libelle: "Partiel", couleur: "#fbbf24", icone: "alerte" },
   ko: { libelle: "KO", couleur: "#f97362", icone: "ko" },
-  inconnu: { libelle: "Jamais verifie", couleur: "#98a2c4", icone: "inconnu" },
+  inconnu: { libelle: "Jamais vérifié", couleur: "#98a2c4", icone: "inconnu" },
   aucun: { libelle: "Aucun check", couleur: "#3a4570", icone: "aucun" },
 };
 

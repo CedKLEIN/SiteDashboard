@@ -97,11 +97,11 @@ function defautDeRegle(regle, valeur) {
 
   switch (regle.operateur) {
     case "present":
-      return presente ? null : `en-tete absent: ${regle.nom}`;
+      return presente ? null : `en-tête absent: ${regle.nom}`;
     case "absent":
-      return presente ? `en-tete present: ${regle.nom}` : null;
+      return presente ? `en-tête présent: ${regle.nom}` : null;
     case "contient":
-      if (!presente) return `en-tete absent: ${regle.nom}`;
+      if (!presente) return `en-tête absent: ${regle.nom}`;
       return contient ? null : `${regle.nom} ne contient pas "${regle.valeur}" (${valeur})`;
     case "ne_contient_pas":
       if (!presente) return null;
@@ -220,7 +220,7 @@ export function evaluerRedirection(check, reponse = {}) {
     return { ok: false, message: `statut HTTP ${statut} au lieu d'une redirection` };
   }
   if (!reponse.cible) {
-    return { ok: false, message: `redirection ${statut} sans en-tete Location` };
+    return { ok: false, message: `redirection ${statut} sans en-tête Location` };
   }
   // Une cible egale a l'URL de depart est une boucle: detectee gratuitement.
   if (memeUrl(reponse.cible, check.url)) {

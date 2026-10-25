@@ -9,8 +9,8 @@
 /** Statut d'un rapport, tel que l'ecrit l'agent. */
 export const STATUTS_RAPPORT = {
   ok: { libelle: "OK", etat: "ok" },
-  attention: { libelle: "A regarder", etat: "partiel" },
-  echec: { libelle: "Echec", etat: "ko" },
+  attention: { libelle: "À regarder", etat: "partiel" },
+  echec: { libelle: "Échec", etat: "ko" },
 };
 
 /** Profondeur par defaut de l'historique affiche. */
@@ -182,7 +182,7 @@ export function dateDepuis(jours, aujourdhui = new Date()) {
   return `${d.getFullYear()}-${mois}-${jour}`;
 }
 
-const MARQUES_POINT = { ok: "OK", attention: "A regarder", echec: "Echec" };
+const MARQUES_POINT = { ok: "OK", attention: "À regarder", echec: "Échec" };
 
 /** Un rapport en texte brut, pret a coller : titre, statut, resume, points et fichier. */
 export function texteRapport(rapport) {

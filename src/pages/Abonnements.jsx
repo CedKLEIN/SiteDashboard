@@ -20,7 +20,7 @@ import {
 } from "../lib/queries";
 import { choisirImageLocale } from "../lib/icones";
 import { coutMensuelEquivalent, echeanceAJour, totalPaye } from "../lib/abonnements";
-import { aujourdhuiIso, formatMontant, parseMontant } from "../lib/format";
+import { aujourdhuiIso, dateFr, formatMontant, parseMontant } from "../lib/format";
 
 const FORMULAIRE_VIDE = {
   siteIds: [],
@@ -125,7 +125,7 @@ export default function Abonnements({ onModification }) {
       return;
     }
     if (!formulaire.libelle.trim()) {
-      setErreur("Donne un libelle a cet abonnement.");
+      setErreur("Donne un libellé à cet abonnement.");
       return;
     }
     if (!formulaire.debut) {
@@ -249,19 +249,19 @@ export default function Abonnements({ onModification }) {
 
       <div className="grid grid-cols-2 gap-4 xl:grid-cols-4">
         <Kpi
-          libelle="Recurrent / mois"
+          libelle="Récurrent / mois"
           valeur={formatMontant(totalMensuel)}
           detail={`${actifs.length} actif(s)`}
         />
         <Kpi
-          libelle="Recurrent / an"
+          libelle="Récurrent / an"
           valeur={formatMontant(totalMensuel * 12)}
           detail="projection au tarif actuel"
         />
         <Kpi
-          libelle="Total deja paye"
+          libelle="Total déjà payé"
           valeur={formatMontant(totalDepuisToujours)}
-          detail="depuis la premiere echeance"
+          detail="depuis la première échéance"
           ton="depense"
         />
         <Kpi libelle="Abonnements suivis" valeur={String(abonnements.length)} />
@@ -286,7 +286,7 @@ export default function Abonnements({ onModification }) {
             montantCents={montantSaisiCents}
             parts={formulaire.parts}
             onChangerParts={(parts) => maj("parts", parts)}
-            aideVide="aucun site coche = cout transverse"
+            aideVide="aucun site coché = coût transverse"
           />
 
           <Champ
@@ -312,7 +312,7 @@ export default function Abonnements({ onModification }) {
           />
 
           <Champ
-            label="Libelle"
+            label="Libellé"
             placeholder="VPS, nom de domaine, ..."
             value={formulaire.libelle}
             onChange={(e) => maj("libelle", e.target.value)}
@@ -329,13 +329,13 @@ export default function Abonnements({ onModification }) {
             disabled={Boolean(enEdition)}
             title={
               enEdition
-                ? "Le prix se change dans l'historique des tarifs, pour garder trace de ce qui a ete paye"
+                ? "Le prix se change dans l'historique des tarifs, pour garder trace de ce qui a été payé"
                 : undefined
             }
           />
 
           <Selecteur
-            label="Periodicite"
+            label="Périodicité"
             value={formulaire.periodicite}
             onChange={(e) => maj("periodicite", e.target.value)}
             className="w-32"
@@ -345,7 +345,7 @@ export default function Abonnements({ onModification }) {
           </Selecteur>
 
           <Champ
-            label="Paye depuis le"
+            label="Payé depuis le"
             type="date"
             value={formulaire.debut}
             onChange={(e) => maj("debut", e.target.value)}
@@ -353,7 +353,7 @@ export default function Abonnements({ onModification }) {
           />
 
           <Champ
-            label="Prochaine echeance"
+            label="Prochaine échéance"
             type="date"
             value={formulaire.prochaineEcheance}
             onChange={(e) => maj("prochaineEcheance", e.target.value)}
@@ -362,7 +362,7 @@ export default function Abonnements({ onModification }) {
 
           {enEdition && (
             <Champ
-              label="Arrete le"
+              label="Arrêté le"
               type="date"
               value={formulaire.fin}
               onChange={(e) => maj("fin", e.target.value)}
@@ -382,17 +382,14 @@ export default function Abonnements({ onModification }) {
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-bord text-left text-xs uppercase text-texte-doux">
-                <th className="py-2 font-medium">Etat</th>
-                <th className="py-2 font-medium">Fournisseur</th>
-                <th className="py-2 font-medium">Libelle</th>
-                <th className="py-2 font-medium">Sites</th>
-                <th className="py-2 font-medium">Depuis</th>
-                <th className="py-2 font-medium">Arrete le</th>
-                <th className="py-2 font-medium">Echeance</th>
-                <th className="py-2 text-right font-medium">Tarif actuel</th>
-                <th className="py-2 text-right font-medium">≈ / mois</th>
-                <th className="py-2 text-right font-medium">Total paye</th>
+              <tr className="border-b border-bord text-left text-xs whitespace-nowrap uppercase text-texte-doux">
+                <th className="py-2 pr-4 font-medium">Abonnement</th>
+                <th className="py-2 pr-4 font-medium">Sites</th>
+                <th className="py-2 pr-4 font-medium">Période</th>
+                <th className="py-2 pr-4 font-medium">Prochaine échéance</th>
+                <th className="py-2 pr-4 text-right font-medium">Tarif actuel</th>
+                <th className="py-2 pr-4 text-right font-medium">≈ / mois</th>
+                <th className="py-2 pr-4 text-right font-medium">Total payé</th>
                 <th />
               </tr>
             </thead>
@@ -403,69 +400,60 @@ export default function Abonnements({ onModification }) {
                 return (
                   <Fragment key={a.id}>
                     <tr className={`border-b border-bord/50 ${a.actif ? "" : "opacity-50"}`}>
-                      <td className="py-2 whitespace-nowrap">
-                        {a.fin ? (
-                          <Bouton
-                            variante="fantome"
-                            className="flex items-center gap-1 px-1.5 py-1 text-[11px]"
-                            title="Reprendre cet abonnement"
-                            onClick={() => reprendre(a)}
-                          >
-                            <Play size={12} />
-                            Arrete
-                          </Bouton>
-                        ) : (
-                          <Bouton
-                            variante="fantome"
-                            className="flex items-center gap-1 px-1.5 py-1 text-[11px]"
-                            title="Arreter cet abonnement a une date donnee"
-                            onClick={() =>
-                              setArretEnCours({ id: a.id, date: aujourdhuiIso() })
-                            }
-                          >
-                            <Square size={12} />
-                            En cours
-                          </Bouton>
-                        )}
-                      </td>
-                      <td className="py-2">
-                        <span className="flex items-center gap-2">
-                          {a.fournisseur_favicon && (
+                      <td className="py-2 pr-4">
+                        <span className="flex items-center gap-2.5">
+                          {a.fournisseur_favicon ? (
                             <img
                               src={a.fournisseur_favicon}
                               alt=""
-                              className="size-4 rounded"
+                              className="size-5 shrink-0 rounded"
                               aria-hidden="true"
                             />
+                          ) : (
+                            <span className="size-5 shrink-0 rounded bg-surface-2" aria-hidden="true" />
                           )}
-                          {a.fournisseur_nom ?? "—"}
+                          <span className="min-w-0">
+                            <span className="flex items-center gap-2 font-medium text-texte">
+                              {a.libelle}
+                              {a.fin && (
+                                <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-normal text-texte-doux">
+                                  Arrêté
+                                </span>
+                              )}
+                            </span>
+                            <span className="block text-xs text-texte-doux">{a.fournisseur_nom ?? "—"}</span>
+                          </span>
                         </span>
                       </td>
-                      <td className="py-2">{a.libelle}</td>
-                      <td className="py-2 text-texte-doux">
+                      <td className="py-2 pr-4 text-texte-doux">
                         {a.sites_noms ?? "transverse"}
                         {a.nb_sites > 1 && (
                           <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px]">
-                            partage
+                            partagé
                           </span>
                         )}
                       </td>
-                      <td className="py-2 tabular-nums text-texte-doux">{a.debut ?? "—"}</td>
-                      <td className="py-2 tabular-nums text-texte-doux">{a.fin ?? "—"}</td>
-                      <td className="py-2 tabular-nums text-texte-doux">
-                        {echeanceAJour(a.prochaine_echeance, a.periodicite, aujourdhui, a.fin) ?? "—"}
+                      <td className="py-2 pr-4 tabular-nums whitespace-nowrap text-texte-doux">
+                        {a.fin
+                          ? `${dateFr(a.debut) ?? "?"} → ${dateFr(a.fin)}`
+                          : `depuis le ${dateFr(a.debut) ?? "?"}`}
                       </td>
-                      <td className="py-2 text-right tabular-nums">
+                      <td className="py-2 pr-4 tabular-nums whitespace-nowrap">
+                        {dateFr(echeanceAJour(a.prochaine_echeance, a.periodicite, aujourdhui, a.fin)) ?? (
+                          <span className="text-texte-doux">—</span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-4 text-right tabular-nums whitespace-nowrap">
                         {formatMontant(a.montant_cents, a.devise)}
                         <span className="text-texte-doux">
                           {" "}
                           /{a.periodicite === "annuel" ? "an" : "mois"}
                         </span>
                       </td>
-                      <td className="py-2 text-right tabular-nums text-texte-doux">
+                      <td className="py-2 pr-4 text-right tabular-nums text-texte-doux">
                         {formatMontant(coutMensuelEquivalent(a))}
                       </td>
-                      <td className="py-2 text-right tabular-nums">
+                      <td className="py-2 pr-4 text-right tabular-nums">
                         {formatMontant(totalPaye(a, sesTarifs, aujourdhui))}
                         <span className="block text-[11px] text-texte-doux">
                           {sesTarifs.length > 1 ? `${sesTarifs.length} tarifs` : ""}
@@ -475,10 +463,29 @@ export default function Abonnements({ onModification }) {
                         {/* Toujours affiche: le bouton servait aussi a REMPLACER
                             une icone mal devinee, et un fournisseur sans URL
                             n'avait aucun moyen d'en recevoir une. */}
+                        {a.fin ? (
+                          <Bouton
+                            variante="fantome"
+                            className="mr-1 px-1.5 py-1"
+                            title="Reprendre cet abonnement"
+                            onClick={() => reprendre(a)}
+                          >
+                            <Play size={14} />
+                          </Bouton>
+                        ) : (
+                          <Bouton
+                            variante="fantome"
+                            className="mr-1 px-1.5 py-1"
+                            title="Arrêter cet abonnement à une date donnée"
+                            onClick={() => setArretEnCours({ id: a.id, date: aujourdhuiIso() })}
+                          >
+                            <Square size={14} />
+                          </Bouton>
+                        )}
                         <Bouton
                           variante="fantome"
                           className="mr-1 px-1.5 py-1"
-                          title="Icone du fournisseur : cherchee sur son site, sinon a importer"
+                          title="Icône du fournisseur : cherchée sur son site, sinon à importer"
                           onClick={() => iconeFournisseur(a)}
                         >
                           <ImageIcon size={14} />
@@ -512,10 +519,10 @@ export default function Abonnements({ onModification }) {
 
                     {arretEnCours?.id === a.id && (
                       <tr className="border-b border-bord/50">
-                        <td colSpan={11} className="bg-surface-2/40 px-3 py-3">
+                        <td colSpan={8} className="bg-surface-2/40 px-3 py-3">
                           <div className="flex flex-wrap items-end gap-3">
                             <Champ
-                              label="Arreter a partir du"
+                              label="Arrêter à partir du"
                               type="date"
                               value={arretEnCours.date}
                               onChange={(e) =>
@@ -523,13 +530,13 @@ export default function Abonnements({ onModification }) {
                               }
                               className="w-40"
                             />
-                            <Bouton onClick={() => confirmerArret(a.id)}>Arreter</Bouton>
+                            <Bouton onClick={() => confirmerArret(a.id)}>Arrêter</Bouton>
                             <Bouton variante="fantome" onClick={() => setArretEnCours(null)}>
                               Annuler
                             </Bouton>
                             <p className="text-xs text-texte-doux">
-                              Les echeances anterieures a cette date restent comptees : ce qui a
-                              ete paye l&apos;a ete.
+                              Les échéances antérieures à cette date restent comptées : ce qui a
+                              été payé l&apos;a été.
                             </p>
                           </div>
                         </td>
@@ -538,7 +545,7 @@ export default function Abonnements({ onModification }) {
 
                     {ouvert && (
                       <tr className="border-b border-bord/50">
-                        <td colSpan={11} className="bg-surface-2/40 px-3 py-3">
+                        <td colSpan={8} className="bg-surface-2/40 px-3 py-3">
                           <HistoriqueTarifs
                             abonnement={a}
                             tarifs={sesTarifs}

@@ -35,6 +35,18 @@ npm run lint       # oxlint
 npm run app:build  # build release : installeurs .msi et -setup.exe dans src-tauri/target/release/bundle
 ```
 
+### Voir l'interface dans un navigateur (aperçu) et la capturer
+
+```bash
+npm.cmd run apercu                 # copie la dernière sauvegarde + les rapports, lance Vite (port 1420)
+npm.cmd run captures -- avant      # dans un 2e terminal : un PNG par écran dans captures/
+```
+
+Hors de Tauri, `src/apercu.js` simule les appels à Rust : le SQL tourne sur une **copie** de
+la base chargée dans sql.js, rien ne touche la vraie. Les données préparées vont dans `.apercu/`,
+servies en dev seulement par `vite.config.js` (jamais copiées dans l'appli compilée) ; `.apercu/`
+et `captures/` sont ignorés par git.
+
 ### Installer ou mettre à jour l'appli
 
 ```bash

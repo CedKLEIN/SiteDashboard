@@ -11,6 +11,8 @@
     "app": "tauri dev",
     "app:build": "tauri build",
     "installer": "node scripts/installer.mjs",
+    "apercu": "node scripts/preparer-apercu.mjs && vite",
+    "captures": "node scripts/captures.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "lint": "oxlint --max-warnings=0"
@@ -36,6 +38,8 @@
     "@vitest/coverage-v8": "^4.1.10",
     "jsdom": "^29.1.1",
     "oxlint": "^1.75.0",
+    "playwright-core": "1.57.0",
+    "sql.js": "^1.13.0",
     "tailwindcss": "^4.3.3",
     "vite": "^8.2.0",
     "vitest": "^4.1.10"

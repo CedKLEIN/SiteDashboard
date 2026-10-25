@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  dateFr,
   moisEntre,
   derniersMois,
   aujourdhuiIso,
@@ -95,5 +96,17 @@ describe("joursDepuis", () => {
     expect(joursDepuis(null, maintenant)).toBeNull();
     expect(joursDepuis("", maintenant)).toBeNull();
     expect(joursDepuis("jamais", maintenant)).toBeNull();
+  });
+});
+
+describe("dateFr", () => {
+  it("met une date ISO au format francais", () => {
+    expect(dateFr("2026-08-21")).toBe("21/08/2026");
+    expect(dateFr("2026-10-25 10:02:43")).toBe("25/10/2026");
+  });
+
+  it("laisse une valeur vide ou illisible telle quelle", () => {
+    expect(dateFr(null)).toBe(null);
+    expect(dateFr("bientot")).toBe("bientot");
   });
 });

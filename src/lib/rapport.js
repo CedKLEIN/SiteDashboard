@@ -17,7 +17,7 @@ export function formaterRapport({ check, inspection, site }) {
 
   lignes.push(`# Diagnostic — ${check.libelle}`);
   champ("Site", site?.nom);
-  champ("Genere le", new Date().toISOString());
+  champ("Généré le", new Date().toISOString());
 
   section("Check configuré");
   champ("Type", check.type ?? "http");

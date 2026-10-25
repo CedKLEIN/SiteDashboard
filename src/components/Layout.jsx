@@ -12,18 +12,17 @@ import { couleurEtat } from "../lib/statut";
 
 const ONGLETS = [
   { cle: "dashboard", libelle: "Tableau de bord", Icone: LayoutDashboard },
-  { cle: "depenses", libelle: "Depenses", Icone: Receipt },
+  { cle: "depenses", libelle: "Dépenses", Icone: Receipt },
   { cle: "revenus", libelle: "Revenus", Icone: BadgeEuro },
   { cle: "abonnements", libelle: "Abonnements", Icone: Repeat },
   { cle: "sites", libelle: "Sites", Icone: Globe },
   { cle: "agents", libelle: "Agents", Icone: Bot },
-  { cle: "preferences", libelle: "Preferences", Icone: Settings },
+  { cle: "preferences", libelle: "Préférences", Icone: Settings },
 ];
 
 export default function Layout({
   ongletActif,
   onChangerOnglet,
-  cheminBase,
   verificationEnCours,
   intervalleS,
   alertes = {},
@@ -35,7 +34,7 @@ export default function Layout({
       <nav className="flex w-56 shrink-0 flex-col border-r border-bord bg-surface p-3">
         <div className="mb-5 px-2 pt-2">
           <p className="text-base font-semibold">SiteDashboard</p>
-          <p className="text-xs text-texte-doux">Couts &amp; revenus par site</p>
+          <p className="text-xs text-texte-doux">Coûts &amp; revenus par site</p>
         </div>
 
         <div className="flex flex-col gap-1">
@@ -56,7 +55,7 @@ export default function Layout({
                 <span
                   className="ml-auto rounded-full px-1.5 text-[10px] font-semibold text-black tabular-nums"
                   style={{ background: couleurEtat("partiel") }}
-                  title={`${alertes[cle]} a regarder`}
+                  title={`${alertes[cle]} à regarder`}
                 >
                   {alertes[cle]}
                 </span>
@@ -71,11 +70,11 @@ export default function Layout({
               type="button"
               onClick={() => onChangerOnglet("preferences")}
               className="mb-3 flex w-full items-center gap-2 rounded-lg border border-accent/50 bg-accent/10 px-2.5 py-2 text-left text-xs text-texte transition hover:bg-accent/20"
-              title="Voir la mise a jour dans les Preferences"
+              title="Voir la mise à jour dans les Préférences"
             >
               <Download size={14} className="shrink-0 text-accent" />
               <span>
-                Mise a jour disponible
+                Mise à jour disponible
                 <span className="block text-[10px] text-texte-doux">{miseAJour.libelle}</span>
               </span>
             </button>
@@ -85,18 +84,9 @@ export default function Layout({
               className={`size-1.5 rounded-full bg-accent ${verificationEnCours ? "animate-pulse" : "opacity-40"}`}
             />
             {verificationEnCours
-              ? "Verification en cours..."
+              ? "Vérification en cours..."
               : `Supervision toutes les ${intervalleS} s`}
           </p>
-          {cheminBase && (
-            <p
-              className="pt-2 text-[10px] leading-relaxed break-all text-texte-doux"
-              title={cheminBase}
-            >
-              Base locale&nbsp;:<br />
-              {cheminBase}
-            </p>
-          )}
         </div>
       </nav>
 

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Pencil, Trash2 } from "lucide-react";
 import { Bouton, Champ } from "./ui";
 import { ajouterTarif, majTarif, supprimerTarif } from "../lib/queries";
-import { aujourdhuiIso, formatMontant, parseMontant } from "../lib/format";
+import { aujourdhuiIso, dateFr, formatMontant, parseMontant } from "../lib/format";
 
 /** Un tarif vierge, date du jour : calcule a chaque fois, l'appli peut rester ouverte des jours. */
 function tarifVide() {
@@ -63,15 +63,15 @@ export default function HistoriqueTarifs({ abonnement, tarifs, onModifie, onErre
   return (
     <>
       <p className="mb-2 text-xs font-medium text-texte-doux">
-        Historique des tarifs — chaque ligne s&apos;applique a partir de sa
-        date, les echeances anterieures gardent l&apos;ancien prix
+        Historique des tarifs — chaque ligne s&apos;applique à partir de sa
+        date, les échéances antérieures gardent l&apos;ancien prix
       </p>
       <ul className="mb-3 flex flex-col gap-1">
         {tarifs.map((t) =>
           tarifEnEdition?.id === t.id ? (
             <li key={t.id} className="flex items-end gap-2 text-sm">
               <Champ
-                label="A partir du"
+                label="À partir du"
                 type="date"
                 value={tarifEnEdition.debut}
                 onChange={(e) =>
@@ -105,7 +105,7 @@ export default function HistoriqueTarifs({ abonnement, tarifs, onModifie, onErre
           ) : (
             <li key={t.id} className="flex items-center gap-3 text-sm">
               <span className="w-24 tabular-nums text-texte-doux">
-                {t.debut}
+                {dateFr(t.debut)}
               </span>
               <span className="tabular-nums">
                 {formatMontant(t.montant_cents, abonnement.devise)}
@@ -138,7 +138,7 @@ export default function HistoriqueTarifs({ abonnement, tarifs, onModifie, onErre
       </ul>
       <div className="flex flex-wrap items-end gap-3">
         <Champ
-          label="A partir du"
+          label="À partir du"
           type="date"
           value={nouveauTarif.debut}
           onChange={(e) =>

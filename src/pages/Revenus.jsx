@@ -3,7 +3,7 @@ import { Bouton, Carte, Champ, EtatVide, Selecteur } from "../components/ui";
 import { invoke } from "@tauri-apps/api/core";
 import RepartitionSites, { partsCentsDepuisSaisie } from "../components/RepartitionSites";
 import { ajouterRevenu, listerRevenus, listerSites } from "../lib/queries";
-import { aujourdhuiIso, formatMontant, parseMontant } from "../lib/format";
+import { aujourdhuiIso, dateFr, formatMontant, parseMontant } from "../lib/format";
 import { DEVISES, DEVISE_REFERENCE, mentionConversion, versReference } from "../lib/devises";
 
 const FORMULAIRE_VIDE = {
@@ -80,7 +80,7 @@ export default function Revenus({ onModification }) {
           vers: DEVISE_REFERENCE,
         });
       } catch (e) {
-        setErreur(`Taux de change indisponible (${e}). Reessaie ou saisis en euros.`);
+        setErreur(`Taux de change indisponible (${e}). Réessaie ou saisis en euros.`);
         return;
       }
     }
@@ -156,7 +156,7 @@ export default function Revenus({ onModification }) {
               ))}
             </Selecteur>
             <Champ
-              label="Libelle"
+              label="Libellé"
               placeholder="Abonnements Stripe"
               value={formulaire.libelle}
               onChange={(e) => maj("libelle", e.target.value)}
@@ -170,26 +170,26 @@ export default function Revenus({ onModification }) {
 
       <Carte titre={`Historique (${revenus.length})`}>
         {revenus.length === 0 ? (
-          <EtatVide>Aucun revenu enregistre.</EtatVide>
+          <EtatVide>Aucun revenu enregistré.</EtatVide>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-bord text-left text-xs uppercase text-texte-doux">
                 <th className="py-2 font-medium">Date</th>
                 <th className="py-2 font-medium">Sites</th>
-                <th className="py-2 font-medium">Libelle</th>
+                <th className="py-2 font-medium">Libellé</th>
                 <th className="py-2 text-right font-medium">Montant</th>
               </tr>
             </thead>
             <tbody>
               {revenus.map((r) => (
                 <tr key={r.id} className="border-b border-bord/50 last:border-0">
-                  <td className="py-2 tabular-nums text-texte-doux">{r.date}</td>
+                  <td className="py-2 tabular-nums text-texte-doux">{dateFr(r.date)}</td>
                   <td className="py-2">
                     {r.sites_noms ?? <span className="text-texte-doux">non rattache</span>}
                     {r.nb_sites > 1 && (
                       <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-texte-doux">
-                        partage
+                        partagé
                       </span>
                     )}
                   </td>

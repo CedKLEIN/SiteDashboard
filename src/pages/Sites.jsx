@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, ImageIcon, Trash2 } from "lucide-react";
+import { ExternalLink, ImageIcon, RefreshCw, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Bouton, Carte, Champ, EtatVide, Pastille } from "../components/ui";
@@ -48,7 +48,7 @@ export default function Sites({ onModification }) {
       cree = await creerSite({ ...formulaire, nom: formulaire.nom.trim() });
     } catch {
       // Le seul cas realiste ici est la violation de la contrainte UNIQUE sur le nom
-      setErreur("Un site porte deja ce nom.");
+      setErreur("Un site porte déjà ce nom.");
       return;
     }
 
@@ -86,7 +86,7 @@ export default function Sites({ onModification }) {
     try {
       const favicon = await invoke("recuperer_favicon", { url: site.url });
       if (!favicon) {
-        setErreur(`Aucune icone trouvee pour ${site.nom} : importe une image a la place.`);
+        setErreur(`Aucune icône trouvée pour ${site.nom} : importe une image a la place.`);
         return;
       }
       await majFaviconSite(site.id, favicon);
@@ -119,7 +119,7 @@ export default function Sites({ onModification }) {
 
   async function retirer(site) {
     const confirme = window.confirm(
-      `Supprimer « ${site.nom} » ? Ses depenses et revenus seront supprimes aussi.`,
+      `Supprimer « ${site.nom} » ? Ses dépenses et revenus seront supprimés aussi.`,
     );
     if (!confirme) return;
     await supprimerSite(site.id);
@@ -169,12 +169,17 @@ export default function Sites({ onModification }) {
                 key={site.id}
                 className={`flex items-center gap-3 py-2.5 ${site.actif ? "" : "opacity-50"}`}
               >
-                <input
-                  type="checkbox"
-                  checked={Boolean(site.actif)}
-                  onChange={() => basculerActif(site)}
-                  title="Site actif"
-                />
+                <label
+                  className="flex items-center gap-1.5 text-[11px] text-texte-doux"
+                  title="Un site non suivi n'est plus vérifié et sort du tableau de bord"
+                >
+                  <input
+                    type="checkbox"
+                    checked={Boolean(site.actif)}
+                    onChange={() => basculerActif(site)}
+                  />
+                  Suivi
+                </label>
                 {site.favicon ? (
                   <img src={site.favicon} alt="" className="size-5 rounded" aria-hidden="true" />
                 ) : (
@@ -193,12 +198,13 @@ export default function Sites({ onModification }) {
                 )}
                 <Bouton
                   variante="fantome"
-                  className="ml-auto px-2 py-1 text-xs"
+                  className="ml-auto flex items-center gap-1.5 px-2 py-1 text-xs"
                   disabled={enCours === site.id}
-                  title="Recuperer l'icone depuis le site"
+                  title="Récupérer l'icône depuis le site"
                   onClick={() => recupererIcone(site)}
                 >
-                  {enCours === site.id ? "..." : "Icone"}
+                  <RefreshCw size={13} className={enCours === site.id ? "animate-spin" : ""} />
+                  Icône depuis le site
                 </Bouton>
                 <Bouton
                   variante="fantome"
@@ -207,7 +213,7 @@ export default function Sites({ onModification }) {
                   onClick={() => importerIcone(site)}
                 >
                   <ImageIcon size={14} />
-                  Importer
+                  Importer une image
                 </Bouton>
                 <Bouton
                   variante="danger"

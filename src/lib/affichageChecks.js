@@ -11,6 +11,41 @@ export const LIBELLES_TYPE = {
   valeur: "VALEUR",
 };
 
+/**
+ * Regroupe les incidents identiques qui se suivent (meme check, meme erreur).
+ *
+ * Un check en echec pendant dix minutes produisait dix lignes identiques, et
+ * noyait les autres incidents. `incidents` est trie du plus recent au plus
+ * ancien ; chaque groupe garde son premier et son dernier horodatage.
+ */
+export function regrouperIncidents(incidents) {
+  const groupes = [];
+  for (const incident of incidents) {
+    const erreur = incident.erreur ?? "echec";
+    const dernier = groupes.at(-1);
+    if (dernier && dernier.check_libelle === incident.check_libelle && dernier.erreur === erreur) {
+      dernier.debut = incident.verifie_le;
+      dernier.nombre += 1;
+    } else {
+      groupes.push({
+        check_libelle: incident.check_libelle,
+        erreur,
+        debut: incident.verifie_le,
+        fin: incident.verifie_le,
+        nombre: 1,
+      });
+    }
+  }
+  return groupes;
+}
+
+/** Disponibilite -> ton du KPI : vert a 99 % et plus, orange a 95 %, rouge en dessous. */
+export function tonDisponibilite(pourcentage) {
+  if (pourcentage == null) return "neutre";
+  if (pourcentage >= 99) return "revenu";
+  return pourcentage >= 95 ? "alerte" : "depense";
+}
+
 export function heure(horodatage) {
   return String(horodatage ?? "").slice(11, 16);
 }
@@ -27,7 +62,7 @@ export function resumeAssertions(check) {
     );
   }
   if (check.taille_min_octets) bouts.push(`≥ ${check.taille_min_octets} o`);
-  if (check.entetes?.length) bouts.push(`${check.entetes.length} en-tete(s)`);
+  if (check.entetes?.length) bouts.push(`${check.entetes.length} en-tête(s)`);
   if (check.cible_attendue) bouts.push(`vers ${check.cible_attendue}`);
   if (check.domaine) bouts.push(check.domaine);
   return bouts.join(" · ");
@@ -55,9 +90,9 @@ export function texteCheck(check) {
   const assertions = resumeAssertions(check);
   if (assertions) bouts.push(assertions);
   if (check.derniere_verif) {
-    bouts.push(`${check.dernier_ok ? "OK" : "ECHEC"} : ${dernierResultat(check)} a ${heure(check.derniere_verif)}`);
+    bouts.push(`${check.dernier_ok ? "OK" : "ÉCHEC"} : ${dernierResultat(check)} à ${heure(check.derniere_verif)}`);
   } else {
-    bouts.push("jamais verifie");
+    bouts.push("jamais vérifié");
   }
   if (check.derniere_latence != null) bouts.push(`${check.derniere_latence} ms`);
   return bouts.join(" — ");

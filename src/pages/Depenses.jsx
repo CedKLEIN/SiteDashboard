@@ -10,7 +10,7 @@ import {
   supprimerDepense,
   trouverOuCreerFournisseur,
 } from "../lib/queries";
-import { aujourdhuiIso, formatMontant, parseMontant } from "../lib/format";
+import { aujourdhuiIso, dateFr, formatMontant, parseMontant } from "../lib/format";
 
 export const CATEGORIES = [
   "hebergement",
@@ -127,7 +127,7 @@ export default function Depenses({ onModification }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <h1 className="text-lg font-semibold">Depenses</h1>
+      <h1 className="text-lg font-semibold">Dépenses</h1>
 
       {sites.length === 0 ? (
         <Carte>
@@ -136,7 +136,7 @@ export default function Depenses({ onModification }) {
           </EtatVide>
         </Carte>
       ) : (
-        <Carte titre="Nouvelle depense">
+        <Carte titre="Nouvelle dépense">
           <form onSubmit={enregistrer} className="flex flex-wrap items-end gap-3">
             <RepartitionSites
               sites={sites}
@@ -162,7 +162,7 @@ export default function Depenses({ onModification }) {
             </datalist>
 
             <Selecteur
-              label="Categorie"
+              label="Catégorie"
               value={formulaire.categorie}
               onChange={(e) => maj("categorie", e.target.value)}
               className="w-36"
@@ -192,7 +192,7 @@ export default function Depenses({ onModification }) {
             />
 
             <Champ
-              label="Libelle"
+              label="Libellé"
               placeholder="Facture septembre"
               value={formulaire.libelle}
               onChange={(e) => maj("libelle", e.target.value)}
@@ -223,7 +223,7 @@ export default function Depenses({ onModification }) {
         }
       >
         {depenses.length === 0 ? (
-          <EtatVide>Aucune depense enregistree.</EtatVide>
+          <EtatVide>Aucune dépense enregistrée.</EtatVide>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -231,8 +231,8 @@ export default function Depenses({ onModification }) {
                 <th className="py-2 font-medium">Date</th>
                 <th className="py-2 font-medium">Sites</th>
                 <th className="py-2 font-medium">Fournisseur</th>
-                <th className="py-2 font-medium">Categorie</th>
-                <th className="py-2 font-medium">Libelle</th>
+                <th className="py-2 font-medium">Catégorie</th>
+                <th className="py-2 font-medium">Libellé</th>
                 <th className="py-2 text-right font-medium">Montant</th>
                 <th />
               </tr>
@@ -240,12 +240,12 @@ export default function Depenses({ onModification }) {
             <tbody>
               {depenses.map((d) => (
                 <tr key={d.id} className="border-b border-bord/50 last:border-0">
-                  <td className="py-2 tabular-nums text-texte-doux">{d.date}</td>
+                  <td className="py-2 tabular-nums text-texte-doux">{dateFr(d.date)}</td>
                   <td className="py-2">
                     {d.sites_noms ?? <span className="text-texte-doux">non rattachee</span>}
                     {d.nb_sites > 1 && (
                       <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-texte-doux">
-                        partagee
+                        partagée
                       </span>
                     )}
                   </td>

@@ -103,7 +103,7 @@ describe("assertions sur les en-tetes", () => {
 
   it("detecte un en-tete de securite disparu", () => {
     const regles = [{ nom: "strict-transport-security", operateur: "present" }];
-    expect(verdictEntetes(regles, recus)).toBe("en-tete absent: strict-transport-security");
+    expect(verdictEntetes(regles, recus)).toBe("en-tête absent: strict-transport-security");
   });
 
   it("detecte une version de serveur exposee", () => {
@@ -127,7 +127,7 @@ describe("assertions sur les en-tetes", () => {
 
   it("traite un en-tete absent comme un 'contient' en defaut", () => {
     const regles = [{ nom: "x-robots-tag", operateur: "contient", valeur: "noindex" }];
-    expect(verdictEntetes(regles, recus)).toBe("en-tete absent: x-robots-tag");
+    expect(verdictEntetes(regles, recus)).toBe("en-tête absent: x-robots-tag");
   });
 
   it("considere une regle 'ne contient pas' satisfaite si l'en-tete manque", () => {
@@ -143,7 +143,7 @@ describe("assertions sur les en-tetes", () => {
       { nom: "server", operateur: "ne_contient_pas", valeur: "/" },
     ];
     expect(verdictEntetes(regles, recus)).toBe(
-      "en-tete absent: strict-transport-security (+2 autre(s))",
+      "en-tête absent: strict-transport-security (+2 autre(s))",
     );
   });
 
@@ -219,7 +219,7 @@ describe("checks de redirection", () => {
 
   it("signale une redirection sans Location", () => {
     expect(evaluerRedirection(check, { statut: 301 }).message).toBe(
-      "redirection 301 sans en-tete Location",
+      "redirection 301 sans en-tête Location",
     );
   });
 

@@ -32,7 +32,7 @@ describe("etatSite", () => {
 
   it("tolere une entree vide", () => {
     expect(etatSite()).toBe("aucun");
-    expect(libelleEtat("etat-inexistant")).toBe("Jamais verifie");
+    expect(libelleEtat("etat-inexistant")).toBe("Jamais vérifié");
   });
 });
 

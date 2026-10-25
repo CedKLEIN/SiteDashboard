@@ -22,11 +22,11 @@ export const SEUIL_BLOCAGE_MIN = 45;
 
 /** Libelle et etat de supervision (voir statut.js) de chaque situation. */
 export const SITUATIONS = {
-  recu: { libelle: "Rapport recu" },
+  recu: { libelle: "Rapport reçu" },
   en_cours: { libelle: "En cours", etat: "inconnu" },
-  bloque: { libelle: "Bloque ?", etat: "partiel" },
-  non_lance: { libelle: "Pas lance", etat: "partiel" },
-  prevu: { libelle: "Prevu", etat: "aucun" },
+  bloque: { libelle: "Bloqué ?", etat: "partiel" },
+  non_lance: { libelle: "Pas lancé", etat: "partiel" },
+  prevu: { libelle: "Prévu", etat: "aucun" },
 };
 
 const RAPPORT_ATTENDU =
@@ -159,7 +159,7 @@ function heureLocale(date) {
  * - `prevu` : son heure n'est pas encore venue.
  */
 export function situationAgent({ prevueA, lanceA, rapport, dureeMaxMin = 0, maintenant }) {
-  if (rapport) return { situation: "recu", message: rapport.resume || "Rapport recu" };
+  if (rapport) return { situation: "recu", message: rapport.resume || "Rapport reçu" };
 
   if (lanceA) {
     const ecoule = minutesDepuis(lanceA, maintenant);
@@ -167,17 +167,17 @@ export function situationAgent({ prevueA, lanceA, rapport, dureeMaxMin = 0, main
     if (ecoule > seuil) {
       return {
         situation: "bloque",
-        message: `Lance a ${heureLocale(lanceA)}, toujours sans rapport apres ${duree(ecoule)} : il attend peut-etre une autorisation`,
+        message: `Lancé à ${heureLocale(lanceA)}, toujours sans rapport après ${duree(ecoule)} : il attend peut-etre une autorisation`,
       };
     }
-    return { situation: "en_cours", message: `Lance a ${heureLocale(lanceA)}` };
+    return { situation: "en_cours", message: `Lancé à ${heureLocale(lanceA)}` };
   }
 
   if (prevueA) {
     if (minutesDepuis(momentDuJour(prevueA, maintenant), maintenant) > MARGE_LANCEMENT_MIN) {
-      return { situation: "non_lance", message: `Prevu a ${prevueA}, pas encore lance` };
+      return { situation: "non_lance", message: `Prévu à ${prevueA}, pas encore lancé` };
     }
-    return { situation: "prevu", message: `Prevu a ${prevueA}` };
+    return { situation: "prevu", message: `Prévu à ${prevueA}` };
   }
   return { situation: "prevu", message: "Horaire inconnu" };
 }
@@ -242,7 +242,7 @@ export function agentsAttendus({ taches = [], config = "", rapports = [], mainte
   return attendus.sort((a, b) => String(a.prevueA ?? "").localeCompare(String(b.prevueA ?? "")));
 }
 
-const STATUTS_RECUS = { ok: "OK", attention: "a regarder", echec: "en echec" };
+const STATUTS_RECUS = { ok: "OK", attention: "à regarder", echec: "en échec" };
 
 /**
  * Le libelle d'un agent attendu. Un rapport recu le dit toujours: afficher son
@@ -250,7 +250,7 @@ const STATUTS_RECUS = { ok: "OK", attention: "a regarder", echec: "en echec" };
  */
 export function libelleAttendu(attendu) {
   if (!attendu.rapport) return SITUATIONS[attendu.situation].libelle;
-  return `Recu · ${STATUTS_RECUS[attendu.rapport.statut] ?? attendu.rapport.statut}`;
+  return `Reçu · ${STATUTS_RECUS[attendu.rapport.statut] ?? attendu.rapport.statut}`;
 }
 
 /** Un agent attendu en une ligne de texte, pret a coller. */

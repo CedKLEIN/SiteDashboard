@@ -58,6 +58,12 @@ export function derniersMois(n, aujourdhui = new Date()) {
   return mois;
 }
 
+/** '2026-08-21' -> '21/08/2026' ; une valeur vide ou illisible est rendue telle quelle. */
+export function dateFr(dateIso) {
+  const correspondance = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dateIso ?? ""));
+  return correspondance ? `${correspondance[3]}/${correspondance[2]}/${correspondance[1]}` : dateIso;
+}
+
 /** Date du jour au format ISO court, en heure locale (pas UTC). */
 export function aujourdhuiIso(date = new Date()) {
   const mois = String(date.getMonth() + 1).padStart(2, "0");

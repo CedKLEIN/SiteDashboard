@@ -61,7 +61,7 @@ export default function CarteSite({ site, onOuvrir }) {
         {site.latence_moyenne != null && etat !== "ko" && (
           <p className="tabular-nums">{Math.round(site.latence_moyenne)} ms</p>
         )}
-        {site.derniere_verif && <p className="tabular-nums">verifie {heure(site.derniere_verif)}</p>}
+        {site.derniere_verif && <p className="tabular-nums">vérifié {heure(site.derniere_verif)}</p>}
       </div>
     </button>
   );

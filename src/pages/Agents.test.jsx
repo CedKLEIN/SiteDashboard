@@ -33,14 +33,14 @@ describe("page Agents", () => {
       dossier: RACINE,
       existe: true,
       fichiers: [
-        fichier("2026-10-24", "sante", { titre: "Sante de la prod", statut: "ok", resume: "RAS" }),
+        fichier("2026-10-24", "sante", { titre: "Santé de la prod", statut: "ok", resume: "RAS" }),
         fichier("2026-10-24", "seo", {
           titre: "Indexation",
           statut: "attention",
           resume: "Quota Google atteint",
           points: [{ niveau: "attention", texte: "7 avertissements Bing" }],
         }),
-        fichier("2026-10-23", "sante", { titre: "Sante de la prod", statut: "echec" }),
+        fichier("2026-10-23", "sante", { titre: "Santé de la prod", statut: "echec" }),
       ],
     });
 
@@ -52,19 +52,19 @@ describe("page Agents", () => {
     expect(lignes[0].getAttribute("title")).toMatch(/^Partiel/);
     expect(lignes[1].getAttribute("title")).toMatch(/^KO/);
     expect(lignes[0].textContent).toContain("Denivio");
-    expect(lignes[0].textContent).toContain("2 rapport(s) · 1 OK · 1 a regarder");
+    expect(lignes[0].textContent).toContain("2 rapport(s) · 1 OK · 1 à regarder");
 
     expect(screen.queryByText("Quota Google atteint")).toBeNull();
     fireEvent.click(lignes[0]);
     expect(screen.getByText("Quota Google atteint")).toBeTruthy();
     expect(screen.getByText("7 avertissements Bing")).toBeTruthy();
-    expect(screen.getByText("Sante de la prod")).toBeTruthy();
+    expect(screen.getByText("Santé de la prod")).toBeTruthy();
 
     // Copier un rapport ne replie pas la ligne et met le texte complet au presse-papiers
     // Sans heure de debut, les rapports suivent l'ordre des titres: Indexation d'abord
     fireEvent.click(screen.getAllByRole("button", { name: "Copier ce rapport" })[0]);
     expect(writeText).toHaveBeenCalledWith(
-      expect.stringContaining("Indexation — denivio.fr — 2026-10-24 — A regarder\nQuota Google atteint\n- [A regarder] 7 avertissements Bing"),
+      expect.stringContaining("Indexation — denivio.fr — 2026-10-24 — À regarder\nQuota Google atteint\n- [À regarder] 7 avertissements Bing"),
     );
     expect(screen.getByText("Quota Google atteint")).toBeTruthy();
   });
@@ -84,10 +84,10 @@ describe("page Agents", () => {
       {
         id: "sante",
         site: "denivio.fr",
-        titre: "Sante de la prod",
+        titre: "Santé de la prod",
         heure: "09:04",
         situation: "bloque",
-        message: "Lance a 09:04, toujours sans rapport apres 1 h",
+        message: "Lancé à 09:04, toujours sans rapport après 1 h",
         rapport: null,
       },
       {
@@ -103,16 +103,16 @@ describe("page Agents", () => {
     render(<Agents sites={SITES} rafraichissement={0} attendus={attendus} />);
 
     expect(await screen.findByText("Attendus aujourd'hui")).toBeTruthy();
-    expect(screen.getByText("Bloque ?")).toBeTruthy();
-    expect(screen.getByText("Lance a 09:04, toujours sans rapport apres 1 h")).toBeTruthy();
-    expect(screen.getByText("Recu · OK")).toBeTruthy();
+    expect(screen.getByText("Bloqué ?")).toBeTruthy();
+    expect(screen.getByText("Lancé à 09:04, toujours sans rapport après 1 h")).toBeTruthy();
+    expect(screen.getByText("Reçu · OK")).toBeTruthy();
     expect(screen.getAllByText("Denivio")).toHaveLength(2);
   });
 
   it("previent quand les horaires des taches sont introuvables", async () => {
     invoke.mockResolvedValue({ dossier: RACINE, existe: true, fichiers: [] });
     render(<Agents sites={SITES} rafraichissement={0} configTrouvee={false} />);
-    expect(await screen.findByText(/Horaires des taches planifiees introuvables/)).toBeTruthy();
+    expect(await screen.findByText(/Horaires des tâches planifiées introuvables/)).toBeTruthy();
   });
 
   it("montre l'erreur de lecture au lieu d'une page vide", async () => {
