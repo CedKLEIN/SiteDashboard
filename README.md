@@ -32,8 +32,24 @@ MSVC et le runtime WebView2 (déjà présents sur une machine avec Visual Studio
 ```bash
 npm run test       # tests (vitest) : logique pure + requêtes SQL réelles
 npm run lint       # oxlint
-npm run app:build  # build release : installeur .msi dans src-tauri/target/release/bundle
+npm run app:build  # build release : installeurs .msi et -setup.exe dans src-tauri/target/release/bundle
 ```
+
+### Installer ou mettre à jour l'appli
+
+```bash
+npm.cmd run installer               # compile, ferme l'appli, installe sans fenêtre, relance
+npm.cmd run installer -- --sans-build  # réinstalle le dernier installeur produit
+```
+
+L'appli s'installe dans `%LOCALAPPDATA%\SiteDashboard` (entrée « SiteDashboard » du menu
+Démarrer) ; ses données restent dans `%APPDATA%\com.cedklein.sitedashboard`, que
+l'installeur ne touche pas.
+
+> À lancer depuis un terminal Windows ordinaire, **pas depuis l'appli Claude** : Claude
+> tourne dans un paquet du Store dont Windows redirige les écritures dans `AppData`.
+> Lancé de là, l'installeur poserait l'appli (et elle sa base) dans l'espace privé de
+> Claude, invisible du reste de Windows.
 
 ## Modèle de données
 
