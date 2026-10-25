@@ -7,6 +7,7 @@ import {
   Repeat,
   Settings,
 } from "lucide-react";
+import { couleurEtat } from "../lib/statut";
 
 const ONGLETS = [
   { cle: "dashboard", libelle: "Tableau de bord", Icone: LayoutDashboard },
@@ -24,6 +25,7 @@ export default function Layout({
   cheminBase,
   verificationEnCours,
   intervalleS,
+  alertes = {},
   children,
 }) {
   return (
@@ -48,6 +50,15 @@ export default function Layout({
             >
               <Icone size={16} />
               {libelle}
+              {alertes[cle] > 0 && (
+                <span
+                  className="ml-auto rounded-full px-1.5 text-[10px] font-semibold text-black tabular-nums"
+                  style={{ background: couleurEtat("partiel") }}
+                  title={`${alertes[cle]} a regarder`}
+                >
+                  {alertes[cle]}
+                </span>
+              )}
             </button>
           ))}
         </div>

@@ -10,6 +10,8 @@ import Preferences, { INTERVALLE_DEFAUT_S } from "./pages/Preferences";
 import DetailSite from "./pages/DetailSite";
 import Agents from "./pages/Agents";
 import { lancerCycle } from "./lib/monitoring";
+import { nbAgentsEnRetard } from "./lib/tachesPlanifiees";
+import { useAgentsAttendus } from "./lib/useAgentsAttendus";
 import { lirePreference, listerSites, purgerVerifications } from "./lib/queries";
 import { tracer } from "./lib/trace";
 
@@ -88,6 +90,8 @@ export default function App() {
     return () => clearInterval(minuterie);
   }, [verifier, intervalleS]);
 
+  const agents = useAgentsAttendus(revision);
+
   const site = sites.find((s) => s.id === siteOuvert);
 
   const pages = {
@@ -96,7 +100,14 @@ export default function App() {
     revenus: <Revenus onModification={signalerModification} />,
     abonnements: <Abonnements onModification={signalerModification} />,
     sites: <Sites onModification={signalerModification} />,
-    agents: <Agents sites={sites} rafraichissement={revision} />,
+    agents: (
+      <Agents
+        sites={sites}
+        rafraichissement={revision}
+        attendus={agents.attendus}
+        configTrouvee={agents.configTrouvee}
+      />
+    ),
     preferences: (
       <Preferences onModification={signalerModification} cheminBase={cheminBase} />
     ),
@@ -114,6 +125,7 @@ export default function App() {
       cheminBase={cheminBase}
       verificationEnCours={verificationEnCours}
       intervalleS={intervalleS}
+      alertes={{ agents: nbAgentsEnRetard(agents.attendus) }}
     >
       {site ? (
         <DetailSite

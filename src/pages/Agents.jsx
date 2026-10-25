@@ -15,6 +15,7 @@ import {
   rattacherSite,
   regrouperParJournee,
 } from "../lib/rapportsAgents";
+import { SITUATIONS } from "../lib/tachesPlanifiees";
 import { tracer } from "../lib/trace";
 
 const LIBELLES_VERDICT = {
@@ -143,7 +144,64 @@ function LigneJournee({ ligne, site, ouverte, onBasculer }) {
   );
 }
 
-export default function Agents({ sites = [], rafraichissement }) {
+/** Un agent attendu aujourd'hui: rapport recu, en cours, bloque, pas lance ou a venir. */
+function LigneAttendu({ attendu, site }) {
+  const { rapport, situation } = attendu;
+  const etat = rapport ? STATUTS_RAPPORT[rapport.statut].etat : SITUATIONS[situation].etat;
+  const libelle = rapport ? STATUTS_RAPPORT[rapport.statut].libelle : SITUATIONS[situation].libelle;
+  const enRetard = situation === "bloque" || situation === "non_lance";
+
+  return (
+    <li className="flex items-start gap-3 py-2">
+      <IconeEtat etat={etat} />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+          <p className="text-sm font-semibold text-texte">
+            {attendu.titre}
+            <span className="ml-2 font-normal text-texte-doux">{site?.nom ?? attendu.site}</span>
+          </p>
+          <p className="text-[11px] tabular-nums" style={{ color: couleurEtat(etat) }}>
+            {libelle}
+            {attendu.heure && <span className="text-texte-doux"> · {attendu.heure}</span>}
+          </p>
+        </div>
+        <p className={`text-xs ${enRetard ? "text-texte" : "text-texte-doux"}`}>{attendu.message}</p>
+      </div>
+    </li>
+  );
+}
+
+function AttendusAujourdhui({ attendus, configTrouvee, sites }) {
+  if (!configTrouvee) {
+    return (
+      <Carte>
+        <p className="text-xs text-texte-doux">
+          Horaires des taches planifiees introuvables : impossible de dire quels rapports
+          manquent aujourd'hui.
+        </p>
+      </Carte>
+    );
+  }
+  if (attendus.length === 0) return null;
+
+  return (
+    <Carte>
+      <h2 className="text-sm font-semibold">Attendus aujourd'hui</h2>
+      <ul className="mt-1 flex flex-col divide-y divide-bord">
+        {attendus.map((a) => (
+          <LigneAttendu key={a.id} attendu={a} site={rattacherSite(a.site, sites)} />
+        ))}
+      </ul>
+    </Carte>
+  );
+}
+
+export default function Agents({
+  sites = [],
+  rafraichissement,
+  attendus = [],
+  configTrouvee = true,
+}) {
   const [dossier, setDossier] = useState({ dossier: "", existe: true, fichiers: [] });
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState(null);
@@ -213,6 +271,8 @@ export default function Agents({ sites = [], rafraichissement }) {
           </span>
         </Bouton>
       </div>
+
+      <AttendusAujourdhui attendus={attendus} configTrouvee={configTrouvee} sites={sites} />
 
       {sitesAvecRapports.length > 1 && (
         <div className="flex flex-wrap gap-1.5">

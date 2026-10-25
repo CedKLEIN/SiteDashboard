@@ -809,6 +809,87 @@ fn lire_rapports(racine: &std::path::Path, depuis: &str) -> DossierRapports {
     resultat
 }
 
+#[derive(serde::Serialize, Default)]
+struct TachePlanifiee {
+    id: String,
+    skill: Option<String>,
+}
+
+#[derive(serde::Serialize, Default)]
+struct TachesPlanifiees {
+    /// Fichier ou l'appli Claude range horaires et derniers lancements, s'il a ete trouve
+    config_chemin: Option<String>,
+    config: Option<String>,
+    taches: Vec<TachePlanifiee>,
+}
+
+/// Lit les taches planifiees de Claude, pour savoir quels rapports attendre.
+///
+/// Deux sources: les consignes (`~/.claude/scheduled-tasks/<id>/SKILL.md`), qui
+/// disent si la tache depose un rapport, et le fichier ou l'appli Claude range
+/// l'horaire et le dernier lancement de chacune. Ce second fichier est interne a
+/// l'appli et son emplacement varie (installation classique ou paquet du Store):
+/// on essaie les emplacements connus, et l'ecran sait faire sans.
+#[tauri::command]
+fn lire_taches_planifiees(app: tauri::AppHandle) -> Result<TachesPlanifiees, String> {
+    let chemins = app.path();
+    let home = chemins.home_dir().map_err(|e| e.to_string())?;
+    let mut racines = Vec::new();
+    if let Ok(local) = chemins.local_data_dir() {
+        racines.push(local.join("Claude-Data"));
+        for paquet in sous_dossiers(&local.join("Packages")) {
+            let nom = paquet.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+            if nom.starts_with("Claude_") {
+                racines.push(paquet.join("LocalCache").join("Roaming").join("Claude"));
+            }
+        }
+    }
+    if let Ok(roaming) = chemins.data_dir() {
+        racines.push(roaming.join("Claude"));
+    }
+    Ok(lire_taches(&home.join(".claude").join("scheduled-tasks"), &racines))
+}
+
+/// Cherche `claude-code-sessions/<compte>/<organisation>/scheduled-tasks.json`
+/// sous chaque racine, ou sous un de ses sous-dossiers de profil. Plusieurs
+/// candidats: le plus recemment modifie est celui de l'appli en service.
+fn trouver_config_taches(racines: &[std::path::PathBuf]) -> Option<std::path::PathBuf> {
+    let mut candidats = Vec::new();
+    for racine in racines {
+        let mut profils = vec![racine.clone()];
+        profils.extend(sous_dossiers(racine));
+        for profil in profils {
+            for compte in sous_dossiers(&profil.join("claude-code-sessions")) {
+                for organisation in sous_dossiers(&compte) {
+                    let fichier = organisation.join("scheduled-tasks.json");
+                    if let Ok(modifie) = std::fs::metadata(&fichier).and_then(|m| m.modified()) {
+                        candidats.push((modifie, fichier));
+                    }
+                }
+            }
+        }
+    }
+    candidats.into_iter().max_by_key(|(modifie, _)| *modifie).map(|(_, f)| f)
+}
+
+fn lire_taches(dossier_taches: &std::path::Path, racines: &[std::path::PathBuf]) -> TachesPlanifiees {
+    let mut resultat = TachesPlanifiees::default();
+    if let Some(fichier) = trouver_config_taches(racines) {
+        resultat.config = std::fs::read_to_string(&fichier).ok();
+        resultat.config_chemin = Some(fichier.to_string_lossy().into_owned());
+    }
+    for dossier in sous_dossiers(dossier_taches) {
+        let id = dossier.file_name().and_then(|n| n.to_str()).unwrap_or_default().to_string();
+        let skill = dossier.join("SKILL.md");
+        let lisible = std::fs::metadata(&skill).is_ok_and(|m| m.len() <= TAILLE_MAX_RAPPORT);
+        resultat.taches.push(TachePlanifiee {
+            id,
+            skill: if lisible { std::fs::read_to_string(&skill).ok() } else { None },
+        });
+    }
+    resultat
+}
+
 /// Verificateur permissif, utilise UNIQUEMENT pour inspecter un certificat.
 ///
 /// Un certificat deja expire fait echouer la poignee de main standard: on ne
@@ -1047,6 +1128,7 @@ pub fn run() {
             recuperer_favicon,
             importer_image,
             lire_rapports_agents,
+            lire_taches_planifiees,
             taux_change,
             tracer
         ])
@@ -1115,6 +1197,36 @@ mod tests {
         let resultat = lire_rapports(std::path::Path::new("Z:/n-existe/pas"), "2026-01-01");
         assert!(!resultat.existe);
         assert!(resultat.fichiers.is_empty());
+    }
+
+    #[test]
+    fn lit_les_taches_planifiees_et_trouve_leur_config() {
+        let racine = std::env::temp_dir().join(format!("taches-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&racine);
+        let ecrire = |chemin: &str, contenu: &str| {
+            let p = racine.join(chemin);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, contenu).unwrap();
+        };
+        ecrire("taches/sante/SKILL.md", "consignes");
+        std::fs::create_dir_all(racine.join("taches/vide")).unwrap();
+        ecrire(
+            "Claude-Data/profil/claude-code-sessions/compte/org/scheduled-tasks.json",
+            r#"{"scheduledTasks":[]}"#,
+        );
+
+        let resultat = lire_taches(
+            &racine.join("taches"),
+            &[racine.join("Claude-Data"), racine.join("absent")],
+        );
+        let _ = std::fs::remove_dir_all(&racine);
+
+        assert_eq!(resultat.taches.len(), 2);
+        assert_eq!(resultat.taches[0].id, "sante");
+        assert_eq!(resultat.taches[0].skill.as_deref(), Some("consignes"));
+        assert!(resultat.taches[1].skill.is_none());
+        assert!(resultat.config_chemin.unwrap().ends_with("scheduled-tasks.json"));
+        assert_eq!(resultat.config.as_deref(), Some(r#"{"scheduledTasks":[]}"#));
     }
 
     #[test]

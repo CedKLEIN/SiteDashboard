@@ -67,6 +67,43 @@ describe("page Agents", () => {
     });
   });
 
+  it("liste les agents attendus aujourd'hui, avec ceux qui sont bloques", async () => {
+    invoke.mockResolvedValue({ dossier: RACINE, existe: true, fichiers: [] });
+    const attendus = [
+      {
+        id: "sante",
+        site: "denivio.fr",
+        titre: "Sante de la prod",
+        heure: "09:04",
+        situation: "bloque",
+        message: "Lance a 09:04, toujours sans rapport apres 1 h",
+        rapport: null,
+      },
+      {
+        id: "seo",
+        site: "denivio.fr",
+        titre: "Indexation",
+        heure: "09:05",
+        situation: "recu",
+        message: "RAS",
+        rapport: { statut: "ok" },
+      },
+    ];
+    render(<Agents sites={SITES} rafraichissement={0} attendus={attendus} />);
+
+    expect(await screen.findByText("Attendus aujourd'hui")).toBeTruthy();
+    expect(screen.getByText("Bloque ?")).toBeTruthy();
+    expect(screen.getByText("Lance a 09:04, toujours sans rapport apres 1 h")).toBeTruthy();
+    expect(screen.getByText("OK")).toBeTruthy();
+    expect(screen.getAllByText("Denivio")).toHaveLength(2);
+  });
+
+  it("previent quand les horaires des taches sont introuvables", async () => {
+    invoke.mockResolvedValue({ dossier: RACINE, existe: true, fichiers: [] });
+    render(<Agents sites={SITES} rafraichissement={0} configTrouvee={false} />);
+    expect(await screen.findByText(/Horaires des taches planifiees introuvables/)).toBeTruthy();
+  });
+
   it("montre l'erreur de lecture au lieu d'une page vide", async () => {
     invoke.mockRejectedValue("acces refuse");
     render(<Agents sites={SITES} rafraichissement={0} />);
