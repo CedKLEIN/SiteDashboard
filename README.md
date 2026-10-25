@@ -42,6 +42,13 @@ npm.cmd run installer               # compile, ferme l'appli, installe sans fen�
 npm.cmd run installer -- --sans-build  # réinstalle le dernier installeur produit
 ```
 
+Depuis l'appli : quand le dépôt local a des commits plus récents que la version installée,
+le menu affiche **« Mise à jour disponible »** et **Préférences > Mise à jour** les liste.
+Le bouton **Mettre à jour** ouvre une console qui lance `npm.cmd run installer` ; l'appli
+se ferme puis se rouvre quelques minutes plus tard. Le commit compilé est gravé dans l'appli
+par `src-tauri/build.rs` et comparé au `HEAD` du dépôt au démarrage puis toutes les 15 min.
+Rien n'est téléchargé : c'est le code local, commité, qui est recompilé.
+
 L'appli s'installe dans `%LOCALAPPDATA%\SiteDashboard` (entrée « SiteDashboard » du menu
 Démarrer) ; ses données restent dans `%APPDATA%\com.cedklein.sitedashboard`, que
 l'installeur ne touche pas.
