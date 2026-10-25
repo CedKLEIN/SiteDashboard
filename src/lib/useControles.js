@@ -1,38 +1,47 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { REGISTRE, controlesDus } from "./controles";
+import { REGISTRE, appliquerReglages, controlesDus, enregistrerNouvelles, file } from "./controles";
 import { ecrirePreference, lirePreference } from "./queries";
 import { tracer } from "./trace";
 
-/** Preference JSON : id du controle -> ISO de son dernier lancement. */
-const CLE = "controles_derniers";
+/** Preferences JSON : derniers lancements, horaires modifies, agents desactives. */
+const CLES = { derniers: "controles_derniers", horaires: "controles_horaires", desactives: "controles_desactives" };
 
-async function lireDerniers() {
+async function lireJson(cle, defaut) {
   try {
-    return JSON.parse((await lirePreference(CLE, "{}")) || "{}");
+    return JSON.parse((await lirePreference(cle, JSON.stringify(defaut))) || JSON.stringify(defaut));
   } catch {
-    return {};
+    return defaut;
   }
 }
 
 /**
- * Lance les controles dus, un a la fois, a chaque `rafraichissement` (le cycle
- * de supervision, toutes les minutes). Le lancement est note a la fin, meme en
- * cas d'echec : un controle casse ne doit pas etre relance chaque minute, son
- * rapport en echec suffit a le signaler.
+ * Lance les controles et agents dus a chaque `rafraichissement` (le cycle de
+ * supervision, toutes les minutes). Deux files independantes, une a la fois
+ * chacune : les scripts (secondes) et les agents Claude (jusqu'a des heures,
+ * l'indexation attend le quota Google) ne se bloquent pas entre eux.
+ *
+ * Le lancement est note a la fin, meme en cas d'echec : un controle casse ne
+ * doit pas etre relance chaque minute, son rapport en echec suffit a le dire.
  */
 export function useControles(rafraichissement, onTermine) {
   const [derniers, setDerniers] = useState({});
-  const [enCours, setEnCours] = useState(null);
+  const [reglages, setReglages] = useState({ horaires: {}, desactives: [] });
+  const [enCours, setEnCours] = useState({ script: null, claude: null });
   const [resultats, setResultats] = useState({});
-  // Verrou hors du rendu : StrictMode et deux cycles proches ne doivent pas lancer en double
-  const verrou = useRef(false);
+  // Verrous hors du rendu : StrictMode et deux cycles proches ne doivent pas lancer en double
+  const verrous = useRef({ script: false, claude: false });
+
+  const controles = useMemo(() => appliquerReglages(REGISTRE, reglages), [reglages]);
 
   const lancer = useCallback(
     async (id) => {
-      if (verrou.current) return false;
-      verrou.current = true;
-      setEnCours(id);
+      const controle = REGISTRE.find((c) => c.id === id);
+      if (!controle) return false;
+      const voie = file(controle);
+      if (verrous.current[voie]) return false;
+      verrous.current[voie] = true;
+      setEnCours((avant) => ({ ...avant, [voie]: id }));
       let resultat;
       try {
         const r = await invoke("lancer_controle", { id });
@@ -43,13 +52,13 @@ export function useControles(rafraichissement, onTermine) {
         tracer("controles", `${id} : ${e}`);
       }
       try {
-        const nouveaux = { ...(await lireDerniers()), [id]: new Date().toISOString() };
-        await ecrirePreference(CLE, JSON.stringify(nouveaux));
+        const nouveaux = { ...(await lireJson(CLES.derniers, {})), [id]: new Date().toISOString() };
+        await ecrirePreference(CLES.derniers, JSON.stringify(nouveaux));
         setDerniers(nouveaux);
       } finally {
         setResultats((avant) => ({ ...avant, [id]: resultat }));
-        setEnCours(null);
-        verrou.current = false;
+        setEnCours((avant) => ({ ...avant, [voie]: null }));
+        verrous.current[voie] = false;
         onTermine?.();
       }
       return true;
@@ -60,17 +69,45 @@ export function useControles(rafraichissement, onTermine) {
   useEffect(() => {
     let annule = false;
     (async () => {
-      const lus = await lireDerniers();
+      const [lusBruts, horaires, desactives] = await Promise.all([
+        lireJson(CLES.derniers, {}),
+        lireJson(CLES.horaires, {}),
+        lireJson(CLES.desactives, []),
+      ]);
       if (annule) return;
+      // Taches nouvelles : enregistrees sans rattrapage (voir enregistrerNouvelles)
+      const avecNouvelles = enregistrerNouvelles(REGISTRE, lusBruts);
+      if (avecNouvelles) await ecrirePreference(CLES.derniers, JSON.stringify(avecNouvelles));
+      const lus = avecNouvelles ?? lusBruts;
       setDerniers(lus);
-      const dus = controlesDus(REGISTRE, lus);
-      // onTermine relance ce cycle : les controles dus s'enchainent un par un
-      if (dus.length && !verrou.current) lancer(dus[0].id);
+      setReglages({ horaires, desactives });
+      // onTermine relance ce cycle : les controles dus s'enchainent, file par file
+      const dus = controlesDus(appliquerReglages(REGISTRE, { horaires, desactives }), lus);
+      for (const voie of ["script", "claude"]) {
+        const prochain = dus.find((c) => file(c) === voie);
+        if (prochain && !verrous.current[voie]) lancer(prochain.id);
+      }
     })().catch((e) => tracer("controles", `planning impossible : ${e}`));
     return () => {
       annule = true;
     };
   }, [rafraichissement, lancer]);
 
-  return { derniers, enCours, resultats, lancer };
+  /** Nouvel horaire (cron) ; null revient a l'horaire par defaut du registre. */
+  const modifierHoraire = useCallback(async (id, cron) => {
+    const horaires = { ...(await lireJson(CLES.horaires, {})) };
+    if (cron) horaires[id] = cron;
+    else delete horaires[id];
+    await ecrirePreference(CLES.horaires, JSON.stringify(horaires));
+    setReglages((avant) => ({ ...avant, horaires }));
+  }, []);
+
+  const activer = useCallback(async (id, actif) => {
+    const avant = await lireJson(CLES.desactives, []);
+    const desactives = actif ? avant.filter((x) => x !== id) : [...new Set([...avant, id])];
+    await ecrirePreference(CLES.desactives, JSON.stringify(desactives));
+    setReglages((r) => ({ ...r, desactives }));
+  }, []);
+
+  return { controles, derniers, enCours, resultats, lancer, modifierHoraire, activer };
 }

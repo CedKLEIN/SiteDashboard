@@ -6,6 +6,18 @@ import { analyserCatalogue, analyserHistoire, clesObjet, hausses, souverainsCite
 import { defautsSeo, locs } from "./sante-prod.mjs";
 import { aSoumettre, ordonner } from "./bing.mjs";
 import { avecAnalyse } from "./lancer.mjs";
+import { preambule } from "./lib/agent.mjs";
+
+describe("agents Claude", () => {
+  it("previent la session qu'elle tourne seule, et lui donne Chrome si besoin", () => {
+    const controle = { titre: "Indexation Google", site: "denivio.fr", chrome: true };
+    const texte = preambule(controle, new Date(2026, 9, 26, 9, 0));
+    expect(texte).toContain("Session lancée automatiquement par SiteDashboard (tâche « Indexation Google », site denivio.fr), le 26/10/2026 à 09:00");
+    expect(texte).toContain("Produis TOUJOURS le rapport JSON");
+    expect(texte).toContain("mcp__claude-in-chrome__*");
+    expect(preambule({ ...controle, chrome: false })).not.toContain("Chrome");
+  });
+});
 
 describe("verdict et rapport", () => {
   const points = [

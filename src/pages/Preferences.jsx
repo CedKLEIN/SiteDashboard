@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Download, FolderOpen, HardDriveDownload, RefreshCw } from "lucide-react";
 import { commitCourt, lancerMiseAJour, resumeMiseAJour } from "../lib/miseAJour";
@@ -88,6 +89,54 @@ function MiseAJour({ etat, verifier }) {
             : "Compile le dépôt local, ferme l'appli, installe la nouvelle version et la relance."}
         </p>
       </div>
+      {erreur && <p className="mt-2 text-xs text-depense">{erreur}</p>}
+    </Carte>
+  );
+}
+
+/**
+ * Demarrage avec Windows. La supervision et les taches planifiees ne tournent
+ * que si l'appli est ouverte : demarrer avec Windows evite les trous.
+ */
+function Demarrage() {
+  const [actif, setActif] = useState(null);
+  const [erreur, setErreur] = useState(null);
+
+  useEffect(() => {
+    let annule = false;
+    isEnabled()
+      .then((v) => !annule && setActif(v))
+      .catch((e) => !annule && setErreur(String(e)));
+    return () => {
+      annule = true;
+    };
+  }, []);
+
+  async function basculer(valeur) {
+    setErreur(null);
+    try {
+      await (valeur ? enable() : disable());
+      setActif(await isEnabled());
+    } catch (e) {
+      setErreur(String(e));
+    }
+  }
+
+  return (
+    <Carte titre="Démarrage">
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={Boolean(actif)}
+          disabled={actif === null}
+          onChange={(e) => basculer(e.target.checked)}
+        />
+        Démarrer SiteDashboard avec Windows
+      </label>
+      <p className="mt-2 text-xs text-texte-doux">
+        La supervision, les contrôles et les agents ne tournent que pendant que l&apos;application
+        est ouverte : la lancer avec Windows évite de rater un passage.
+      </p>
       {erreur && <p className="mt-2 text-xs text-depense">{erreur}</p>}
     </Carte>
   );
@@ -322,6 +371,8 @@ export default function Preferences({ onModification, cheminBase, miseAJour }) {
           La supervision ne tourne que pendant que l&apos;application est ouverte.
         </p>
       </Carte>
+
+      <Demarrage />
 
       <Notifications />
 

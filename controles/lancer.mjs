@@ -14,6 +14,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { lancerAgent } from "./lib/agent.mjs";
 import { analyser } from "./lib/claude.mjs";
 import {
   ecrireEtat,
@@ -49,6 +50,8 @@ export function avecAnalyse(rapport, analyse, { reprise = null } = {}) {
 export async function lancer(id, { claude = true, ecrire = true } = {}) {
   const controle = chargerRegistre().find((c) => c.id === id);
   if (!controle) throw new Error(`controle inconnu : ${id}`);
+  // Agent Claude : une session complete, qui ecrit elle-meme son rapport
+  if (controle.type === "claude") return lancerAgent(controle, { essai: !ecrire });
 
   const debut = new Date();
   const etat = lireEtat(id);

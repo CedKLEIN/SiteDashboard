@@ -7,7 +7,8 @@
     "config": "denivio",
     "cron": "30 7 * * *",
     "projet": "C:\\Users\\cedao\\Documents\\Projet\\SportSite",
-    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\SportSite\\sante-prod-denivio.md"
+    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\SportSite\\sante-prod-denivio.md",
+    "type": "script"
   },
   {
     "id": "sante-prod-roisempereurs-quotidienne",
@@ -17,7 +18,8 @@
     "config": "roisempereurs",
     "cron": "45 7 * * *",
     "projet": "C:\\Users\\cedao\\Documents\\Projet\\HistorySite",
-    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\HistorySite\\sante-prod-roisempereurs.md"
+    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\HistorySite\\sante-prod-roisempereurs.md",
+    "type": "script"
   },
   {
     "id": "audit-hebdo-denivio",
@@ -27,7 +29,8 @@
     "config": "denivio",
     "cron": "0 7 * * 1",
     "projet": "C:\\Users\\cedao\\Documents\\Projet\\SportSite",
-    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\SportSite\\audit-hebdo-denivio.md"
+    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\SportSite\\audit-hebdo-denivio.md",
+    "type": "script"
   },
   {
     "id": "audit-hebdo-roisempereurs",
@@ -37,7 +40,8 @@
     "config": "roisempereurs",
     "cron": "30 7 * * 1",
     "projet": "C:\\Users\\cedao\\Documents\\Projet\\HistorySite",
-    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\HistorySite\\audit-hebdo-roisempereurs.md"
+    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\HistorySite\\audit-hebdo-roisempereurs.md",
+    "type": "script"
   },
   {
     "id": "bing-denivio-quotidien",
@@ -47,6 +51,51 @@
     "config": "denivio",
     "cron": "0 9 * * *",
     "projet": "C:\\Users\\cedao\\Documents\\Projet\\SportSite",
-    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\SportSite\\indexation-bing-soumises.txt"
+    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\SportSite\\indexation-bing-soumises.txt",
+    "type": "script"
+  },
+  {
+    "id": "indexation-denivio-quotidienne",
+    "site": "denivio.fr",
+    "titre": "Indexation Google",
+    "type": "claude",
+    "chrome": true,
+    "cron": "0 9 * * *",
+    "dureeMaxMin": 180,
+    "projet": "C:\\Users\\cedao\\Documents\\Projet\\SportSite",
+    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\SportSite\\indexation-search-console.md"
+  },
+  {
+    "id": "seo-roisempereurs-quotidien",
+    "site": "roisempereurs.fr",
+    "titre": "SEO Google + Bing",
+    "type": "claude",
+    "chrome": true,
+    "cron": "5 9 * * *",
+    "dureeMaxMin": 150,
+    "projet": "C:\\Users\\cedao\\Documents\\Projet\\HistorySite",
+    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\HistorySite\\indexation-search-console.md"
+  },
+  {
+    "id": "idees-hebdo-denivio",
+    "site": "denivio.fr",
+    "titre": "Idées de la semaine",
+    "type": "claude",
+    "chrome": true,
+    "cron": "0 10 * * 6",
+    "dureeMaxMin": 120,
+    "projet": "C:\\Users\\cedao\\Documents\\Projet\\SportSite",
+    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\SportSite\\idees-hebdo-denivio.md"
+  },
+  {
+    "id": "idees-hebdo-roisempereurs",
+    "site": "roisempereurs.fr",
+    "titre": "Idées de la semaine",
+    "type": "claude",
+    "chrome": true,
+    "cron": "30 10 * * 6",
+    "dureeMaxMin": 120,
+    "projet": "C:\\Users\\cedao\\Documents\\Projet\\HistorySite",
+    "fichierSuivi": "C:\\Users\\cedao\\Documents\\Projet\\HistorySite\\idees-hebdo-roisempereurs.md"
   }
 ]

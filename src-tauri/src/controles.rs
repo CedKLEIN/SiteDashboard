@@ -79,11 +79,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn le_registre_liste_les_cinq_controles() {
+    fn le_registre_liste_controles_et_agents() {
         let ids = identifiants(&depot()).unwrap();
         assert!(ids.contains(&"sante-prod-denivio-quotidienne".to_string()));
         assert!(ids.contains(&"bing-denivio-quotidien".to_string()));
-        assert_eq!(ids.len(), 5);
+        assert_eq!(ids.len(), 9);
     }
 
     #[tokio::test]

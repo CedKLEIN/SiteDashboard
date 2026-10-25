@@ -84,6 +84,10 @@ export async function installerApercu() {
         return { depot: "(apercu)", commit_installe: "apercu", commit_depot: "apercu", branche: "main", nouveaux: [], modifications_locales: 0 };
       case "dossier_sauvegardes":
         return "C:\\Users\\...\\Documents\\SiteDashboard\\sauvegardes";
+      case "plugin:autostart|is_enabled":
+        return false;
+      case "lancer_controle":
+        return { code: 0, resume: { id: args.id, statut: "ok", claude: "non" }, erreurs: "" };
       case "plugin:notification|is_permission_granted":
         return false;
       case "plugin:notification|request_permission":

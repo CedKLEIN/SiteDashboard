@@ -1,5 +1,51 @@
 import { describe, expect, it } from "vitest";
-import { controlesDus, dernierPassagePrevu, fusionnerTaches, horaireLisible, REGISTRE } from "./controles";
+import {
+  appliquerReglages,
+  composerCron,
+  controlesDus,
+  decomposerCron,
+  dernierPassagePrevu,
+  enregistrerNouvelles,
+  file,
+  fusionnerTaches,
+  horaireLisible,
+  REGISTRE,
+} from "./controles";
+
+describe("reglages des taches", () => {
+  const registre = [
+    { id: "sante", cron: "30 7 * * *" },
+    { id: "seo", cron: "5 9 * * *", type: "claude" },
+  ];
+
+  it("applique l'horaire modifie et la desactivation, en gardant l'horaire par defaut", () => {
+    const [sante, seo] = appliquerReglages(registre, { horaires: { sante: "0 6 * * 1-5" }, desactives: ["seo"] });
+    expect(sante).toMatchObject({ cron: "0 6 * * 1-5", cronParDefaut: "30 7 * * *", actif: true });
+    expect(seo).toMatchObject({ cron: "5 9 * * *", actif: false });
+    expect(controlesDus([sante, seo], {}, new Date(2026, 9, 26, 12, 0)).map((c) => c.id)).toEqual(["sante"]);
+  });
+
+  it("enregistre une tache nouvelle sans la rattraper", () => {
+    const maintenant = new Date(2026, 9, 25, 19, 0);
+    const derniers = enregistrerNouvelles(registre, { sante: "2026-10-25T06:30:00.000Z" }, maintenant);
+    expect(derniers).toEqual({ sante: "2026-10-25T06:30:00.000Z", seo: maintenant.toISOString() });
+    // Le SEO de 9 h 05 est deja passe aujourd'hui : il n'est pas du avant demain
+    expect(controlesDus(appliquerReglages(registre), derniers, maintenant)).toEqual([]);
+    expect(enregistrerNouvelles(registre, derniers, maintenant)).toBeNull();
+  });
+
+  it("range les agents Claude dans leur propre file", () => {
+    expect(registre.map(file)).toEqual(["script", "claude"]);
+  });
+
+  it("compose et decompose un horaire", () => {
+    expect(decomposerCron("5 9 * * 1-5")).toEqual({ heure: "09:05", jours: "1-5" });
+    expect(composerCron("07:30", "6")).toBe("30 7 * * 6");
+    expect(composerCron("25:00", "*")).toBeNull();
+    expect(horaireLisible("0 6 * * 1-5")).toBe("du lundi au vendredi à 06:00");
+    expect(horaireLisible("0 10 * * 0,6")).toBe("le week-end à 10:00");
+  });
+});
 
 // Dimanche 25 octobre 2026, 18 h (heure locale)
 const MAINTENANT = new Date(2026, 9, 25, 18, 0);
@@ -52,8 +98,13 @@ describe("fusionnerTaches", () => {
     expect(JSON.parse(fusionnerTaches({ taches: [], config: null }, [QUOTIDIEN], {}).config).scheduledTasks).toHaveLength(1);
   });
 
-  it("charge les cinq controles du registre", () => {
+  it("charge les controles et agents du registre", () => {
     expect(REGISTRE.map((c) => c.id)).toContain("bing-denivio-quotidien");
-    expect(REGISTRE).toHaveLength(5);
+    expect(REGISTRE).toHaveLength(9);
+    // Chaque agent Claude a son dossier de projet et sa duree maximale
+    for (const agent of REGISTRE.filter((c) => c.type === "claude")) {
+      expect(agent.projet).toMatch(/Projet/);
+      expect(agent.dureeMaxMin).toBeGreaterThan(30);
+    }
   });
 });

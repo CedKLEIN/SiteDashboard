@@ -29,7 +29,8 @@ export function trouverClaude() {
   } catch {
     // pas dans le PATH
   }
-  return candidats.find((c) => c && existsSync(c)) ?? null;
+  // `where` liste aussi le script sans extension (pour Git Bash), que Windows n'execute pas
+  return candidats.find((c) => c && /\.(exe|cmd)$/i.test(c) && existsSync(c)) ?? null;
 }
 
 /** La consigne envoyee a Claude : le rapport du script, le detail, et le format attendu. */
@@ -104,7 +105,8 @@ export function analyser({ controle, rapport, detail }) {
   return new Promise((resolve) => {
     const processus = spawn(
       claude,
-      ["-p", "--output-format", "text", "--allowedTools", OUTILS_LECTURE, "--max-turns", "20"],
+      // dontAsk : tout outil non autorise est refuse sans question (session sans surveillance)
+      ["-p", "--output-format", "text", "--permission-mode", "dontAsk", "--allowedTools", OUTILS_LECTURE],
       { cwd: controle.projet, shell: claude.endsWith(".cmd"), windowsHide: true },
     );
     let sortie = "";

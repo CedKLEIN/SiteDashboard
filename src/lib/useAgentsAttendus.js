@@ -12,10 +12,10 @@ import { tracer } from "./trace";
  * Charge au niveau de l'application, pas de la page Agents, pour que le menu
  * puisse signaler un retard quel que soit l'onglet ouvert.
  */
-export function useAgentsAttendus(rafraichissement, derniersControles = {}) {
+export function useAgentsAttendus(rafraichissement, controles = REGISTRE, derniersControles = {}) {
   const [etat, setEtat] = useState({ attendus: [], configTrouvee: true });
   // Chaine stable : un nouvel objet identique ne doit pas relancer la lecture
-  const derniers = JSON.stringify(derniersControles);
+  const cle = JSON.stringify({ controles, derniers: derniersControles });
 
   useEffect(() => {
     let annule = false;
@@ -26,7 +26,8 @@ export function useAgentsAttendus(rafraichissement, derniersControles = {}) {
       .then(([taches, dossier]) => {
         if (annule) return;
         // Les controles automatiques sont attendus comme des agents
-        const fusion = fusionnerTaches(taches, REGISTRE, JSON.parse(derniers));
+        const reglages = JSON.parse(cle);
+        const fusion = fusionnerTaches(taches, reglages.controles, reglages.derniers);
         setEtat({
           attendus: agentsAttendus({
             taches: fusion.taches,
@@ -40,7 +41,7 @@ export function useAgentsAttendus(rafraichissement, derniersControles = {}) {
     return () => {
       annule = true;
     };
-  }, [rafraichissement, derniers]);
+  }, [rafraichissement, cle]);
 
   return etat;
 }

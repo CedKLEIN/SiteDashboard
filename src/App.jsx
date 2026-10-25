@@ -91,7 +91,7 @@ export default function App() {
   }, [verifier, intervalleS]);
 
   const controles = useControles(revision, signalerModification);
-  const agents = useAgentsAttendus(revision, controles.derniers);
+  const agents = useAgentsAttendus(revision, controles.controles, controles.derniers);
   useNotifications(revision, agents.attendus);
   const miseAJour = useMiseAJour();
 
