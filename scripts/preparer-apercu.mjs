@@ -11,6 +11,7 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { liste } from "../controles/registre.mjs";
 
 const RACINE = path.resolve(import.meta.dirname, "..");
 // Hors de public/ : Vite copierait ces donnees personnelles dans l'appli compilee.
@@ -83,6 +84,8 @@ writeFileSync(
   JSON.stringify({
     rapports: { dossier: racineRapports, existe: existsSync(racineRapports), fichiers },
     taches: { taches, config, config_chemin: config ? "(apercu)" : null },
+    // 4. Registre des taches (meme forme que registre_agents liste)
+    registre: liste(),
   }),
 );
 console.log(`Apercu pret : base ${derniere}, ${fichiers.length} rapport(s), ${taches.length} tache(s).`);

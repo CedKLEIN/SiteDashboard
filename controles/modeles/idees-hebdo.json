@@ -1,0 +1,12 @@
+{
+  "id": "idees-hebdo",
+  "titre": "Idées de la semaine",
+  "description": "Agent Claude hebdomadaire : prend du recul sur le site et propose 5 à 8 améliorations ou nouvelles fonctionnalités argumentées. Ne développe rien, sauf un vrai bug évident trouvé au passage.",
+  "type": "claude",
+  "consigne": "idees-hebdo.md",
+  "chrome": true,
+  "dureeMaxMin": 120,
+  "cron": "0 10 * * 6",
+  "requis": ["url", "projet", "description", "verifications"],
+  "suivi": "idees-hebdo-{{site.cle}}.md"
+}

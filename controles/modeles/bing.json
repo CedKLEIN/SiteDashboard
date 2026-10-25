@@ -1,0 +1,10 @@
+{
+  "id": "bing",
+  "titre": "Soumission Bing",
+  "description": "Chaque jour : soumet à Bing, par son API, les URL du sitemap jamais soumises, dans la limite du quota. Demande la clé API Bing.",
+  "type": "script",
+  "script": "bing.mjs",
+  "cron": "0 9 * * *",
+  "requis": ["url", "projet"],
+  "suivi": "indexation-bing-soumises.txt"
+}

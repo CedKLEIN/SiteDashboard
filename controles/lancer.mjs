@@ -2,7 +2,8 @@
  * Lance un controle : `node controles/lancer.mjs <id> [--sans-claude] [--essai]`
  * (--essai affiche le rapport et le journal sans rien ecrire).
  *
- * 1. execute le script du controle (controles/<script>, voir registre.json) ;
+ * 1. execute le script du controle (controles/<script>, voir lib/registre.mjs :
+ *    un modele applique a la fiche d'un site) ;
  * 2. tout est vert : rapport « ok », Claude n'est pas contacte ;
  * 3. une anomalie NOUVELLE : Claude l'analyse (lecture seule) et son diagnostic
  *    remplace le resume du rapport ; une anomalie deja analysee reprend
@@ -11,10 +12,10 @@
  *
  * Derniere ligne de la sortie : un resume JSON, lu par SiteDashboard.
  */
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { lancerAgent } from "./lib/agent.mjs";
+import { chargerRegistre } from "./lib/registre.mjs";
 import { analyser } from "./lib/claude.mjs";
 import {
   ecrireEtat,
@@ -32,10 +33,6 @@ import {
 const DOSSIER = import.meta.dirname;
 const LIBELLES = { ok: "OK", attention: "à regarder", echec: "en échec" };
 
-export function chargerRegistre() {
-  return JSON.parse(readFileSync(path.join(DOSSIER, "registre.json"), "utf8"));
-}
-
 /** Fusionne l'analyse de Claude dans le rapport du script. */
 export function avecAnalyse(rapport, analyse, { reprise = null } = {}) {
   return {
@@ -50,6 +47,26 @@ export function avecAnalyse(rapport, analyse, { reprise = null } = {}) {
 export async function lancer(id, { claude = true, ecrire = true } = {}) {
   const controle = chargerRegistre().find((c) => c.id === id);
   if (!controle) throw new Error(`controle inconnu : ${id}`);
+  // Modele ou fiche manquant : un rapport en echec le dit, plutot qu'un silence
+  if (controle.erreur) {
+    const debut = new Date();
+    const message = `Tâche mal configurée : ${controle.erreur}`;
+    if (!ecrire) return { id, statut: "echec", erreur: message };
+    const rapport = ecrireRapport({
+      site: controle.site,
+      agent: id,
+      titre: controle.titre,
+      date: jourLocal(debut),
+      debut: isoLocal(debut),
+      fin: isoLocal(debut),
+      statut: "echec",
+      resume: message,
+      points: [{ niveau: "echec", texte: controle.erreur }],
+      fichier: null,
+      source: "script",
+    });
+    return { id, statut: "echec", rapport, erreur: message };
+  }
   // Agent Claude : une session complete, qui ecrit elle-meme son rapport
   if (controle.type === "claude") return lancerAgent(controle, { essai: !ecrire });
 

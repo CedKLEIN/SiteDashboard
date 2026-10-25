@@ -1,15 +1,14 @@
 /**
  * Planning des controles automatiques (dossier controles/ du depot).
  *
- * Chaque controle a un horaire cron (registre.json). Il est du quand son
- * dernier passage prevu est posterieur a son dernier lancement : un controle
- * manque parce que l'appli etait fermee est rattrape a la reouverture, une
- * seule fois. Fonctions pures ; le lancement est dans useControles.js.
+ * Chaque tache a un horaire cron (modele, ou agent qui le precise : voir
+ * controles/lib/registre.mjs, lu au lancement par la commande registre_agents).
+ * Elle est due quand son dernier passage prevu est posterieur a son dernier
+ * lancement : une tache manquee parce que l'appli etait fermee est rattrapee a
+ * la reouverture, une seule fois. Fonctions pures ; le lancement est dans
+ * useControles.js.
  */
-import registre from "../../controles/registre.json";
 import { heurePrevue } from "./tachesPlanifiees";
-
-export const REGISTRE = registre;
 
 /** Jours remontes pour trouver le dernier passage prevu (un controle hebdomadaire). */
 const JOURS_RECHERCHE = 8;
@@ -62,6 +61,7 @@ export function file(controle) {
 /** Controles dus, dans l'ordre du registre. `derniers` : id -> ISO du dernier lancement. */
 export function controlesDus(controles, derniers = {}, maintenant = new Date()) {
   return controles.filter((c) => {
+    // Une tache mal configuree est lancee quand meme : son rapport en echec le dit
     if (c.actif === false) return false;
     const prevu = dernierPassagePrevu(c.cron, maintenant);
     if (!prevu) return false;

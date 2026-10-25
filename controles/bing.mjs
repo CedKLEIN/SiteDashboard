@@ -21,13 +21,16 @@ const API = "https://ssl.bing.com/webmaster/api.svc/json";
 const LOT_MAX = 500;
 export const FICHIER_CLE = path.join(os.homedir(), ".sitedashboard", "bing.json");
 
-export const CONFIGS = {
-  denivio: {
-    site: "https://denivio.fr/",
-    sitemap: "https://denivio.fr/sitemap.xml",
-    soumises: "C:\\Users\\cedao\\Documents\\Projet\\SportSite\\indexation-bing-soumises.txt",
-  },
-};
+/** Configuration tiree de la fiche du site ; les URL soumises vont dans le fichier de suivi de l'agent. */
+export function configBing(controle) {
+  const base = controle.fiche.url.replace(/\/$/, "");
+  return {
+    site: `${base}/`,
+    sitemap: controle.fiche.sitemap ?? `${base}/sitemap.xml`,
+    soumises: controle.fichierSuivi,
+    fiches: controle.fiche.bing?.fiches ?? null,
+  };
+}
 
 export function lireCle() {
   if (process.env.BING_API_KEY) return process.env.BING_API_KEY.trim();
@@ -43,16 +46,20 @@ function masquer(texte, cle) {
   return cle ? String(texte).split(cle).join("***") : String(texte);
 }
 
-/** Les fiches (/catalogs/<slug>) passent apres les autres pages, dans l'ordre du sitemap. */
-export function ordonner(urls) {
-  const fiche = (u) => /\/catalogs\/[^/]+$/.test(new URL(u).pathname);
+/**
+ * Les fiches (chemins qui suivent `motif`, ex. ^/catalogs/[^/]+$) passent apres
+ * les autres pages, dans l'ordre du sitemap. Sans motif, l'ordre du sitemap.
+ */
+export function ordonner(urls, motif = null) {
+  const regle = motif ? new RegExp(motif) : null;
+  const fiche = (u) => Boolean(regle?.test(new URL(u).pathname));
   return [...urls.filter((u) => !fiche(u)), ...urls.filter(fiche)];
 }
 
 /** URL du sitemap jamais soumises, dans l'ordre de priorite. */
-export function aSoumettre(sitemap, dejaSoumises) {
+export function aSoumettre(sitemap, dejaSoumises, motif = null) {
   const deja = new Set(dejaSoumises.map((u) => u.trim()).filter(Boolean));
-  return ordonner([...new Set(sitemap)].filter((u) => !deja.has(u)));
+  return ordonner([...new Set(sitemap)].filter((u) => !deja.has(u)), motif);
 }
 
 async function appel(methode, url, cle, corps) {
@@ -69,7 +76,7 @@ async function appel(methode, url, cle, corps) {
 }
 
 export async function executer(controle, { essai = false } = {}) {
-  const c = CONFIGS[controle.config];
+  const c = configBing(controle);
   const points = [];
   const ajouter = (niveau, texte) => points.push({ niveau, texte });
 
@@ -86,7 +93,7 @@ export async function executer(controle, { essai = false } = {}) {
     return { points, resume: "Sitemap illisible, aucune soumission.", sectionJournal: "", detail: "", nouvelEtat: {} };
   }
   const deja = existsSync(c.soumises) ? readFileSync(c.soumises, "utf8").split(/\r?\n/) : [];
-  const restantes = aSoumettre(urls, deja);
+  const restantes = aSoumettre(urls, deja, c.fiches);
 
   const cle = lireCle();
   if (!cle) {

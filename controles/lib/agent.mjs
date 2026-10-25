@@ -2,8 +2,10 @@
  * Agents Claude lances par SiteDashboard : une session `claude -p` par passage,
  * pour les taches qui demandent du jugement (indexation, SEO, idees).
  *
- * Remplacent les taches planifiees de l'appli Claude. La consigne de chaque
- * agent vit HORS du depot (public) : %USERPROFILE%\.sitedashboard\agents\<id>.md.
+ * Remplacent les taches planifiees de l'appli Claude. La consigne vient d'un
+ * modele generique (controles/modeles/*.md), rempli avec la fiche du site ; les
+ * precisions propres a un agent vivent HORS du depot (public) :
+ * %USERPROFILE%\.sitedashboard\agents\<id>.md.
  * La session ecrit elle-meme son rapport, comme avant ; si elle n'en ecrit pas
  * (connexion perdue, Chrome absent, plantage), SiteDashboard ecrit un rapport
  * en echec avec la fin de sa sortie : un agent muet doit se voir.
@@ -14,16 +16,52 @@ import os from "node:os";
 import path from "node:path";
 import { fermerChrome, preparerChrome } from "./chrome.mjs";
 import { trouverClaude } from "./claude.mjs";
-import { cheminRapport, ecrireRapport, isoLocal, jourLocal } from "./commun.mjs";
+import { RACINE_RAPPORTS, cheminRapport, ecrireRapport, isoLocal, jourLocal } from "./commun.mjs";
+import { DOSSIER_MODELES, rendre } from "./registre.mjs";
 
 export const DOSSIER_AGENTS = path.join(os.homedir(), ".sitedashboard", "agents");
 const DOSSIER_JOURNAUX = path.join(os.homedir(), ".sitedashboard", "journaux");
 
-/** Consigne d'un agent, sans l'en-tete YAML d'une ancienne tache planifiee. */
-export function lireConsigne(id) {
-  const fichier = path.join(DOSSIER_AGENTS, `${id}.md`);
-  if (!existsSync(fichier)) return null;
-  return readFileSync(fichier, "utf8").replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "").trim();
+/** Ce que l'agent doit ecrire pour SiteDashboard : chemin et forme du rapport JSON. */
+export function consigneRapport(controle) {
+  const chemin = path.join(RACINE_RAPPORTS, controle.site, "<AAAA-MM-JJ>", `${controle.id}.json`);
+  const squelette = JSON.stringify({
+    site: controle.site,
+    agent: controle.id,
+    titre: controle.titre,
+    date: "AAAA-MM-JJ",
+    debut: "<ISO 8601 avec fuseau, début du run>",
+    fin: "<ISO 8601, fin du run>",
+    statut: "ok|attention|echec",
+    resume: "<une phrase>",
+    points: [{ niveau: "ok|attention|echec", texte: "<ligne courte>" }],
+    fichier: controle.fichierSuivi,
+  });
+  return `écris en UTF-8 le fichier \`${chemin}\` (date locale du jour ; crée les dossiers ; écrase le fichier s'il existe : un rapport par jour). Contenu : un objet JSON ${squelette}. Vérifie ensuite que le fichier est un JSON valide : node -e "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))" "<chemin>".`;
+}
+
+/**
+ * Consigne complete d'un agent : le modele (controles/modeles/<consigne>.md)
+ * rempli avec la fiche du site, puis les precisions propres a l'agent
+ * (%USERPROFILE%\.sitedashboard\agents\<id>.md, facultatives).
+ */
+export function construireConsigne(controle, { modeles = DOSSIER_MODELES, agents = DOSSIER_AGENTS } = {}) {
+  const fichierModele = path.join(modeles, controle.consigne ?? "");
+  if (!controle.consigne || !existsSync(fichierModele)) return null;
+  const contexte = {
+    site: controle.fiche,
+    agent: {
+      ...controle,
+      fichierSuiviNom: controle.fichierSuivi ? path.basename(controle.fichierSuivi) : "",
+      dossierRapports: path.join(RACINE_RAPPORTS, controle.site),
+      consigneRapport: consigneRapport(controle),
+    },
+  };
+  const texte = rendre(readFileSync(fichierModele, "utf8"), contexte).trim();
+  const fichierPrecisions = path.join(agents, `${controle.id}.md`);
+  if (!existsSync(fichierPrecisions)) return texte;
+  const precisions = readFileSync(fichierPrecisions, "utf8").trim();
+  return `${texte}\n\nPrécisions propres à ce site et à cet agent (elles priment sur la consigne générale) :\n${precisions}`;
 }
 
 /** Ce que SiteDashboard ajoute devant la consigne : le contexte d'un passage sans surveillance. */
@@ -59,9 +97,9 @@ function rapportEchec(controle, debut, message) {
 /** Lance la session et attend sa fin. Renvoie le resume pour SiteDashboard. */
 export async function lancerAgent(controle, { essai = false } = {}) {
   const debut = new Date();
-  const consigne = lireConsigne(controle.id);
+  const consigne = construireConsigne(controle);
   if (!consigne) {
-    const message = `Consigne introuvable : ${path.join(DOSSIER_AGENTS, `${controle.id}.md`)}`;
+    const message = `Consigne du modèle introuvable : ${path.join(DOSSIER_MODELES, controle.consigne ?? "(aucune)")}`;
     if (!essai) rapportEchec(controle, debut, message);
     return { id: controle.id, statut: "echec", claude: "session", erreur: message };
   }

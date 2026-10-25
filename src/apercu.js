@@ -86,6 +86,9 @@ export async function installerApercu() {
         return "C:\\Users\\...\\Documents\\SiteDashboard\\sauvegardes";
       case "plugin:autostart|is_enabled":
         return false;
+      case "registre_agents":
+        if (args.action !== "liste") throw new Error("apercu : le registre n'est pas modifiable");
+        return agents?.registre ?? { controles: [], modeles: [] };
       case "lancer_controle":
         return { code: 0, resume: { id: args.id, statut: "ok", claude: "non" }, erreurs: "" };
       case "plugin:notification|is_permission_granted":

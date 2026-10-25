@@ -1,0 +1,13 @@
+{
+  "id": "indexation-seo",
+  "titre": "SEO Google + Bing",
+  "description": "Agent Claude quotidien : point Search Console et Bing Webmaster dans Chrome, demandes d'indexation jusqu'au quota, corrections SEO ciblées si l'agent y est autorisé (paramètre corriger).",
+  "type": "claude",
+  "consigne": "indexation-seo.md",
+  "chrome": true,
+  "dureeMaxMin": 180,
+  "cron": "0 9 * * *",
+  "requis": ["url", "projet", "description"],
+  "suivi": "indexation-search-console.md",
+  "parametres": { "corriger": false }
+}

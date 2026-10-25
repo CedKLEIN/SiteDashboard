@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { REGISTRE, appliquerReglages, controlesDus, enregistrerNouvelles, file } from "./controles";
+import { appliquerReglages, controlesDus, enregistrerNouvelles, file } from "./controles";
 import { ecrirePreference, lirePreference } from "./queries";
 import { tracer } from "./trace";
 
@@ -21,22 +21,49 @@ async function lireJson(cle, defaut) {
  * chacune : les scripts (secondes) et les agents Claude (jusqu'a des heures,
  * l'indexation attend le quota Google) ne se bloquent pas entre eux.
  *
+ * Le registre (modeles appliques aux sites) est lu au demarrage et apres chaque
+ * ajout ou retrait : il vit dans des fichiers, pas dans l'appli compilee.
+ *
  * Le lancement est note a la fin, meme en cas d'echec : un controle casse ne
  * doit pas etre relance chaque minute, son rapport en echec suffit a le dire.
  */
 export function useControles(rafraichissement, onTermine) {
+  const [registre, setRegistre] = useState({ charge: false, controles: [], modeles: [], erreur: null });
   const [derniers, setDerniers] = useState({});
   const [reglages, setReglages] = useState({ horaires: {}, desactives: [] });
   const [enCours, setEnCours] = useState({ script: null, claude: null });
   const [resultats, setResultats] = useState({});
   // Verrous hors du rendu : StrictMode et deux cycles proches ne doivent pas lancer en double
   const verrous = useRef({ script: false, claude: false });
+  const taches = useRef([]);
+  // Relu au demarrage, puis a chaque ajout ou retrait
+  const [versionRegistre, setVersionRegistre] = useState(0);
+  const recharger = useCallback(() => setVersionRegistre((v) => v + 1), []);
 
-  const controles = useMemo(() => appliquerReglages(REGISTRE, reglages), [reglages]);
+  useEffect(() => {
+    let annule = false;
+    invoke("registre_agents", { action: "liste", args: [] })
+      .then(({ controles, modeles }) => {
+        if (!annule) setRegistre({ charge: true, controles, modeles, erreur: null });
+      })
+      .catch((e) => {
+        tracer("controles", `registre illisible : ${e}`);
+        if (!annule) setRegistre((avant) => ({ ...avant, charge: true, erreur: String(e) }));
+      });
+    return () => {
+      annule = true;
+    };
+  }, [versionRegistre]);
+
+  useEffect(() => {
+    taches.current = registre.controles;
+  }, [registre.controles]);
+
+  const controles = useMemo(() => appliquerReglages(registre.controles, reglages), [registre.controles, reglages]);
 
   const lancer = useCallback(
     async (id) => {
-      const controle = REGISTRE.find((c) => c.id === id);
+      const controle = taches.current.find((c) => c.id === id);
       if (!controle) return false;
       const voie = file(controle);
       if (verrous.current[voie]) return false;
@@ -67,6 +94,8 @@ export function useControles(rafraichissement, onTermine) {
   );
 
   useEffect(() => {
+    // Rien a planifier tant que le registre n'est pas lu
+    if (!registre.charge) return undefined;
     let annule = false;
     (async () => {
       const [lusBruts, horaires, desactives] = await Promise.all([
@@ -76,13 +105,13 @@ export function useControles(rafraichissement, onTermine) {
       ]);
       if (annule) return;
       // Taches nouvelles : enregistrees sans rattrapage (voir enregistrerNouvelles)
-      const avecNouvelles = enregistrerNouvelles(REGISTRE, lusBruts);
+      const avecNouvelles = enregistrerNouvelles(registre.controles, lusBruts);
       if (avecNouvelles) await ecrirePreference(CLES.derniers, JSON.stringify(avecNouvelles));
       const lus = avecNouvelles ?? lusBruts;
       setDerniers(lus);
       setReglages({ horaires, desactives });
       // onTermine relance ce cycle : les controles dus s'enchainent, file par file
-      const dus = controlesDus(appliquerReglages(REGISTRE, { horaires, desactives }), lus);
+      const dus = controlesDus(appliquerReglages(registre.controles, { horaires, desactives }), lus);
       for (const voie of ["script", "claude"]) {
         const prochain = dus.find((c) => file(c) === voie);
         if (prochain && !verrous.current[voie]) lancer(prochain.id);
@@ -91,9 +120,9 @@ export function useControles(rafraichissement, onTermine) {
     return () => {
       annule = true;
     };
-  }, [rafraichissement, lancer]);
+  }, [rafraichissement, lancer, registre]);
 
-  /** Nouvel horaire (cron) ; null revient a l'horaire par defaut du registre. */
+  /** Nouvel horaire (cron) ; null revient a l'horaire par defaut. */
   const modifierHoraire = useCallback(async (id, cron) => {
     const horaires = { ...(await lireJson(CLES.horaires, {})) };
     if (cron) horaires[id] = cron;
@@ -109,5 +138,34 @@ export function useControles(rafraichissement, onTermine) {
     setReglages((r) => ({ ...r, desactives }));
   }, []);
 
-  return { controles, derniers, enCours, resultats, lancer, modifierHoraire, activer };
+  /** Applique un modele a un site. Le premier passage sera le prochain de son horaire. */
+  const ajouter = useCallback(
+    async (modele, site) => {
+      await invoke("registre_agents", { action: "ajouter", args: [modele, site] });
+      recharger();
+    },
+    [recharger],
+  );
+
+  const retirer = useCallback(
+    async (id) => {
+      await invoke("registre_agents", { action: "retirer", args: [id] });
+      recharger();
+    },
+    [recharger],
+  );
+
+  return {
+    controles,
+    modeles: registre.modeles,
+    erreurRegistre: registre.erreur,
+    derniers,
+    enCours,
+    resultats,
+    lancer,
+    modifierHoraire,
+    activer,
+    ajouter,
+    retirer,
+  };
 }

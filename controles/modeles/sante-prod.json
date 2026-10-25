@@ -1,0 +1,10 @@
+{
+  "id": "sante-prod",
+  "titre": "Santé de la prod",
+  "description": "Chaque jour : pages clés et codes HTTP, HTML servi aux robots, API publique, sitemap (et un échantillon de ses URL), certificat, en-têtes, erreurs de console. Claude n'est appelé qu'en cas d'anomalie.",
+  "type": "script",
+  "script": "sante-prod.mjs",
+  "cron": "30 7 * * *",
+  "requis": ["url", "projet", "sante"],
+  "suivi": "sante-prod-{{site.cle}}.md"
+}

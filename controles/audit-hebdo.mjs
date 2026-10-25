@@ -11,30 +11,11 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
-import { nombre, obtenir, secondes, tableau } from "./lib/commun.mjs";
-import { analyserCatalogue, analyserHistoire, clesObjet, hausses, souverainsCites, tailles } from "./lib/donnees.mjs";
+import { pathToFileURL } from "node:url";
+import { nombre, secondes, tableau } from "./lib/commun.mjs";
 import { mesurerPerformance } from "./lib/navigateur.mjs";
 
-const SPORT = "C:\\Users\\cedao\\Documents\\Projet\\SportSite";
-const HISTOIRE = "C:\\Users\\cedao\\Documents\\Projet\\HistorySite";
-
-export const CONFIGS = {
-  denivio: {
-    base: "https://denivio.fr",
-    pages: ["/", "/catalogs", "/catalogs/col-du-galibier", "/collections/les-geants-des-alpes"],
-    donnees: "catalogue",
-    front: path.join(SPORT, "SportSiteFrontend"),
-    back: path.join(SPORT, "SportSiteBackend", "SportSiteBackend.sln"),
-  },
-  roisempereurs: {
-    base: "https://roisempereurs.fr",
-    pages: ["/", "/souverain/louis-xiv", "/dynastie/capetiens", "/quiz"],
-    donnees: "histoire",
-    front: path.join(HISTOIRE, "HistorySiteFrontend"),
-    back: path.join(HISTOIRE, "HistorySiteBackend", "HistorySiteBackend.sln"),
-    bundle: path.join(HISTOIRE, "HistorySiteFrontend", "dist", "assets"),
-  },
-};
+const EXTENSIONS = path.join(import.meta.dirname, "extensions");
 
 const ko = (octets) => `${nombre(Math.round(octets / 1024))} Ko`;
 
@@ -73,69 +54,6 @@ async function auditPerformance(c, etat, ajouter) {
     mesures,
     section: `### Performance (médiane de 3 chargements à froid)\n\n${tableau(["Page", "LCP", "CLS", "TBT", "Chargement", "Requêtes", "dont /api", "Poids"], lignes)}`,
   };
-}
-
-/* --------------------------------------------------------------- donnees */
-
-async function donneesCatalogue(etat, ajouter) {
-  const seed = path.join(SPORT, "SportSiteBackend", "SportSiteBackend", "Asset", "SeedData", "catalog-seed.json");
-  const analyse = analyserCatalogue(JSON.parse(readFileSync(seed, "utf8")));
-  const stats = await obtenir("https://denivio.fr/api/public/stats");
-  let prod = null;
-  try {
-    prod = JSON.parse(stats.texte).catalogCount;
-  } catch {
-    // stats indisponibles : simple information
-  }
-  const resume = tailles(analyse.anomalies);
-  // horsEurope (outre-mer) grandit avec le seed : une information, pas une derive
-  const { horsEurope: _horsEurope, ...surveillees } = analyse.anomalies;
-  const enHausse = hausses(surveillees, etat.donnees);
-  // Premier passage : seules les anomalies qui empechent d'afficher un lieu comptent
-  const critiques = ["coordonneesManquantes", "altitudeHorsBornes", "paysVide"].filter((k) => resume[k] > 0);
-  if (enHausse.length) ajouter("attention", `Données en hausse : ${enHausse.map((h) => `${h.cle} ${h.avant} → ${h.apres}`).join(", ")}`);
-  else if (!etat.donnees && critiques.length) ajouter("attention", `Données : ${critiques.map((k) => `${k} ${resume[k]}`).join(", ")}`);
-  ajouter("ok", `Catalogue : ${nombre(analyse.total)} lieux dans le seed, ${nombre(prod)} en prod`);
-  const lignes = Object.entries(analyse.anomalies).map(([cle, v]) => [cle, v.nombre, v.exemples.slice(0, 3).join(" ; ")]);
-  return {
-    resume,
-    section: [
-      "### Catalogue",
-      "",
-      `${nombre(analyse.total)} lieux dans le seed, ${nombre(prod)} en prod (un seed en avance n'est qu'une information tant qu'il n'est pas déployé).`,
-      "",
-      `Par pays : ${Object.entries(analyse.parPays).map(([p, n]) => `${p} ${nombre(n)}`).join(", ")}.`,
-      `Par type : ${Object.entries(analyse.parType).map(([t, n]) => `${t} ${nombre(n)}`).join(", ")}.`,
-      "",
-      tableau(["Catégorie", "Nombre", "Exemples"], lignes),
-    ].join("\n"),
-  };
-}
-
-async function donneesHistoire(etat, ajouter) {
-  const front = path.join(HISTOIRE, "HistorySiteFrontend");
-  const lire = (fichier) => readFileSync(path.join(front, "src", "data", fichier), "utf8");
-  const api = await obtenir("https://roisempereurs.fr/api/rulers");
-  const analyse = analyserHistoire({
-    souverains: JSON.parse(api.texte),
-    instantane: JSON.parse(lire("rulers-snapshot.json")),
-    biosFr: clesObjet(lire("bios.js")),
-    biosEn: clesObjet(lire("bios.en.js")),
-    datesFr: souverainsCites(lire("keyDates.js")),
-    datesEn: souverainsCites(lire("keyDates.en.js")),
-    portraits: JSON.parse(lire("portraits.json")),
-    fichierExiste: (src) => existsSync(path.join(front, "public", src)),
-  });
-  const resume = tailles(analyse.anomalies);
-  const presentes = Object.entries(analyse.anomalies).filter(([, v]) => v.length);
-  const enHausse = hausses(analyse.anomalies, etat.donnees);
-  if (enHausse.length) ajouter("attention", `Données en hausse : ${enHausse.map((h) => `${h.cle} ${h.avant} → ${h.apres}`).join(", ")}`);
-  else if (!etat.donnees && presentes.length) {
-    ajouter("attention", `Données : ${presentes.map(([k, v]) => `${k} ${v.length} (${v.slice(0, 2).join(", ")})`).join(" ; ")}`);
-  }
-  ajouter("ok", `Souverains : ${analyse.total.prod} en prod, ${analyse.total.local} dans le dépôt`);
-  const lignes = Object.entries(analyse.anomalies).map(([cle, v]) => [cle, v.length, v.slice(0, 5).join(", ")]);
-  return { resume, section: `### Données\n\n${tableau(["Catégorie", "Nombre", "Exemples"], lignes)}` };
 }
 
 /* ----------------------------------------------------------- dependances */
@@ -189,7 +107,8 @@ function tailleBundle(dossier, etat, ajouter) {
 /* ---------------------------------------------------------------- audit */
 
 export async function executer(controle, { etat }) {
-  const c = CONFIGS[controle.config];
+  const fiche = controle.fiche;
+  const c = { ...fiche.audit, base: fiche.url.replace(/\/$/, "") };
   const points = [];
   const ajouter = (niveau, texte) => points.push({ niveau, texte });
   const sections = [];
@@ -201,12 +120,17 @@ export async function executer(controle, { etat }) {
       nouvelEtat.performance = r.mesures;
       sections.push(r.section);
     }],
+    // Analyse des donnees propre au site : controles/extensions/<nom>.mjs
     ["données", async () => {
-      const r = c.donnees === "catalogue" ? await donneesCatalogue(etat, ajouter) : await donneesHistoire(etat, ajouter);
+      if (!c.donnees?.extension) return;
+      const extension = await import(pathToFileURL(path.join(EXTENSIONS, `${c.donnees.extension}.mjs`)).href);
+      const r = await extension.donnees(fiche, etat, ajouter);
       nouvelEtat.donnees = r.resume;
       sections.push(r.section);
     }],
-    ["dépendances", async () => sections.push(dependances(c, ajouter))],
+    ["dépendances", async () => {
+      if (c.front && c.back) sections.push(dependances(c, ajouter));
+    }],
     ["bundle", async () => {
       const r = tailleBundle(c.bundle, etat, ajouter);
       if (r.poids) nouvelEtat.bundle = r.poids;

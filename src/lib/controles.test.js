@@ -9,7 +9,6 @@ import {
   file,
   fusionnerTaches,
   horaireLisible,
-  REGISTRE,
 } from "./controles";
 
 describe("reglages des taches", () => {
@@ -96,15 +95,5 @@ describe("fusionnerTaches", () => {
 
   it("garde les controles attendus sans config de Claude", () => {
     expect(JSON.parse(fusionnerTaches({ taches: [], config: null }, [QUOTIDIEN], {}).config).scheduledTasks).toHaveLength(1);
-  });
-
-  it("charge les controles et agents du registre", () => {
-    expect(REGISTRE.map((c) => c.id)).toContain("bing-denivio-quotidien");
-    expect(REGISTRE).toHaveLength(9);
-    // Chaque agent Claude a son dossier de projet et sa duree maximale
-    for (const agent of REGISTRE.filter((c) => c.type === "claude")) {
-      expect(agent.projet).toMatch(/Projet/);
-      expect(agent.dureeMaxMin).toBeGreaterThan(30);
-    }
   });
 });

@@ -35,11 +35,34 @@ npm run lint       # oxlint
 npm run app:build  # build release : installeurs .msi et -setup.exe dans src-tauri/target/release/bundle
 ```
 
-### Contrôles automatiques (remplacent des agents Claude)
+### Tâches planifiées : modèles appliqués à des sites
 
-Santé prod et audit hebdo (Denivio, HistorySite) et soumission Bing (Denivio) sont des
-scripts Node dans `controles/`, lancés par SiteDashboard selon l'horaire de
-`controles/registre.json` (un passage manqué appli fermée est rattrapé à la réouverture).
+Toutes les tâches sont lancées par SiteDashboard, à leur horaire (un passage manqué
+appli fermée est rattrapé à la réouverture). Chacune est un **modèle** appliqué à un
+**site** :
+
+- `controles/modeles/<id>.json` (dans le dépôt) : un script (`sante-prod`, `audit-hebdo`,
+  `bing`) ou une consigne Claude générique (`indexation-seo.md`, `idees-hebdo.md`), son
+  horaire par défaut et les champs qu'il demande à la fiche du site (`requis`) ;
+- `%USERPROFILE%\.sitedashboard\sites\<cle>.json` (hors du dépôt public) : la fiche du
+  site — URL, dossier du projet, description, commandes de vérification, pages et API
+  surveillées (`sante`), audit (`audit`, avec une extension de données
+  `controles/extensions/<nom>.mjs` au besoin)… ;
+- `%USERPROFILE%\.sitedashboard\agents.json` : les agents, `{ id, modele, site }` plus,
+  au besoin, `cron`, `titre` et `parametres` ; `agents\<id>.md` : précisions propres à un
+  agent Claude (adresses des consoles, faux positifs, priorités), ajoutées à sa consigne.
+
+Le registre est lu au lancement : « Ajouter une tâche » (onglet Agents) applique un
+modèle à un site sans réinstaller ; une fiche à laquelle il manque un champ requis rend
+le site indisponible pour ce modèle.
+
+```bash
+node controles/registre.mjs liste                      # agents composés, modèles applicables
+node controles/lancer.mjs idees-hebdo-denivio --essai  # affiche la consigne complète d'un agent
+```
+
+Les scripts de contrôle (santé prod, audit hebdo, soumission Bing) remplacent des agents
+Claude qui faisaient un travail mécanique.
 Ils écrivent le même rapport que les agents (`~/.claude/rapports-agents/…`) : onglet
 Agents, notifications et historique inchangés. **Claude n'est appelé qu'en cas d'anomalie
 nouvelle** (`claude -p`, lecture seule, dans le dossier du projet) ; tout vert, il n'est

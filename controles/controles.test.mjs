@@ -3,10 +3,14 @@ import { describe, expect, it } from "vitest";
 import { empreinte, isoLocal, jsonLd, liens, meta, pointsDuRapport, statutGlobal, texteVisible, racine } from "./lib/commun.mjs";
 import { extraireJson, validerAnalyse } from "./lib/claude.mjs";
 import { analyserCatalogue, analyserHistoire, clesObjet, hausses, souverainsCites } from "./lib/donnees.mjs";
-import { defautsSeo, locs } from "./sante-prod.mjs";
-import { aSoumettre, ordonner } from "./bing.mjs";
+import { configSante, defautsSeo, locs, verifierApi } from "./sante-prod.mjs";
+import { aSoumettre, configBing, ordonner } from "./bing.mjs";
 import { avecAnalyse } from "./lancer.mjs";
-import { preambule } from "./lib/agent.mjs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { construireConsigne, preambule } from "./lib/agent.mjs";
+import { DOSSIER_MODELES, ajouterAgent, applicables, chargerTout, composer, identifiant, rendre, retirerAgent } from "./lib/registre.mjs";
 import { chromeDansListe, trouverChrome } from "./lib/chrome.mjs";
 
 describe("agents Claude", () => {
@@ -163,12 +167,36 @@ describe("donnees", () => {
 describe("Bing", () => {
   it("soumet d'abord les pages hors fiches, sans les URL deja soumises", () => {
     const sitemap = ["https://d.fr/catalogs/galibier", "https://d.fr/cols/isere", "https://d.fr/", "https://d.fr/catalogs/izoard"];
-    expect(aSoumettre(sitemap, ["https://d.fr/", ""])).toEqual([
+    const motif = "^/catalogs/[^/]+$";
+    expect(aSoumettre(sitemap, ["https://d.fr/", ""], motif)).toEqual([
       "https://d.fr/cols/isere",
       "https://d.fr/catalogs/galibier",
       "https://d.fr/catalogs/izoard",
     ]);
-    expect(ordonner(["https://d.fr/catalogs", "https://d.fr/catalogs/x"])).toEqual(["https://d.fr/catalogs", "https://d.fr/catalogs/x"]);
+    expect(ordonner(["https://d.fr/catalogs/x", "https://d.fr/catalogs"], motif)).toEqual(["https://d.fr/catalogs", "https://d.fr/catalogs/x"]);
+    // Sans motif de fiches : l'ordre du sitemap
+    expect(ordonner(["https://d.fr/b", "https://d.fr/a"])).toEqual(["https://d.fr/b", "https://d.fr/a"]);
+  });
+
+  it("tire sa configuration de la fiche du site", () => {
+    const controle = { fiche: { url: "https://d.fr/", bing: { fiches: "^/x/" } }, fichierSuivi: "C:\\p\\soumises.txt" };
+    expect(configBing(controle)).toEqual({ site: "https://d.fr/", sitemap: "https://d.fr/sitemap.xml", soumises: "C:\\p\\soumises.txt", fiches: "^/x/" });
+  });
+});
+
+describe("Santé : fiche du site", () => {
+  it("verifie une reponse d'API avec les regles de la fiche", () => {
+    expect(verifierApi({ a: 0, b: 3 }, { unNombrePositif: true })).toBe(true);
+    expect(verifierApi({ a: 0 }, { unNombrePositif: true })).toBe("aucun nombre non nul");
+    expect(verifierApi({ mode: "x" }, { champs: ["mode", "total"] })).toBe("total absent");
+    expect(verifierApi([], { listeNonVide: true })).toBe("liste vide");
+    expect(verifierApi([{ name: "A" }, { name: "" }], { listeNonVide: true, champElements: "name" })).toBe("1 élément(s) sans name");
+    expect(verifierApi({ n: 1 }, { chemin: "/api" })).toBe(true);
+  });
+
+  it("complete la configuration avec des valeurs par defaut", () => {
+    const c = configSante({ url: "https://d.fr/", sante: { pages: ["/", "/a"] } });
+    expect(c).toMatchObject({ base: "https://d.fr", hote: "d.fr", sitemap: "https://d.fr/sitemap.xml", pages: ["/", "/a"], api: [], version: null });
   });
 });
 
@@ -190,5 +218,107 @@ describe("analyse par Claude", () => {
     const analyse = { statut: "attention", resume: "Faux positif probable", points: [], analyse: "" };
     expect(avecAnalyse(rapport, analyse)).toMatchObject({ statut: "attention", resume: "Faux positif probable", points: rapport.points, source: "script+claude" });
     expect(avecAnalyse(rapport, analyse, { reprise: "24/10/2026" }).resume).toBe("Faux positif probable (analyse du 24/10/2026)");
+  });
+});
+
+describe("registre : modeles appliques aux sites", () => {
+  const modeles = [
+    { id: "sante-prod", titre: "Santé", type: "script", script: "sante-prod.mjs", cron: "30 7 * * *", requis: ["url", "sante"], suivi: "sante-{{site.cle}}.md" },
+    { id: "idees", titre: "Idées", type: "claude", consigne: "idees.md", chrome: true, dureeMaxMin: 90, cron: "0 10 * * 6", requis: ["url"], parametres: { corriger: false } },
+    { id: "bing", titre: "Bing", type: "script", cron: "0 9 * * *", requis: ["url"] },
+  ];
+  const sites = [
+    { cle: "a", nom: "Site A", domaine: "a.fr", url: "https://a.fr", projet: "C:\\p\\a", sante: { pages: ["/"] } },
+    { cle: "b", nom: "Site B", domaine: "b.fr", url: "https://b.fr", projet: "C:\\p\\b" },
+  ];
+
+  it("compose un agent : horaire du modele ou de l'agent, fichier de suivi, parametres", () => {
+    const [sante, idees] = composer({
+      modeles,
+      sites,
+      agents: [
+        { id: "sante-a", modele: "sante-prod", site: "a", cron: "45 7 * * *" },
+        { id: "idees-a", modele: "idees", site: "a", parametres: { corriger: true } },
+        { id: "bing-a", modele: "bing", site: "a" },
+      ],
+    });
+    expect(sante).toMatchObject({ site: "a.fr", titre: "Santé", cron: "45 7 * * *", fichierSuivi: "C:\\p\\a\\sante-a.md", type: "script" });
+    expect(sante.erreur).toBeUndefined();
+    expect(idees).toMatchObject({ cron: "0 10 * * 6", chrome: true, dureeMaxMin: 90, parametres: { corriger: true }, soumissionBingAuto: true });
+  });
+
+  it("garde visible un agent mal configure", () => {
+    const [inconnu, sansFiche, incomplet] = composer({
+      modeles,
+      sites,
+      agents: [
+        { id: "x", modele: "nope", site: "a" },
+        { id: "y", modele: "idees", site: "zz" },
+        { id: "z", modele: "sante-prod", site: "b" },
+      ],
+    });
+    expect(inconnu.erreur).toBe("modèle inconnu : nope");
+    expect(sansFiche.erreur).toBe("fiche de site introuvable : zz");
+    expect(incomplet.erreur).toBe("fiche b incomplète : sante");
+  });
+
+  it("propose chaque modele avec les sites possibles", () => {
+    const [sante] = applicables({ modeles, sites, agents: [{ id: "s", modele: "sante-prod", site: "a" }] });
+    expect(sante.sites).toEqual([
+      { cle: "a", nom: "Site A", domaine: "a.fr", manquants: [], deja: true },
+      { cle: "b", nom: "Site B", domaine: "b.fr", manquants: ["sante"], deja: false },
+    ]);
+  });
+
+  it("donne un identifiant libre", () => {
+    expect(identifiant(modeles[0], sites[0], [])).toBe("sante-prod-a");
+    expect(identifiant(modeles[0], sites[0], ["sante-prod-a"])).toBe("sante-prod-a-2");
+  });
+
+  it("remplit une consigne, conditions comprises", () => {
+    const modele = "{{site.nom}} : {{#si agent.corriger}}corrige{{#sinon}}ne touche à rien{{/si}}.{{#si site.absent}} jamais{{/si}} {{inconnu}}fin";
+    expect(rendre(modele, { site: { nom: "A" }, agent: { corriger: true } })).toBe("A : corrige. fin");
+    expect(rendre(modele, { site: { nom: "A" }, agent: { corriger: false } })).toBe("A : ne touche à rien. fin");
+    expect(rendre("{{#si a}}x{{#si b}}y{{/si}}{{/si}}", { a: 1, b: 0 })).toBe("x");
+  });
+
+  it("ajoute et retire un agent dans le fichier", () => {
+    const dossier = mkdtempSync(path.join(os.tmpdir(), "registre-"));
+    const sources = { modeles: path.join(dossier, "m"), sites: path.join(dossier, "s"), agents: path.join(dossier, "agents.json") };
+    mkdirSync(sources.modeles);
+    mkdirSync(sources.sites);
+    writeFileSync(path.join(sources.modeles, "idees.json"), JSON.stringify(modeles[1]));
+    writeFileSync(path.join(sources.sites, "a.json"), JSON.stringify(sites[0]));
+    writeFileSync(path.join(sources.sites, "b.json"), `\uFEFF${JSON.stringify(sites[1])}`);
+    expect(ajouterAgent("idees", "b", sources)).toEqual({ id: "idees-b", modele: "idees", site: "b" });
+    expect(() => ajouterAgent("idees", "zz", sources)).toThrow("fiche de site introuvable");
+    expect(chargerTout(sources).agents.map((a) => a.id)).toEqual(["idees-b"]);
+    retirerAgent("idees-b", sources);
+    expect(chargerTout(sources).agents).toEqual([]);
+    rmSync(dossier, { recursive: true });
+  });
+
+  it("construit la consigne d'un agent : modele, fiche, rapport, precisions", () => {
+    const dossier = mkdtempSync(path.join(os.tmpdir(), "consigne-"));
+    writeFileSync(path.join(dossier, "idees.md"), "Site {{site.nom}} ({{agent.fichierSuiviNom}}). Rapport : {{agent.consigneRapport}}");
+    writeFileSync(path.join(dossier, "idees-a.md"), "- parcours : accueil");
+    const [agent] = composer({ modeles: [{ ...modeles[1], suivi: "idees-{{site.cle}}.md" }], sites, agents: [{ id: "idees-a", modele: "idees", site: "a" }] });
+    const texte = construireConsigne({ ...agent, fiche: sites[0] }, { modeles: dossier, agents: dossier });
+    expect(texte).toContain("Site Site A (idees-a.md)");
+    expect(texte).toContain('"agent":"idees-a","titre":"Idées"');
+    expect(texte).toContain(path.join("a.fr", "<AAAA-MM-JJ>", "idees-a.json"));
+    expect(texte).toMatch(/Précisions propres à ce site[\s\S]*parcours : accueil$/);
+    expect(construireConsigne({ ...agent, consigne: "absent.md" }, { modeles: dossier, agents: dossier })).toBeNull();
+    rmSync(dossier, { recursive: true });
+  });
+
+  it("livre des modeles complets, et une consigne pour chaque agent Claude", () => {
+    const { modeles: livres } = chargerTout({ sites: "absent", agents: "absent.json" });
+    expect(livres.map((m) => m.id).sort()).toEqual(["audit-hebdo", "bing", "idees-hebdo", "indexation-seo", "sante-prod"]);
+    for (const m of livres) {
+      expect(m).toMatchObject({ titre: expect.any(String), description: expect.any(String), cron: expect.stringMatching(/^\d+ \d+ \* \* [\d*,-]+$/) });
+      if (m.type === "claude") expect(existsSync(path.join(DOSSIER_MODELES, m.consigne))).toBe(true);
+      else expect(existsSync(path.join(import.meta.dirname, m.script))).toBe(true);
+    }
   });
 });

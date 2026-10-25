@@ -1,0 +1,10 @@
+{
+  "id": "audit-hebdo",
+  "titre": "Audit hebdomadaire",
+  "description": "Chaque semaine : performance mesurée dans le navigateur, dépendances front et back (vulnérabilités, versions), poids du bundle, et l'analyse des données propre au site s'il en a une.",
+  "type": "script",
+  "script": "audit-hebdo.mjs",
+  "cron": "0 7 * * 1",
+  "requis": ["url", "projet", "audit"],
+  "suivi": "audit-hebdo-{{site.cle}}.md"
+}

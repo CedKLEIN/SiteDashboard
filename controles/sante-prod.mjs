@@ -27,63 +27,41 @@ import { inspecterPages } from "./lib/navigateur.mjs";
 const LENT_MS = 2000;
 const SEUIL_CERT_JOURS = 21;
 
-export const CONFIGS = {
-  denivio: {
-    base: "https://denivio.fr",
-    hote: "denivio.fr",
-    pages: ["/", "/catalogs", "/catalogs/col-du-galibier", "/catalogs/mont-blanc", "/collections",
-      "/collections/les-geants-des-alpes", "/cols", "/cols/isere", "/help", "/legal/mentions-legales",
-      "/robots.txt", "/sitemap.xml", "/sitemap-1.xml"],
-    absentes: ["/catalogs/ce-lieu-n-existe-pas-xyz", "/catalogs/1790600653-c779de21", "/une-page-inexistante"],
+/**
+ * Verdict d'un appel d'API selon les regles de la fiche du site : true, ou ce
+ * qui ne va pas. Regles : unNombrePositif, champs (presents), listeNonVide,
+ * champElements (present dans chaque element).
+ */
+export function verifierApi(json, regle = {}) {
+  if (regle.unNombrePositif && !Object.values(json ?? {}).some((v) => typeof v === "number" && v > 0)) return "aucun nombre non nul";
+  const absents = (regle.champs ?? []).filter((champ) => json?.[champ] == null);
+  if (absents.length) return `${absents.join(", ")} absent${absents.length > 1 ? "s" : ""}`;
+  if (regle.listeNonVide && (!Array.isArray(json) || json.length === 0)) return "liste vide";
+  if (regle.champElements && Array.isArray(json)) {
+    const incomplets = json.filter((e) => e?.[regle.champElements] == null || e[regle.champElements] === "").length;
+    if (incomplets) return `${incomplets} élément(s) sans ${regle.champElements}`;
+  }
+  return true;
+}
+
+/** La configuration du controle, tiree de la fiche du site (voir controles/modeles). */
+export function configSante(fiche) {
+  const s = fiche.sante;
+  return {
+    pages: ["/"],
+    absentes: [],
     redirections: [],
-    seo: ["/catalogs/col-du-galibier", "/collections/les-geants-des-alpes", "/cols/isere"],
-    jsonLdId: "seo-structured-data",
-    hreflang: false,
-    // Fiches signalees « Soft 404 » par Google : contenu court CONNU (~500 car.),
-    // on ne signale qu'un changement net par rapport au passage precedent.
-    contenuSurveille: ["/catalogs/pointe-cote-de-l-ane", "/catalogs/col-de-comberon"],
-    api: [
-      { chemin: "/api/public/stats", verifier: (j) => Object.values(j).some((v) => typeof v === "number" && v > 0) || "aucun nombre non nul" },
-      { chemin: "/api/catalog/public/col-du-galibier" },
-      { chemin: "/api/catalog/public/map?zoom=9&minLatitude=45&maxLatitude=45.3&minLongitude=6.2&maxLongitude=6.6", verifier: (j) => (j.mode != null && j.total != null) || "mode ou total absent" },
-      { chemin: "/api/collection/public/list?pageSize=12", verifier: (j) => j.totalCount != null || "totalCount absent" },
-    ],
-    cacheControlPublic: true,
-    sitemapIndex: true,
-    noindex: "/dashboard",
-    navigateur: ["/", "/catalogs", "/catalogs/col-du-galibier", "/collections/les-geants-des-alpes"],
-  },
-  roisempereurs: {
-    base: "https://roisempereurs.fr",
-    hote: "roisempereurs.fr",
-    pages: ["/", "/quiz", "/souverains", "/souverain/louis-xiv", "/souverain/napoleon-ier", "/dynastie/capetiens",
-      "/dynastie/bourbons", "/en/souverain/louis-xiv", "/en/souverains", "/robots.txt", "/sitemap.xml", "/version.json"],
-    absentes: ["/souverain/ce-souverain-n-existe-pas", "/une-page-inexistante"],
-    redirections: [{ chemin: "/en/", statut: 301 }],
-    seo: ["/souverain/louis-xiv", "/dynastie/capetiens", "/en/souverain/louis-xiv"],
-    jsonLdType: "BreadcrumbList",
-    hreflang: true,
+    seo: [],
     contenuSurveille: [],
-    api: [
-      {
-        chemin: "/api/rulers",
-        verifier: (j) => {
-          if (!Array.isArray(j) || j.length === 0) return "liste vide";
-          // L'API ne sert pas de slug (le front le calcule) : le nom suffit
-          const incomplets = j.filter((r) => !r.name).length;
-          return incomplets === 0 || `${incomplets} souverain(s) sans nom`;
-        },
-        compter: (j) => (Array.isArray(j) ? j.length : null),
-      },
-    ],
-    cacheControlPublic: false,
-    sitemapIndex: false,
-    echantillonSitemap: 5,
-    serveurConnu: "nginx/1.18.0 (Ubuntu)",
-    version: { chemin: "/version.json", depot: "C:\\Users\\cedao\\Documents\\Projet\\HistorySite\\HistorySiteFrontend" },
-    navigateur: ["/", "/souverain/louis-xiv", "/quiz", "/en/souverain/louis-xiv"],
-  },
-};
+    api: [],
+    navigateur: ["/"],
+    ...s,
+    base: fiche.url.replace(/\/$/, ""),
+    hote: new URL(fiche.url).hostname,
+    sitemap: fiche.sitemap ?? `${fiche.url.replace(/\/$/, "")}/sitemap.xml`,
+    version: fiche.version ?? null,
+  };
+}
 
 /** Les <loc> d'un sitemap. */
 export function locs(xml) {
@@ -129,7 +107,7 @@ function dernierCommit(depot) {
 }
 
 export async function executer(controle, { etat }) {
-  const c = CONFIGS[controle.config];
+  const c = configSante(controle.fiche);
   const points = [];
   const lignes = [];
   const durees = {};
@@ -194,13 +172,13 @@ export async function executer(controle, { etat }) {
     } catch {
       // traite plus bas
     }
-    const verdict = r.statut !== 200 ? `HTTP ${r.statut ?? r.erreur}` : !json ? "réponse non JSON" : appel.verifier ? appel.verifier(json) : true;
+    const verdict = r.statut !== 200 ? `HTTP ${r.statut ?? r.erreur}` : !json ? "réponse non JSON" : verifierApi(json, appel);
     if (verdict !== true) apiEnPanne.push(`${appel.chemin.split("?")[0]} : ${verdict}`);
     if (c.cacheControlPublic && r.statut === 200 && !/public/i.test(r.entetes["cache-control"] ?? "")) {
       ajouter("attention", `${appel.chemin.split("?")[0]} sans Cache-Control public`);
     }
-    if (appel.compter && json) {
-      compteurs[appel.chemin] = appel.compter(json);
+    if (appel.compter && Array.isArray(json)) {
+      compteurs[appel.chemin] = json.length;
       const avant = etat.compteurs?.[appel.chemin];
       if (avant != null && avant !== compteurs[appel.chemin]) {
         ajouter("attention", `${appel.chemin} : ${compteurs[appel.chemin]} éléments contre ${avant} hier`);
@@ -214,25 +192,30 @@ export async function executer(controle, { etat }) {
   // 4. Sitemap
   let urlsSitemap = 0;
   let detailSitemap = "";
-  const sitemap = await obtenir(c.base + "/sitemap.xml");
-  if (c.sitemapIndex) {
-    const sous = locs(sitemap.texte);
-    for (const url of sous) urlsSitemap += locs((await obtenir(url)).texte).length;
-    detailSitemap = `index de ${sous.length} fichier(s), ${nombre(urlsSitemap)} URL`;
+  const sitemap = await obtenir(c.sitemap);
+  let toutes = locs(sitemap.texte);
+  if (/<sitemapindex/i.test(sitemap.texte ?? "")) {
+    const sous = toutes;
+    toutes = [];
+    for (const url of sous) toutes.push(...locs((await obtenir(url)).texte));
+    detailSitemap = `index de ${sous.length} fichier(s), ${nombre(toutes.length)} URL`;
   } else {
-    const toutes = locs(sitemap.texte);
-    urlsSitemap = toutes.length;
-    const en = toutes.filter((u) => new URL(u).pathname.startsWith("/en")).length;
-    detailSitemap = `${nombre(urlsSitemap)} URL (${nombre(urlsSitemap - en)} FR, ${nombre(en)} EN)`;
-    const echantillon = [...toutes].sort(() => Math.random() - 0.5).slice(0, c.echantillonSitemap ?? 0);
-    const cassees = [];
-    for (const url of echantillon) {
-      const r = await obtenir(url, { corps: false });
-      if (r.statut !== 200) cassees.push(`${new URL(url).pathname} (${r.statut ?? r.erreur})`);
-      await pause(300);
-    }
-    if (cassees.length) ajouter("echec", `URL du sitemap en erreur : ${cassees.join(", ")}`);
+    detailSitemap = `${nombre(toutes.length)} URL`;
   }
+  urlsSitemap = toutes.length;
+  if (c.hreflang) {
+    const en = toutes.filter((u) => new URL(u).pathname.startsWith("/en")).length;
+    detailSitemap += ` (${nombre(urlsSitemap - en)} FR, ${nombre(en)} EN)`;
+  }
+  // Quelques URL tirees au hasard : une page cassee hors des pages cles se voit aussi
+  const echantillon = [...toutes].sort(() => Math.random() - 0.5).slice(0, c.echantillonSitemap ?? 0);
+  const cassees = [];
+  for (const url of echantillon) {
+    const r = await obtenir(url, { corps: false });
+    if (r.statut !== 200) cassees.push(`${new URL(url).pathname} (${r.statut ?? r.erreur})`);
+    await pause(300);
+  }
+  if (cassees.length) ajouter("echec", `URL du sitemap en erreur : ${cassees.join(", ")}`);
   if (urlsSitemap === 0) ajouter("echec", "Sitemap vide ou illisible");
   else if (etat.urlsSitemap && etat.urlsSitemap !== urlsSitemap) {
     ajouter("attention", `Sitemap : ${nombre(urlsSitemap)} URL contre ${nombre(etat.urlsSitemap)} hier`);

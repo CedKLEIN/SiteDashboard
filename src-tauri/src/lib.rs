@@ -145,6 +145,7 @@ pub fn run() {
             mise_a_jour::etat_mise_a_jour,
             mise_a_jour::lancer_mise_a_jour,
             controles::lancer_controle,
+            controles::registre_agents,
             tracer
         ])
         .run(tauri::generate_context!())

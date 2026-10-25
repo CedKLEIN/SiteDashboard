@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { JOURS_HISTORIQUE, dateDepuis, lireRapport } from "./rapportsAgents";
 import { agentsAttendus } from "./tachesPlanifiees";
-import { REGISTRE, fusionnerTaches } from "./controles";
+import { fusionnerTaches } from "./controles";
 import { tracer } from "./trace";
 
 /**
@@ -12,7 +12,7 @@ import { tracer } from "./trace";
  * Charge au niveau de l'application, pas de la page Agents, pour que le menu
  * puisse signaler un retard quel que soit l'onglet ouvert.
  */
-export function useAgentsAttendus(rafraichissement, controles = REGISTRE, derniersControles = {}) {
+export function useAgentsAttendus(rafraichissement, controles = [], derniersControles = {}) {
   const [etat, setEtat] = useState({ attendus: [], configTrouvee: true });
   // Chaine stable : un nouvel objet identique ne doit pas relancer la lecture
   const cle = JSON.stringify({ controles, derniers: derniersControles });
@@ -34,7 +34,7 @@ export function useAgentsAttendus(rafraichissement, controles = REGISTRE, dernie
             config: fusion.config,
             rapports: dossier.fichiers.map(lireRapport),
           }),
-          configTrouvee: Boolean(taches.config) || REGISTRE.length > 0,
+          configTrouvee: Boolean(taches.config) || reglages.controles.length > 0,
         });
       })
       .catch((e) => tracer("agents", `lecture des taches planifiees impossible: ${e}`));
