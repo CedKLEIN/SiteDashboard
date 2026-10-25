@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { appliquerReglages, controlesDus, enregistrerNouvelles, file } from "./controles";
+import { appliquerReglages, controlesDus, enregistrerNouvelles, file, separerAjouts } from "./controles";
 import { ecrirePreference, lirePreference } from "./queries";
 import { tracer } from "./trace";
 
-/** Preferences JSON : derniers lancements, horaires modifies, agents desactives. */
-const CLES = { derniers: "controles_derniers", horaires: "controles_horaires", desactives: "controles_desactives" };
+/** Preferences JSON : derniers lancements, ajouts des taches, horaires modifies, agents desactives. */
+const CLES = {
+  derniers: "controles_derniers",
+  ajouts: "controles_ajouts",
+  horaires: "controles_horaires",
+  desactives: "controles_desactives",
+};
 
 async function lireJson(cle, defaut) {
   try {
@@ -30,6 +35,7 @@ async function lireJson(cle, defaut) {
 export function useControles(rafraichissement, onTermine) {
   const [registre, setRegistre] = useState({ charge: false, controles: [], modeles: [], erreur: null });
   const [derniers, setDerniers] = useState({});
+  const [ajouts, setAjouts] = useState({});
   const [reglages, setReglages] = useState({ horaires: {}, desactives: [] });
   const [enCours, setEnCours] = useState({ script: null, claude: null });
   const [resultats, setResultats] = useState({});
@@ -98,20 +104,28 @@ export function useControles(rafraichissement, onTermine) {
     if (!registre.charge) return undefined;
     let annule = false;
     (async () => {
-      const [lusBruts, horaires, desactives] = await Promise.all([
+      let [lus, ajoutsLus, horaires, desactives] = await Promise.all([
         lireJson(CLES.derniers, {}),
+        lireJson(CLES.ajouts, null),
         lireJson(CLES.horaires, {}),
         lireJson(CLES.desactives, []),
       ]);
       if (annule) return;
+      if (ajoutsLus === null) {
+        // Premiere fois depuis la separation ajout / lancement (voir separerAjouts)
+        ({ derniers: lus, ajouts: ajoutsLus } = separerAjouts(lus));
+        await ecrirePreference(CLES.derniers, JSON.stringify(lus));
+        await ecrirePreference(CLES.ajouts, JSON.stringify(ajoutsLus));
+      }
       // Taches nouvelles : enregistrees sans rattrapage (voir enregistrerNouvelles)
-      const avecNouvelles = enregistrerNouvelles(registre.controles, lusBruts);
-      if (avecNouvelles) await ecrirePreference(CLES.derniers, JSON.stringify(avecNouvelles));
-      const lus = avecNouvelles ?? lusBruts;
+      const avecNouvelles = enregistrerNouvelles(registre.controles, lus, ajoutsLus);
+      if (avecNouvelles) await ecrirePreference(CLES.ajouts, JSON.stringify(avecNouvelles));
+      const ajoutsTous = avecNouvelles ?? ajoutsLus;
       setDerniers(lus);
+      setAjouts(ajoutsTous);
       setReglages({ horaires, desactives });
       // onTermine relance ce cycle : les controles dus s'enchainent, file par file
-      const dus = controlesDus(appliquerReglages(registre.controles, { horaires, desactives }), lus);
+      const dus = controlesDus(appliquerReglages(registre.controles, { horaires, desactives }), lus, new Date(), ajoutsTous);
       for (const voie of ["script", "claude"]) {
         const prochain = dus.find((c) => file(c) === voie);
         if (prochain && !verrous.current[voie]) lancer(prochain.id);
@@ -160,6 +174,7 @@ export function useControles(rafraichissement, onTermine) {
     modeles: registre.modeles,
     erreurRegistre: registre.erreur,
     derniers,
+    ajouts,
     enCours,
     resultats,
     lancer,

@@ -31,6 +31,15 @@ fn tracer(niveau: String, message: String) {
     println!("[{niveau}] {message}");
 }
 
+/// Ramene la fenetre principale au premier plan, meme reduite ou cachee.
+fn montrer_fenetre(app: &tauri::AppHandle) {
+    if let Some(fenetre) = app.webview_windows().values().next() {
+        let _ = fenetre.unminimize();
+        let _ = fenetre.show();
+        let _ = fenetre.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let migrations = vec![
@@ -115,6 +124,12 @@ pub fn run() {
     ];
 
     tauri::Builder::default()
+        // Une seule instance (enregistre en premier, comme le demande le plugin) :
+        // relancer SiteDashboard ramene au premier plan la fenetre deja ouverte
+        // au lieu d'ouvrir une deuxieme appli qui lancerait les taches en double.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _dossier| {
+            montrer_fenetre(app);
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())

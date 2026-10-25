@@ -42,15 +42,35 @@ export function appliquerReglages(controles, { horaires = {}, desactives = [] } 
 
 /**
  * Une tache que SiteDashboard voit pour la premiere fois n'est pas rattrapee :
- * on note sa date d'ajout comme dernier lancement, son premier passage sera le
+ * on note sa date d'AJOUT (`ajouts`, id -> ISO), et son premier passage sera le
  * prochain de son horaire. Sans ca, l'installation lancerait d'un coup des
  * sessions Claude deja faites par l'ancienne tache (ou couteuses et inutiles).
- * Renvoie null si rien n'est nouveau.
+ *
+ * L'ajout n'est pas un lancement : noter l'ajout comme dernier lancement faisait
+ * passer la tache pour « lancee aujourd'hui, sans rapport », donc bloquee.
+ * Renvoie les ajouts completes, ou null si rien n'est nouveau.
  */
-export function enregistrerNouvelles(controles, derniers = {}, maintenant = new Date()) {
-  const nouvelles = controles.filter((c) => !derniers[c.id]);
+export function enregistrerNouvelles(controles, derniers = {}, ajouts = {}, maintenant = new Date()) {
+  const nouvelles = controles.filter((c) => !derniers[c.id] && !ajouts[c.id]);
   if (nouvelles.length === 0) return null;
-  return { ...derniers, ...Object.fromEntries(nouvelles.map((c) => [c.id, maintenant.toISOString()])) };
+  return { ...ajouts, ...Object.fromEntries(nouvelles.map((c) => [c.id, maintenant.toISOString()])) };
+}
+
+/**
+ * Reprise des donnees d'avant la separation ajout / lancement : les taches
+ * enregistrees d'un coup a l'installation partagent EXACTEMENT le meme instant,
+ * ce qu'aucun vrai lancement ne fait (les files lancent une tache a la fois).
+ * Ces instants partages passent des lancements aux ajouts.
+ */
+export function separerAjouts(derniers = {}) {
+  const parInstant = new Map();
+  for (const [id, iso] of Object.entries(derniers)) parInstant.set(iso, [...(parInstant.get(iso) ?? []), id]);
+  const lancements = {};
+  const ajouts = {};
+  for (const [iso, ids] of parInstant) {
+    for (const id of ids) (ids.length > 1 ? ajouts : lancements)[id] = iso;
+  }
+  return { derniers: lancements, ajouts };
 }
 
 /** File d'attente d'un controle : les agents Claude, longs, ne bloquent pas les scripts. */
@@ -58,15 +78,27 @@ export function file(controle) {
   return controle.type === "claude" ? "claude" : "script";
 }
 
-/** Controles dus, dans l'ordre du registre. `derniers` : id -> ISO du dernier lancement. */
-export function controlesDus(controles, derniers = {}, maintenant = new Date()) {
+function dateOuNull(iso) {
+  const date = iso ? new Date(iso) : null;
+  return date && !Number.isNaN(date.getTime()) ? date : null;
+}
+
+/**
+ * Controles dus, dans l'ordre du registre. `derniers` : id -> ISO du dernier
+ * lancement ; `ajouts` : id -> ISO de l'ajout de la tache.
+ *
+ * Une tache est due si son dernier passage prevu est posterieur a son dernier
+ * lancement (et a son ajout). On ne regarde que le DERNIER passage prevu : une
+ * semaine d'ordinateur eteint donne un seul rattrapage par tache, pas sept.
+ */
+export function controlesDus(controles, derniers = {}, maintenant = new Date(), ajouts = {}) {
   return controles.filter((c) => {
     // Une tache mal configuree est lancee quand meme : son rapport en echec le dit
     if (c.actif === false) return false;
     const prevu = dernierPassagePrevu(c.cron, maintenant);
     if (!prevu) return false;
-    const dernier = derniers[c.id] ? new Date(derniers[c.id]) : null;
-    return !dernier || Number.isNaN(dernier.getTime()) || dernier < prevu;
+    const reperes = [dateOuNull(derniers[c.id]), dateOuNull(ajouts[c.id])].filter(Boolean);
+    return reperes.every((d) => d < prevu);
   });
 }
 
@@ -87,7 +119,7 @@ export function horaireLisible(cron) {
  * les memes consignes factices (chemin du rapport promis) et la meme forme de
  * config que l'appli Claude, sans toucher a la logique des agents attendus.
  */
-export function commeTachesPlanifiees(controles, derniers = {}) {
+export function commeTachesPlanifiees(controles, derniers = {}, ajouts = {}) {
   return {
     taches: controles.map((c) => ({
       id: c.id,
@@ -99,6 +131,8 @@ export function commeTachesPlanifiees(controles, derniers = {}) {
       cronExpression: c.cron,
       enabled: c.actif !== false,
       lastRunAt: derniers[c.id] ?? null,
+      // Ajoutee apres son heure du jour : rien d'attendu avant le prochain passage
+      ...(dateOuNull(ajouts[c.id]) ? { createdAt: dateOuNull(ajouts[c.id]).getTime() } : {}),
     })),
   };
 }
@@ -107,8 +141,8 @@ export function commeTachesPlanifiees(controles, derniers = {}) {
  * Fusionne les controles dans les taches de Claude. Une tache Claude qui porte
  * le meme id (l'ancien agent, pas encore supprime) est remplacee.
  */
-export function fusionnerTaches({ taches = [], config = null }, controles, derniers) {
-  const scripts = commeTachesPlanifiees(controles, derniers);
+export function fusionnerTaches({ taches = [], config = null }, controles, derniers, ajouts = {}) {
+  const scripts = commeTachesPlanifiees(controles, derniers, ajouts);
   const ids = new Set(controles.map((c) => c.id));
   let claude = [];
   try {

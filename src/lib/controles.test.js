@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   appliquerReglages,
+  commeTachesPlanifiees,
   composerCron,
   controlesDus,
   decomposerCron,
@@ -9,7 +10,9 @@ import {
   file,
   fusionnerTaches,
   horaireLisible,
+  separerAjouts,
 } from "./controles";
+import { agentsAttendus, nbAgentsEnRetard } from "./tachesPlanifiees";
 
 describe("reglages des taches", () => {
   const registre = [
@@ -24,13 +27,56 @@ describe("reglages des taches", () => {
     expect(controlesDus([sante, seo], {}, new Date(2026, 9, 26, 12, 0)).map((c) => c.id)).toEqual(["sante"]);
   });
 
-  it("enregistre une tache nouvelle sans la rattraper", () => {
+  it("enregistre une tache nouvelle comme ajoutee, sans la rattraper ni la dire lancee", () => {
     const maintenant = new Date(2026, 9, 25, 19, 0);
-    const derniers = enregistrerNouvelles(registre, { sante: "2026-10-25T06:30:00.000Z" }, maintenant);
-    expect(derniers).toEqual({ sante: "2026-10-25T06:30:00.000Z", seo: maintenant.toISOString() });
+    const derniers = { sante: new Date(2026, 9, 25, 7, 31).toISOString() };
+    const ajouts = enregistrerNouvelles(registre, derniers, {}, maintenant);
+    // L'ajout va dans `ajouts` : les derniers lancements ne bougent pas
+    expect(ajouts).toEqual({ seo: maintenant.toISOString() });
     // Le SEO de 9 h 05 est deja passe aujourd'hui : il n'est pas du avant demain
-    expect(controlesDus(appliquerReglages(registre), derniers, maintenant)).toEqual([]);
-    expect(enregistrerNouvelles(registre, derniers, maintenant)).toBeNull();
+    expect(controlesDus(appliquerReglages(registre), derniers, maintenant, ajouts)).toEqual([]);
+    expect(controlesDus(appliquerReglages(registre), derniers, new Date(2026, 9, 26, 9, 10), ajouts).map((c) => c.id)).toEqual(["sante", "seo"]);
+    expect(enregistrerNouvelles(registre, derniers, ajouts, maintenant)).toBeNull();
+  });
+
+  it("n'attend pas aujourd'hui une tache ajoutee apres son heure", () => {
+    const maintenant = new Date(2026, 9, 25, 19, 30);
+    const ajoutee = new Date(2026, 9, 25, 19, 28).toISOString();
+    const taches = commeTachesPlanifiees([{ id: "seo", site: "x.fr", titre: "SEO", cron: "5 9 * * *" }], {}, { seo: ajoutee });
+    expect(taches.scheduledTasks[0]).toMatchObject({ lastRunAt: null, createdAt: new Date(ajoutee).getTime() });
+    const attendus = agentsAttendus({ taches: taches.taches, config: JSON.stringify(taches), rapports: [], maintenant });
+    expect(attendus).toEqual([]);
+    expect(nbAgentsEnRetard(attendus)).toBe(0);
+  });
+
+  it("separe les ajouts d'installation (meme instant) des vrais lancements", () => {
+    const installation = "2026-10-25T18:28:26.497Z";
+    const derniers = {
+      "idees-a": installation,
+      "idees-b": installation,
+      sante: "2026-10-25T06:30:02.110Z",
+      bing: "2026-10-25T08:00:41.903Z",
+    };
+    expect(separerAjouts(derniers)).toEqual({
+      derniers: { sante: "2026-10-25T06:30:02.110Z", bing: "2026-10-25T08:00:41.903Z" },
+      ajouts: { "idees-a": installation, "idees-b": installation },
+    });
+    expect(separerAjouts({})).toEqual({ derniers: {}, ajouts: {} });
+  });
+
+  it("ne compte plus comme bloque un agent hebdomadaire seulement ajoute aujourd'hui", () => {
+    // Le cas du badge « 2 » : Idees (samedi) enregistrees dimanche a 19 h 28
+    const maintenant = new Date(2026, 9, 25, 22, 0);
+    const installation = new Date(2026, 9, 25, 19, 28).toISOString();
+    const controles = [
+      { id: "idees-a", site: "a.fr", titre: "Idées", cron: "0 10 * * 6" },
+      { id: "idees-b", site: "b.fr", titre: "Idées", cron: "30 10 * * 6" },
+    ];
+    const avant = commeTachesPlanifiees(controles, { "idees-a": installation, "idees-b": installation });
+    expect(nbAgentsEnRetard(agentsAttendus({ taches: avant.taches, config: JSON.stringify(avant), maintenant }))).toBe(2);
+    const { derniers, ajouts } = separerAjouts({ "idees-a": installation, "idees-b": installation });
+    const apres = commeTachesPlanifiees(controles, derniers, ajouts);
+    expect(nbAgentsEnRetard(agentsAttendus({ taches: apres.taches, config: JSON.stringify(apres), maintenant }))).toBe(0);
   });
 
   it("range les agents Claude dans leur propre file", () => {
@@ -59,6 +105,66 @@ describe("dernierPassagePrevu", () => {
 
   it("remonte jusqu'au dernier lundi pour un controle hebdomadaire", () => {
     expect(dernierPassagePrevu(LUNDI.cron, MAINTENANT)).toEqual(new Date(2026, 9, 19, 7, 0));
+  });
+});
+
+describe("rattrapage des passages manques", () => {
+  const QUOTIDIEN_9H = { id: "seo", cron: "0 9 * * *" };
+  const HEBDO_LUNDI = { id: "audit", cron: "0 7 * * 1" };
+  const SAMEDI = { id: "idees", cron: "0 10 * * 6" };
+  const ids = (liste) => liste.map((c) => c.id);
+  // Lundi 26 octobre 2026
+  const lundi = (h, m = 0) => new Date(2026, 9, 26, h, m);
+
+  it("allume a 10 h : la tache de 9 h est lancee une fois", () => {
+    const derniers = { seo: new Date(2026, 9, 25, 9, 2).toISOString() };
+    expect(ids(controlesDus([QUOTIDIEN_9H], derniers, lundi(10)))).toEqual(["seo"]);
+    // Une fois lancee a 10 h, elle n'est plus due de la journee
+    const apres = { seo: lundi(10, 1).toISOString() };
+    expect(controlesDus([QUOTIDIEN_9H], apres, lundi(10, 2))).toEqual([]);
+    expect(controlesDus([QUOTIDIEN_9H], apres, lundi(23, 59))).toEqual([]);
+    // Et redevient due le lendemain a 9 h, pas avant
+    expect(controlesDus([QUOTIDIEN_9H], apres, new Date(2026, 9, 27, 8, 59))).toEqual([]);
+    expect(ids(controlesDus([QUOTIDIEN_9H], apres, new Date(2026, 9, 27, 9, 0)))).toEqual(["seo"]);
+  });
+
+  it("allume avant l'heure : rien a rattraper, la tache attend son horaire", () => {
+    const derniers = { seo: new Date(2026, 9, 25, 9, 2).toISOString() };
+    expect(controlesDus([QUOTIDIEN_9H], derniers, lundi(8, 30))).toEqual([]);
+  });
+
+  it("une semaine eteint : un seul passage par tache, pas sept", () => {
+    const ilYaUneSemaine = new Date(2026, 9, 19, 9, 1).toISOString();
+    const derniers = { seo: ilYaUneSemaine, audit: new Date(2026, 9, 19, 7, 1).toISOString(), idees: new Date(2026, 9, 17, 10, 5).toISOString() };
+    const dus = controlesDus([QUOTIDIEN_9H, HEBDO_LUNDI, SAMEDI], derniers, lundi(10));
+    expect(ids(dus)).toEqual(["seo", "audit", "idees"]);
+    // Chacune lancee une fois : plus rien de du, quel que soit le retard
+    const relances = Object.fromEntries(["seo", "audit", "idees"].map((id, i) => [id, lundi(10, i + 1).toISOString()]));
+    expect(controlesDus([QUOTIDIEN_9H, HEBDO_LUNDI, SAMEDI], relances, lundi(10, 5))).toEqual([]);
+  });
+
+  it("trois semaines eteint : toujours un seul passage, meme pour une tache hebdomadaire", () => {
+    const derniers = { seo: new Date(2026, 9, 5, 9).toISOString(), audit: new Date(2026, 9, 5, 7).toISOString() };
+    expect(ids(controlesDus([QUOTIDIEN_9H, HEBDO_LUNDI], derniers, lundi(10)))).toEqual(["seo", "audit"]);
+  });
+
+  it("jamais lancee et sans date d'ajout : due a son dernier passage", () => {
+    expect(ids(controlesDus([QUOTIDIEN_9H], {}, lundi(10)))).toEqual(["seo"]);
+  });
+
+  it("une date de lancement illisible ne bloque pas la tache", () => {
+    expect(ids(controlesDus([QUOTIDIEN_9H], { seo: "n'importe quoi" }, lundi(10)))).toEqual(["seo"]);
+  });
+
+  it("une tache desactivee n'est jamais rattrapee", () => {
+    expect(controlesDus([{ ...QUOTIDIEN_9H, actif: false }], {}, lundi(10))).toEqual([]);
+  });
+
+  it("un horaire modifie compte : passee de 9 h a 11 h, elle attend 11 h", () => {
+    const derniers = { seo: new Date(2026, 9, 25, 11, 1).toISOString() };
+    const [modifiee] = appliquerReglages([QUOTIDIEN_9H], { horaires: { seo: "0 11 * * *" } });
+    expect(controlesDus([modifiee], derniers, lundi(10))).toEqual([]);
+    expect(ids(controlesDus([modifiee], derniers, lundi(11)))).toEqual(["seo"]);
   });
 });
 
