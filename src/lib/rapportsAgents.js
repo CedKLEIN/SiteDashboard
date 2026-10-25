@@ -182,6 +182,28 @@ export function dateDepuis(jours, aujourdhui = new Date()) {
   return `${d.getFullYear()}-${mois}-${jour}`;
 }
 
+const MARQUES_POINT = { ok: "OK", attention: "A regarder", echec: "Echec" };
+
+/** Un rapport en texte brut, pret a coller : titre, statut, resume, points et fichier. */
+export function texteRapport(rapport) {
+  const heure = heureRapport(rapport.debut) ?? heureRapport(rapport.fin);
+  const lignes = [
+    `${rapport.titre} — ${rapport.site} — ${rapport.date}${heure ? ` ${heure}` : ""} — ${STATUTS_RAPPORT[rapport.statut]?.libelle ?? rapport.statut}`,
+  ];
+  if (rapport.resume) lignes.push(rapport.resume);
+  for (const point of rapport.points ?? []) {
+    lignes.push(`- [${MARQUES_POINT[point.niveau] ?? point.niveau}] ${point.texte}`);
+  }
+  const fichier = rapport.fichierSuivi ?? rapport.chemin;
+  if (fichier) lignes.push(`Fichier : ${fichier}`);
+  return lignes.join("\n");
+}
+
+/** Tous les rapports d'une journee (une ligne de `regrouperParJournee`), separes par une ligne vide. */
+export function texteJournee(ligne) {
+  return ligne.rapports.map(texteRapport).join("\n\n");
+}
+
 /** '2026-10-24T09:12:00+02:00' -> '09:12' ; null si absent ou illisible. */
 export function heureRapport(horodatage) {
   const correspondance = /T(\d{2}:\d{2})/.exec(String(horodatage ?? ""));

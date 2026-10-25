@@ -11,7 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Bouton, Carte, Champ, EtatVide, Kpi, Selecteur } from "../components/ui";
+import { Bouton, BoutonCopier, Carte, Champ, EtatVide, Kpi, Selecteur } from "../components/ui";
 import {
   basculerCheck,
   coutFixeDuSite,
@@ -91,6 +91,20 @@ function dernierResultat(check) {
     return check.derniere_erreur ?? "OK";
   }
   return `HTTP ${check.dernier_statut}`;
+}
+
+/** Un check et son dernier resultat en une ligne, pret a coller. */
+function texteCheck(check) {
+  const bouts = [check.libelle, check.url];
+  const assertions = resumeAssertions(check);
+  if (assertions) bouts.push(assertions);
+  if (check.derniere_verif) {
+    bouts.push(`${check.dernier_ok ? "OK" : "ECHEC"} : ${dernierResultat(check)} a ${heure(check.derniere_verif)}`);
+  } else {
+    bouts.push("jamais verifie");
+  }
+  if (check.derniere_latence != null) bouts.push(`${check.derniere_latence} ms`);
+  return bouts.join(" — ");
 }
 
 export default function DetailSite({
@@ -425,6 +439,11 @@ export default function DetailSite({
                     {check.derniere_latence == null ? "—" : `${check.derniere_latence} ms`}
                   </td>
                   <td className="py-2 pl-2 text-right whitespace-nowrap">
+                    <BoutonCopier
+                      texte={() => texteCheck(check)}
+                      titre="Copier ce check et son resultat"
+                      className="mr-1 align-middle"
+                    />
                     <Bouton
                       variante="fantome"
                       className="mr-1 px-1.5 py-1"
@@ -645,6 +664,12 @@ export default function DetailSite({
                       {jours === 0 ? "change aujourd'hui" : `inchange depuis ${jours} j`}
                     </span>
                   )}
+                  <BoutonCopier
+                    texte={() =>
+                      `${check.libelle} — ${check.url} — ${check.valeur_courante ?? (check.derniere_erreur || "—")}`
+                    }
+                    titre="Copier cette information"
+                  />
                   <Bouton
                     variante="fantome"
                     className="px-1.5 py-1"
@@ -669,7 +694,21 @@ export default function DetailSite({
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Carte titre="Incidents recents">
+        <Carte
+          titre="Incidents recents"
+          action={
+            incidents.length > 0 && (
+              <BoutonCopier
+                texte={() =>
+                  incidents
+                    .map((i) => `${heure(i.verifie_le)} — ${i.check_libelle} — ${i.erreur ?? "echec"}`)
+                    .join("\n")
+                }
+                titre="Copier les incidents"
+              />
+            )
+          }
+        >
           {incidents.length === 0 ? (
             <EtatVide>Aucun incident sur 24 h.</EtatVide>
           ) : (

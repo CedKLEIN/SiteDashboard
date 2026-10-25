@@ -8,7 +8,20 @@ import {
   plusLongueDuree,
   rapportPromis,
   situationAgent,
+  texteAttendu,
 } from "./tachesPlanifiees";
+
+describe("texteAttendu", () => {
+  it("resume un agent attendu en une ligne", () => {
+    const base = { titre: "Sante", site: "denivio.fr", heure: "09:04", message: "Lance a 09:04" };
+    expect(texteAttendu({ ...base, situation: "bloque", rapport: null })).toBe(
+      "Sante — denivio.fr — Bloque ? (09:04) : Lance a 09:04",
+    );
+    expect(texteAttendu({ ...base, heure: null, situation: "recu", rapport: {}, message: "RAS" })).toBe(
+      "Sante — denivio.fr — Rapport recu : RAS",
+    );
+  });
+});
 
 const SKILL_SANTE = `Etapes...
 8. Rapport pour SiteDashboard : ecris \`C:\\Users\\moi\\.claude\\rapports-agents\\denivio.fr\\<AAAA-MM-JJ>\\sante-prod.json\`.

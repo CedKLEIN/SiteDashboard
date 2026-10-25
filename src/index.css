@@ -27,13 +27,16 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Empeche la selection de texte facon page web dans une fenetre native */
-body {
+/*
+ * Le texte se selectionne partout : statuts, messages d'erreur et rapports
+ * doivent pouvoir se copier-coller. Seuls les controles et les titres restent
+ * insensibles, pour qu'un clic sur un onglet ou un bouton ne surligne rien.
+ */
+nav,
+button,
+h1,
+h2,
+h3,
+th {
   user-select: none;
-}
-input,
-textarea,
-select,
-table {
-  user-select: text;
 }

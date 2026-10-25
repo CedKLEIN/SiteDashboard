@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ChevronDown, ChevronRight, CircleDashed, FolderOpen, RefreshCw } from "lucide-react";
 import { ICONES } from "../components/CarteSite";
-import { Bouton, Carte, EtatVide } from "../components/ui";
+import { Bouton, BoutonCopier, Carte, EtatVide } from "../components/ui";
 import { couleurEtat, iconeEtat, libelleEtat } from "../lib/statut";
 import {
   JOURS_HISTORIQUE,
@@ -14,8 +14,10 @@ import {
   lireRapport,
   rattacherSite,
   regrouperParJournee,
+  texteJournee,
+  texteRapport,
 } from "../lib/rapportsAgents";
-import { SITUATIONS } from "../lib/tachesPlanifiees";
+import { SITUATIONS, texteAttendu } from "../lib/tachesPlanifiees";
 import { tracer } from "../lib/trace";
 
 const LIBELLES_VERDICT = {
@@ -68,11 +70,12 @@ function DetailRapport({ rapport }) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <p className="text-sm font-semibold text-texte">{rapport.titre}</p>
-          <p className="text-[11px] text-texte-doux tabular-nums">
+          <p className="flex items-center gap-1 text-[11px] text-texte-doux tabular-nums">
             <span style={{ color: couleurEtat(etat) }}>
               {STATUTS_RAPPORT[rapport.statut].libelle}
             </span>
             {heure && ` · ${heure}`}
+            <BoutonCopier texte={() => texteRapport(rapport)} titre="Copier ce rapport" />
           </p>
         </div>
         {rapport.resume && <p className="mt-1 text-xs text-texte-doux">{rapport.resume}</p>}
@@ -134,11 +137,19 @@ function LigneJournee({ ligne, site, ouverte, onBasculer }) {
         <Chevron size={16} className="shrink-0 text-texte-doux" />
       </button>
       {ouverte && (
-        <ul className="flex flex-col gap-2 border-t border-bord p-3">
-          {ligne.rapports.map((r) => (
-            <DetailRapport key={r.cle} rapport={r} />
-          ))}
-        </ul>
+        <div className="border-t border-bord p-3">
+          <div className="mb-2 flex justify-end">
+            <span className="flex items-center gap-1 text-[11px] text-texte-doux">
+              Copier toute la journee
+              <BoutonCopier texte={() => texteJournee(ligne)} titre="Copier tous les rapports du jour" />
+            </span>
+          </div>
+          <ul className="flex flex-col gap-2">
+            {ligne.rapports.map((r) => (
+              <DetailRapport key={r.cle} rapport={r} />
+            ))}
+          </ul>
+        </div>
       )}
     </li>
   );
@@ -160,9 +171,13 @@ function LigneAttendu({ attendu, site }) {
             {attendu.titre}
             <span className="ml-2 font-normal text-texte-doux">{site?.nom ?? attendu.site}</span>
           </p>
-          <p className="text-[11px] tabular-nums" style={{ color: couleurEtat(etat) }}>
+          <p className="flex items-center gap-1 text-[11px] tabular-nums" style={{ color: couleurEtat(etat) }}>
             {libelle}
             {attendu.heure && <span className="text-texte-doux"> · {attendu.heure}</span>}
+            <BoutonCopier
+              texte={() => (rapport ? texteRapport(rapport) : texteAttendu(attendu))}
+              titre="Copier"
+            />
           </p>
         </div>
         <p className={`text-xs ${enRetard ? "text-texte" : "text-texte-doux"}`}>{attendu.message}</p>
@@ -186,7 +201,13 @@ function AttendusAujourdhui({ attendus, configTrouvee, sites }) {
 
   return (
     <Carte>
-      <h2 className="text-sm font-semibold">Attendus aujourd'hui</h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold">Attendus aujourd'hui</h2>
+        <BoutonCopier
+          texte={() => attendus.map(texteAttendu).join("\n")}
+          titre="Copier la liste des agents attendus"
+        />
+      </div>
       <ul className="mt-1 flex flex-col divide-y divide-bord">
         {attendus.map((a) => (
           <LigneAttendu key={a.id} attendu={a} site={rattacherSite(a.site, sites)} />

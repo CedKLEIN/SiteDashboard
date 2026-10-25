@@ -7,8 +7,45 @@ import {
   lireRapport,
   rattacherSite,
   regrouperParJournee,
+  texteJournee,
+  texteRapport,
   verdictJournee,
 } from "./rapportsAgents";
+
+describe("texteRapport et texteJournee", () => {
+  const complet = {
+    titre: "Sante de la prod",
+    site: "denivio.fr",
+    date: "2026-10-25",
+    debut: "2026-10-25T09:04:00+01:00",
+    statut: "attention",
+    resume: "Une page lente",
+    points: [
+      { niveau: "ok", texte: "API OK" },
+      { niveau: "attention", texte: "/cols lente (2 s)" },
+    ],
+    fichierSuivi: "C:\\suivi.md",
+    chemin: "C:\\rapport.json",
+  };
+
+  it("met un rapport en texte, points et fichier de suivi compris", () => {
+    expect(texteRapport(complet)).toBe(
+      [
+        "Sante de la prod — denivio.fr — 2026-10-25 09:04 — A regarder",
+        "Une page lente",
+        "- [OK] API OK",
+        "- [A regarder] /cols lente (2 s)",
+        "Fichier : C:\\suivi.md",
+      ].join("\n"),
+    );
+  });
+
+  it("se contente d'un rapport minimal et separe les rapports d'une journee", () => {
+    const minimal = { titre: "seo", site: "x.fr", date: "2026-10-25", statut: "ok", chemin: "C:\\r.json" };
+    expect(texteRapport(minimal)).toBe("seo — x.fr — 2026-10-25 — OK\nFichier : C:\\r.json");
+    expect(texteJournee({ rapports: [minimal, minimal] })).toContain("C:\\r.json\n\nseo");
+  });
+});
 
 const CHEMIN = "C:\\Users\\moi\\.claude\\rapports-agents\\denivio.fr\\2026-10-24\\sante-prod.json";
 

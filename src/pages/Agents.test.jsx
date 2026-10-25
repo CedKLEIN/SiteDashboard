@@ -4,6 +4,8 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args) => invoke(...args) }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ revealItemInDir: vi.fn(() => Promise.resolve()) }));
+const writeText = vi.fn(() => Promise.resolve());
+vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: (...args) => writeText(...args) }));
 
 const { default: Agents } = await import("./Agents");
 
@@ -22,6 +24,7 @@ const SITES = [{ id: 1, nom: "Denivio", url: "https://denivio.fr", couleur: "#22
 afterEach(() => {
   cleanup();
   invoke.mockReset();
+  writeText.mockClear();
 });
 
 describe("page Agents", () => {
@@ -56,6 +59,14 @@ describe("page Agents", () => {
     expect(screen.getByText("Quota Google atteint")).toBeTruthy();
     expect(screen.getByText("7 avertissements Bing")).toBeTruthy();
     expect(screen.getByText("Sante de la prod")).toBeTruthy();
+
+    // Copier un rapport ne replie pas la ligne et met le texte complet au presse-papiers
+    // Sans heure de debut, les rapports suivent l'ordre des titres: Indexation d'abord
+    fireEvent.click(screen.getAllByRole("button", { name: "Copier ce rapport" })[0]);
+    expect(writeText).toHaveBeenCalledWith(
+      expect.stringContaining("Indexation — denivio.fr — 2026-10-24 — A regarder\nQuota Google atteint\n- [A regarder] 7 avertissements Bing"),
+    );
+    expect(screen.getByText("Quota Google atteint")).toBeTruthy();
   });
 
   it("demande les rapports depuis la date de debut d'historique", async () => {

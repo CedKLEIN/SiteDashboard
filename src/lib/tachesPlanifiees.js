@@ -228,6 +228,13 @@ export function agentsAttendus({ taches = [], config = "", rapports = [], mainte
   return attendus.sort((a, b) => String(a.prevueA ?? "").localeCompare(String(b.prevueA ?? "")));
 }
 
+/** Un agent attendu en une ligne de texte, pret a coller. */
+export function texteAttendu(attendu) {
+  const libelle = attendu.rapport ? "Rapport recu" : SITUATIONS[attendu.situation].libelle;
+  const heure = attendu.heure ? ` (${attendu.heure})` : "";
+  return `${attendu.titre} — ${attendu.site} — ${libelle}${heure} : ${attendu.message}`;
+}
+
 /** Nombre d'agents qui demandent un regard : bloques ou jamais lances. */
 export function nbAgentsEnRetard(attendus) {
   return attendus.filter((a) => a.situation === "bloque" || a.situation === "non_lance").length;

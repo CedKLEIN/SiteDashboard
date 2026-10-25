@@ -1,3 +1,43 @@
+import { useState } from "react";
+import { Check, Copy } from "lucide-react";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { tracer } from "../lib/trace";
+
+/**
+ * Petit bouton qui copie un texte dans le presse-papiers.
+ *
+ * Pour ce que la selection a la souris attrape mal : un texte tronque par
+ * une ellipse, ou plusieurs lignes qu'on veut coller d'un bloc. `texte` peut
+ * etre une fonction, evaluee au clic seulement.
+ */
+export function BoutonCopier({ texte, titre = "Copier", className = "" }) {
+  const [copie, setCopie] = useState(false);
+
+  async function copier(evenement) {
+    // Dans une ligne cliquable, copier ne doit pas aussi l'ouvrir ou la replier
+    evenement.stopPropagation();
+    try {
+      await writeText(typeof texte === "function" ? texte() : String(texte ?? ""));
+      setCopie(true);
+      setTimeout(() => setCopie(false), 1500);
+    } catch (e) {
+      tracer("copie", `copie impossible: ${e}`);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={copier}
+      title={copie ? "Copie !" : titre}
+      aria-label={titre}
+      className={`shrink-0 rounded p-1 text-texte-doux opacity-60 transition hover:bg-surface-2 hover:text-texte hover:opacity-100 ${className}`}
+    >
+      {copie ? <Check size={12} /> : <Copy size={12} />}
+    </button>
+  );
+}
+
 export function Carte({ titre, action, className = "", children }) {
   return (
     <section
