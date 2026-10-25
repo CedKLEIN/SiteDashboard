@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { horodatage, sauvegardeDue } from "./sauvegarde";
+import { analyserIntegrite, horodatage, sauvegardeDue } from "./sauvegarde";
+
+describe("analyserIntegrite", () => {
+  it("distingue une base saine, un index a reconstruire et une base abimee", () => {
+    expect(analyserIntegrite(["ok"])).toBe("ok");
+    // Le cas constate le 25/10/2026
+    expect(
+      analyserIntegrite([
+        "row 1 missing from index idx_verifications_check",
+        "wrong # of entries in index idx_verifications_check",
+      ]),
+    ).toBe("index");
+    expect(analyserIntegrite(["*** in database main ***\nPage 12: btreeInitPage() returns error code 11"])).toBe(
+      "grave",
+    );
+  });
+});
 
 describe("horodatage", () => {
   it("donne un nom triable, en heure locale", () => {

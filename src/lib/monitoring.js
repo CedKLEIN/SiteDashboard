@@ -5,6 +5,7 @@ import {
   enregistrerVerification,
   purgerVerifications,
 } from "./queries";
+import { alerterBaseAbimee } from "./notifications";
 import { sauvegarderSiBesoin } from "./sauvegarde";
 import { tracer } from "./trace";
 import { evaluerCertificat } from "./statut";
@@ -37,8 +38,16 @@ async function entretienQuotidien(maintenant) {
   if (jour === jourDernierEntretien) return;
   jourDernierEntretien = jour;
   try {
-    const chemin = await sauvegarderSiBesoin(maintenant);
-    if (chemin) tracer("sauvegarde", `base sauvegardee: ${chemin}`);
+    const resultat = await sauvegarderSiBesoin(maintenant);
+    if (resultat) {
+      const { chemin, integrite } = resultat;
+      tracer("sauvegarde", `base sauvegardee: ${chemin}`);
+      if (integrite.repare) tracer("sauvegarde", `${integrite.avant} defaut(s) d'index repare(s)`);
+      if (integrite.etat === "grave") {
+        tracer("sauvegarde", `base abimee: ${integrite.messages.slice(0, 3).join(" | ")}`);
+        await alerterBaseAbimee(integrite.messages);
+      }
+    }
   } catch (erreur) {
     tracer("sauvegarde", `sauvegarde impossible: ${erreur}`);
   }

@@ -9,6 +9,7 @@ import {
   SAUVEGARDES_GARDEES,
   derniereSauvegarde,
   sauvegarder,
+  verifierEtReparer,
 } from "../lib/sauvegarde";
 import { JOURS_HISTORIQUE_VERIFICATIONS } from "../lib/monitoring";
 import { notificationTest } from "../lib/notifications";
@@ -105,9 +106,16 @@ function Sauvegardes() {
     setEnCours(true);
     setMessage(null);
     try {
+      const integrite = await verifierEtReparer();
       const chemin = await sauvegarder();
       setDerniere(new Date().toISOString());
-      setMessage({ ok: true, texte: `Sauvegarde ecrite : ${chemin}` });
+      const etat =
+        integrite.etat === "grave"
+          ? ` — attention, base abimee : ${integrite.messages[0]}`
+          : integrite.repare
+            ? ` — ${integrite.avant} defaut(s) d'index repare(s) avant la copie`
+            : "";
+      setMessage({ ok: integrite.etat !== "grave", texte: `Sauvegarde ecrite : ${chemin}${etat}` });
     } catch (e) {
       setMessage({ ok: false, texte: `Sauvegarde impossible : ${e}` });
     } finally {

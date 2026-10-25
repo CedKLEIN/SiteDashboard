@@ -92,6 +92,15 @@ async function autorise() {
   return autorisation;
 }
 
+/** Previent que la base est abimee au-dela d'un index : a restaurer depuis une sauvegarde. */
+export async function alerterBaseAbimee(messages) {
+  if (!(await autorise())) return;
+  sendNotification({
+    title: "SiteDashboard : base de donnees abimee",
+    body: `${messages[0] ?? "controle d'integrite en echec"} - restaure une sauvegarde (Preferences > Donnees).`,
+  });
+}
+
 /** Envoie une notification de test ; false si Windows ne l'autorise pas. */
 export async function notificationTest() {
   if (!(await autorise())) return false;
