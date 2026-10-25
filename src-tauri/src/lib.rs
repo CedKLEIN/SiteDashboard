@@ -6,6 +6,7 @@ mod checks;
 mod devises;
 mod domaine;
 mod icones;
+mod mise_a_jour;
 mod reseau;
 mod sauvegarde;
 
@@ -138,6 +139,8 @@ pub fn run() {
             sauvegarde::chemin_sauvegarde,
             sauvegarde::nettoyer_sauvegardes,
             sauvegarde::dossier_sauvegardes,
+            mise_a_jour::etat_mise_a_jour,
+            mise_a_jour::lancer_mise_a_jour,
             tracer
         ])
         .run(tauri::generate_context!())

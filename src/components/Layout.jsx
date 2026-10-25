@@ -1,6 +1,7 @@
 import {
   BadgeEuro,
   Bot,
+  Download,
   Globe,
   LayoutDashboard,
   Receipt,
@@ -26,6 +27,7 @@ export default function Layout({
   verificationEnCours,
   intervalleS,
   alertes = {},
+  miseAJour = null,
   children,
 }) {
   return (
@@ -64,6 +66,20 @@ export default function Layout({
         </div>
 
         <div className="mt-auto px-2 pt-4">
+          {miseAJour?.disponible && (
+            <button
+              type="button"
+              onClick={() => onChangerOnglet("preferences")}
+              className="mb-3 flex w-full items-center gap-2 rounded-lg border border-accent/50 bg-accent/10 px-2.5 py-2 text-left text-xs text-texte transition hover:bg-accent/20"
+              title="Voir la mise a jour dans les Preferences"
+            >
+              <Download size={14} className="shrink-0 text-accent" />
+              <span>
+                Mise a jour disponible
+                <span className="block text-[10px] text-texte-doux">{miseAJour.libelle}</span>
+              </span>
+            </button>
+          )}
           <p className="flex items-center gap-2 text-[11px] text-texte-doux">
             <span
               className={`size-1.5 rounded-full bg-accent ${verificationEnCours ? "animate-pulse" : "opacity-40"}`}

@@ -13,6 +13,7 @@ import { lancerCycle } from "./lib/monitoring";
 import { nbAgentsEnRetard } from "./lib/tachesPlanifiees";
 import { useAgentsAttendus } from "./lib/useAgentsAttendus";
 import { useNotifications } from "./lib/useNotifications";
+import { resumeMiseAJour, useMiseAJour } from "./lib/miseAJour";
 import { lirePreference, listerSites } from "./lib/queries";
 import { tracer } from "./lib/trace";
 
@@ -90,6 +91,7 @@ export default function App() {
 
   const agents = useAgentsAttendus(revision);
   useNotifications(revision, agents.attendus);
+  const miseAJour = useMiseAJour();
 
   const site = sites.find((s) => s.id === siteOuvert);
 
@@ -108,7 +110,11 @@ export default function App() {
       />
     ),
     preferences: (
-      <Preferences onModification={signalerModification} cheminBase={cheminBase} />
+      <Preferences
+        onModification={signalerModification}
+        cheminBase={cheminBase}
+        miseAJour={miseAJour}
+      />
     ),
   };
 
@@ -125,6 +131,7 @@ export default function App() {
       verificationEnCours={verificationEnCours}
       intervalleS={intervalleS}
       alertes={{ agents: nbAgentsEnRetard(agents.attendus) }}
+      miseAJour={resumeMiseAJour(miseAJour.etat)}
     >
       {site ? (
         <DetailSite

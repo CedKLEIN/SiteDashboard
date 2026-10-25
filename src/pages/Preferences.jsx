@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { FolderOpen, HardDriveDownload } from "lucide-react";
+import { Download, FolderOpen, HardDriveDownload, RefreshCw } from "lucide-react";
+import { commitCourt, lancerMiseAJour, resumeMiseAJour } from "../lib/miseAJour";
 import { Bouton, BoutonCopier, Carte, Selecteur } from "../components/ui";
 import { ecrirePreference, lirePreference } from "../lib/queries";
 import {
@@ -15,6 +16,82 @@ import { JOURS_HISTORIQUE_VERIFICATIONS } from "../lib/monitoring";
 import { notificationTest } from "../lib/notifications";
 import { CLE_NOTIFICATIONS } from "../lib/useNotifications";
 import { tracer } from "../lib/trace";
+
+/** Version installee, commits plus recents du depot, et lancement de l'installeur. */
+function MiseAJour({ etat, verifier }) {
+  const [lancee, setLancee] = useState(false);
+  const [erreur, setErreur] = useState(null);
+  const resume = resumeMiseAJour(etat);
+
+  async function lancer() {
+    setErreur(null);
+    try {
+      await lancerMiseAJour();
+      setLancee(true);
+    } catch (e) {
+      setErreur(String(e));
+    }
+  }
+
+  return (
+    <Carte
+      titre="Mise a jour"
+      action={
+        <Bouton variante="fantome" className="px-2 py-1 text-xs" onClick={verifier}>
+          <span className="flex items-center gap-1.5">
+            <RefreshCw size={12} />
+            Verifier
+          </span>
+        </Bouton>
+      }
+    >
+      <p className="text-xs text-texte-doux">
+        Version installee : <span className="font-mono text-texte">{commitCourt(etat?.commit_installe)}</span>
+        {etat?.commit_depot && (
+          <>
+            {" "}
+            · depot ({etat.branche ?? "?"}) :{" "}
+            <span className="font-mono text-texte">{commitCourt(etat.commit_depot)}</span>
+          </>
+        )}
+      </p>
+      <p className={`mt-1 text-sm ${resume.disponible ? "text-texte" : "text-texte-doux"}`}>
+        {resume.libelle}
+      </p>
+
+      {resume.disponible && (
+        <ul className="mt-2 flex max-h-40 flex-col gap-0.5 overflow-y-auto rounded-lg bg-fond px-2.5 py-2 font-mono text-[11px]">
+          {etat.nouveaux.map((ligne) => (
+            <li key={ligne} className="truncate" title={ligne}>
+              {ligne}
+            </li>
+          ))}
+        </ul>
+      )}
+      {etat?.modifications_locales > 0 && (
+        <p className="mt-2 text-xs text-texte-doux">
+          {etat.modifications_locales} fichier(s) modifie(s) non commite(s) dans le depot : ils
+          seraient compiles aussi.
+        </p>
+      )}
+
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <Bouton onClick={lancer} disabled={!resume.disponible || lancee}>
+          <span className="flex items-center gap-1.5">
+            <Download size={14} />
+            Mettre a jour
+          </span>
+        </Bouton>
+        <p className="text-xs text-texte-doux">
+          {lancee
+            ? "Mise a jour lancee : suis la console. L'appli va se fermer puis se rouvrir (quelques minutes)."
+            : "Compile le depot local, ferme l'appli, installe la nouvelle version et la relance."}
+        </p>
+      </div>
+      {erreur && <p className="mt-2 text-xs text-depense">{erreur}</p>}
+    </Carte>
+  );
+}
 
 /** Notifications Windows : activation et essai. */
 function Notifications() {
@@ -187,7 +264,7 @@ const INTERVALLES = [
   { valeur: 3600, libelle: "1 heure" },
 ];
 
-export default function Preferences({ onModification, cheminBase }) {
+export default function Preferences({ onModification, cheminBase, miseAJour }) {
   const [intervalle, setIntervalle] = useState(String(INTERVALLE_DEFAUT_S));
   const [enregistre, setEnregistre] = useState(false);
 
@@ -215,6 +292,8 @@ export default function Preferences({ onModification, cheminBase }) {
   return (
     <div className="flex flex-col gap-5">
       <h1 className="text-lg font-semibold">Preferences</h1>
+
+      {miseAJour && <MiseAJour etat={miseAJour.etat} verifier={miseAJour.verifier} />}
 
       <Carte titre="Supervision">
         <div className="flex flex-wrap items-end gap-4">
