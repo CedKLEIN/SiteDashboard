@@ -37,6 +37,8 @@ describe("test de connexion a Chrome avant un agent", () => {
   it("la consigne ne demande qu'une action et une reponse fixe", () => {
     expect(CONSIGNE_TEST_CHROME).toContain("mcp__claude-in-chrome__tabs_context_mcp");
     expect(CONSIGNE_TEST_CHROME).toContain("CHROME_CONNECTE");
+    // Sans groupe d'onglets, l'outil repond quand meme : il en cree un
+    expect(CONSIGNE_TEST_CHROME).toContain("createIfEmpty: true");
   });
 
   it("dit quoi faire, avec le compte de Claude Code, et annonce le nouvel essai", () => {

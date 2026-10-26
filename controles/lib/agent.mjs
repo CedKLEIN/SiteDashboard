@@ -135,8 +135,12 @@ export function ouvrirJournal(id, debut) {
 
 const REPONSE_CONNECTE = "CHROME_CONNECTE";
 
-/** Consigne du test de connexion a Chrome : une seule action, une reponse fixe. */
-export const CONSIGNE_TEST_CHROME = `Appelle l'outil mcp__claude-in-chrome__tabs_context_mcp (charge-le avec ToolSearch s'il le faut), sans rien faire d'autre. S'il renvoie une liste d'onglets ou un groupe d'onglets, réponds exactement ${REPONSE_CONNECTE}. Sinon réponds CHROME_NON_CONNECTE suivi du message d'erreur exact.`;
+/**
+ * Consigne du test de connexion a Chrome : une seule action, une reponse fixe.
+ * Seule une extension injoignable compte comme deconnectee : « pas encore de
+ * groupe d'onglets » veut dire que l'extension a repondu.
+ */
+export const CONSIGNE_TEST_CHROME = `Appelle l'outil mcp__claude-in-chrome__tabs_context_mcp avec createIfEmpty: true (charge-le avec ToolSearch s'il le faut), sans rien faire d'autre. Si l'outil dit que l'extension n'est pas connectée ou pas joignable (« not connected », « isn't reachable »), ou s'il n'existe pas, réponds CHROME_NON_CONNECTE suivi du message d'erreur exact. Dans tous les autres cas (liste d'onglets, groupe créé, pas de groupe encore), l'extension a répondu : réponds exactement ${REPONSE_CONNECTE}.`;
 
 /** La sortie du test dit-elle que l'extension repond ? */
 export function chromeConnecte(sortie) {
