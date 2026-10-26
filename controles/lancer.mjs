@@ -51,6 +51,20 @@ export function suitesDemandees(controle, suites, registre, lireEtatDe = lireEta
   );
 }
 
+/**
+ * Option `relancerApres` d'un modele : quand son passage a corrige quelque chose
+ * (`resultat.corrige`), la tache qui l'avait demande (`declenchePar`, meme site)
+ * repasse une fois pour le constater. Une seule fois : cette relance ne demande
+ * pas de nouvelle relance, et le correctif ne repart pas pour une signature deja
+ * traitee. Au-dela, c'est a la main.
+ */
+export function relanceApres(controle, resultat, registre) {
+  if (!controle.parametres?.relancerApres || !resultat?.corrige || !controle.declenchePar) return [];
+  return registre
+    .filter((c) => c.modele === controle.declenchePar && c.siteCle === controle.siteCle && !c.erreur)
+    .map((c) => c.id);
+}
+
 /** Fusionne l'analyse de Claude dans le rapport du script. */
 export function avecAnalyse(rapport, analyse, { reprise = null } = {}) {
   return {
@@ -153,7 +167,7 @@ export async function lancer(id, { claude = true, ecrire = true } = {}) {
   }
 
   rapport.fin = isoLocal(new Date());
-  const suites = suitesDemandees(controle, resultat.suites, registre);
+  const suites = [...new Set([...suitesDemandees(controle, resultat.suites, registre), ...relanceApres(controle, resultat, registre)])];
   if (!ecrire) {
     // --essai : on montre tout, on n'ecrit rien (ni rapport, ni journal, ni etat)
     console.log(JSON.stringify(rapport, null, 2));

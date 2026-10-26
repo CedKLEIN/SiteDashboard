@@ -11,7 +11,10 @@
  *
  * Garde-fous : rien n'est fait sur un depot qui a du travail en cours ; pas de
  * --force (une version majeure se fait a la main) ; commit LOCAL seulement, sur
- * la branche `correctifs/<jour>` : rien n'est pousse ni deploye.
+ * la branche `correctifs/<jour>` : rien n'est pousse ni deploye. Avec le
+ * parametre `fusionner`, cette branche est fusionnee en local dans la branche
+ * de depart une fois les verifications passees ; `relancerApres` fait alors
+ * repasser l'audit une fois (voir lancer.mjs, relanceApres).
  *
  * Sans horaire : lancee a la main, ou a la demande de l'audit hebdomadaire
  * (voir lancer.mjs, `suites`). La fiche du site donne `correctifs.dossier` et
@@ -88,9 +91,11 @@ Termine par 2 à 5 lignes : ce que tu as changé et pourquoi, ou pourquoi tu n'a
  * Le deroulement, avec ses dependances passees en parametre (tests) :
  * `sh(commande)` -> { code, sortie }, execute dans le depot ; `reparer(contexte)`
  * -> Promise<{ code, sortie } | null> (null : Claude indisponible).
- * Renvoie { points, resume, etapes, signature }.
+ * `fusionner` : une fois les verifications passees, la branche du correctif est
+ * fusionnee dans la branche de depart (en local, rien n'est pousse).
+ * Renvoie { points, resume, etapes, signature, fusionnee }.
  */
-export async function corriger({ verifications, jour, essai = false, sh, reparer }) {
+export async function corriger({ verifications, jour, essai = false, fusionner = false, sh, reparer }) {
   const points = [];
   // Points annexes (versions majeures a faire a la main), apres le resultat principal
   const annexes = [];
@@ -160,16 +165,24 @@ export async function corriger({ verifications, jour, essai = false, sh, reparer
     ajouter("echec", `Création de la branche ${branche} impossible`);
     return fini("Correctif impossible : branche non créée.", signature);
   }
-  // Revient a la branche de depart, node_modules resynchronise avec son package-lock
-  const revenir = ({ supprimer }) => {
+  // Revient a la branche de depart, node_modules resynchronise avec son package-lock.
+  // `fusionner` : la branche du correctif y est fusionnee (avance rapide seulement,
+  // en local) ; renvoie true si c'est fait.
+  const revenir = ({ supprimer, fusionner: fusion = false }) => {
     if (supprimer) {
       ok("git reset --hard");
       ok("git clean -fd");
     }
     ok(`git switch ${depart}`);
     if (supprimer) ok(`git branch -D ${branche}`);
+    let fusionnee = false;
+    if (fusion && ok(`git merge --ff-only ${branche}`).code === 0) {
+      ok(`git branch -d ${branche}`);
+      fusionnee = true;
+    }
     // ci et pas install : install pourrait reecrire package-lock et salir le depot
     ok("npm.cmd ci --no-audit --no-fund");
+    return fusionnee;
   };
 
   const verifier = () => {
@@ -236,18 +249,27 @@ export async function corriger({ verifications, jour, essai = false, sh, reparer
     ajouter("echec", "Le commit a échoué : correctif annulé");
     return fini("Correctif annulé : commit impossible.", signature);
   }
-  revenir({ supprimer: false });
+  const fusionnee = revenir({ supprimer: false, fusionner });
   const restantes = apres.filter(grave);
-  ajouter(
-    "attention",
-    `${corriges.length} paquet(s) corrigé(s) (${corriges.join(", ")}), vérifications OK : branche \`${branche}\` à fusionner (rien n'est poussé)`,
-  );
+  if (fusionnee) {
+    ajouter("ok", `${corriges.length} paquet(s) corrigé(s) (${corriges.join(", ")}), vérifications OK : fusionné dans \`${depart}\` (commit local, rien n'est poussé)`);
+  } else {
+    ajouter(
+      "attention",
+      `${corriges.length} paquet(s) corrigé(s) (${corriges.join(", ")}), vérifications OK : branche \`${branche}\` à fusionner (rien n'est poussé)${fusionner ? " ; la fusion automatique a échoué" : ""}`,
+    );
+  }
   if (claude) ajouter("attention", `Claude a pris le relais : relis le diff. ${fin(claude.sortie, 4)}`);
   if (restantes.length) ajouter("attention", `Encore ${restantes.length} vulnérabilité(s) haute(s) ou critique(s) : ${restantes.map((v) => v.nom).join(", ")}`);
-  return fini(
-    `${corriges.length} paquet(s) corrigé(s)${claude ? " avec l'aide de Claude" : ""}, vérifications OK : la branche ${branche} est prête à fusionner.`,
-    signature,
-  );
+  return {
+    ...fini(
+      fusionnee
+        ? `${corriges.length} paquet(s) corrigé(s)${claude ? " avec l'aide de Claude" : ""}, vérifications OK : fusionné dans ${depart}, à pousser quand tu veux.`
+        : `${corriges.length} paquet(s) corrigé(s)${claude ? " avec l'aide de Claude" : ""}, vérifications OK : la branche ${branche} est prête à fusionner.`,
+      signature,
+    ),
+    fusionnee,
+  };
 }
 
 export async function executer(controle, { etat, essai = false }) {
@@ -274,8 +296,10 @@ export async function executer(controle, { etat, essai = false }) {
     });
   };
 
-  const r = await corriger({ verifications, jour: jourLocal(debut), essai, sh, reparer });
+  const r = await corriger({ verifications, jour: jourLocal(debut), essai, fusionner: controle.parametres?.fusionner === true, sh, reparer });
   return {
+    // Lu par lancer.mjs : le code de la branche de travail a change, la tache qui a demande le correctif peut revérifier
+    corrige: Boolean(r.fusionnee),
     points: r.points,
     resume: r.resume,
     sectionJournal: `Dossier : \`${dossier}\`\n\n${tableau(["Étape"], r.etapes.map((e) => [e]))}`,

@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { consigneReparation, corriger, nomBranche } from "./correctifs.mjs";
 import { grave, signatureCorrectifs, vulnerabilites } from "./lib/dependances.mjs";
-import { suitesDemandees } from "./lancer.mjs";
+import { relanceApres, suitesDemandees } from "./lancer.mjs";
 
 const AUDIT = {
   vulnerabilities: {
@@ -30,6 +30,7 @@ function fauxDepot({
   echecs = {},
   branches = [],
   commitEchoue = false,
+  fusionEchoue = false,
 } = {}) {
   const etat = { branche, modifie: enCours, audit, branches: new Set([branche, ...branches]), commits: [], echecs: { ...echecs } };
   const commandes = [];
@@ -49,8 +50,14 @@ function fauxDepot({
       etat.branche = c.slice("git switch ".length);
       return ok();
     }
-    if (c.startsWith("git branch -D ")) {
+    if (c.startsWith("git branch -D ") || c.startsWith("git branch -d ")) {
       etat.branches.delete(c.slice("git branch -D ".length));
+      return ok();
+    }
+    if (c.startsWith("git merge --ff-only ")) {
+      if (fusionEchoue) return { code: 128, sortie: "fatal: Not possible to fast-forward, aborting." };
+      const source = c.slice("git merge --ff-only ".length);
+      for (const x of etat.commits.filter((x) => x.branche === source)) etat.commits.push({ ...x, branche: etat.branche });
       return ok();
     }
     if (c === "git reset --hard" || c === "git clean -fd") {
@@ -140,6 +147,28 @@ describe("audit -> correctif (suites)", () => {
   });
 });
 
+describe("correctif -> l'audit repasse une fois (relancerApres)", () => {
+  const registre = [
+    { id: "audit-hebdo-denivio", modele: "audit-hebdo", siteCle: "denivio" },
+    { id: "audit-hebdo-roisempereurs", modele: "audit-hebdo", siteCle: "roisempereurs" },
+  ];
+  const correctif = { id: "correctifs-denivio", modele: "correctifs", siteCle: "denivio", declenchePar: "audit-hebdo", parametres: { relancerApres: true } };
+
+  it("un correctif applique relance l'audit du meme site", () => {
+    expect(relanceApres(correctif, { corrige: true }, registre)).toEqual(["audit-hebdo-denivio"]);
+  });
+
+  it("rien sans correctif applique, ni quand l'option est coupee", () => {
+    expect(relanceApres(correctif, { corrige: false }, registre)).toEqual([]);
+    expect(relanceApres({ ...correctif, parametres: { relancerApres: false } }, { corrige: true }, registre)).toEqual([]);
+    expect(relanceApres({ ...correctif, declenchePar: null }, { corrige: true }, registre)).toEqual([]);
+  });
+
+  it("l'audit relance ne se relance pas lui-meme : jamais de troisieme passage", () => {
+    expect(relanceApres(registre[0], { corrige: true }, registre)).toEqual([]);
+  });
+});
+
 describe("correctifs : garde-fous", () => {
   it("ne fait rien hors d'un depot git", async () => {
     const depot = fauxDepot({ git: false });
@@ -204,6 +233,41 @@ describe("correctifs : deroulement", () => {
     expect(r.points[0]).toMatchObject({ niveau: "attention", sansAnalyse: true });
     expect(r.points[0].texte).toContain("branche `correctifs/2026-10-26` à fusionner");
     expect(r.signature).toBe("undici@7.0.0 - 7.30.0,vite@8.2.0 - 8.2.2");
+  });
+
+  it("sans l'option fusionner, la branche reste a relire", async () => {
+    const r = await lancerCorriger(fauxDepot());
+    expect(r.fusionnee).toBe(false);
+  });
+
+  it("option fusionner : la branche verifiee est fusionnee en local dans la branche de depart, puis supprimee", async () => {
+    const depot = fauxDepot();
+    const r = await lancerCorriger(depot, { fusionner: true });
+    expect(r.fusionnee).toBe(true);
+    expect(depot.etat.branche).toBe("main");
+    expect(depot.etat.commits.map((x) => x.branche)).toEqual(["correctifs/2026-10-26", "main"]);
+    expect(depot.etat.branches.has("correctifs/2026-10-26")).toBe(false);
+    // Avance rapide seulement, jamais pousse ; node_modules resynchronise apres la fusion
+    expect(depot.commandes).toContain("git merge --ff-only correctifs/2026-10-26");
+    expect(depot.commandes.some((c) => c.includes("push"))).toBe(false);
+    expect(depot.commandes.at(-1)).toBe("npm.cmd ci --no-audit --no-fund");
+    expect(r.points[0]).toMatchObject({ niveau: "ok" });
+    expect(r.points[0].texte).toContain("fusionné dans `main`");
+  });
+
+  it("option fusionner mais fusion impossible : la branche reste, et c'est dit", async () => {
+    const depot = fauxDepot({ fusionEchoue: true });
+    const r = await lancerCorriger(depot, { fusionner: true });
+    expect(r.fusionnee).toBe(false);
+    expect(depot.etat.branches.has("correctifs/2026-10-26")).toBe(true);
+    expect(r.points[0].texte).toContain("la fusion automatique a échoué");
+  });
+
+  it("option fusionner, rien de corrige : aucune fusion", async () => {
+    const depot = fauxDepot({ apresFix: AUDIT });
+    const r = await lancerCorriger(depot, { fusionner: true });
+    expect(r.fusionnee).toBeUndefined();
+    expect(depot.commandes.some((c) => c.startsWith("git merge"))).toBe(false);
   });
 
   it("les verifications passent dans l'ordre de la fiche", async () => {

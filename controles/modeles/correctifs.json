@@ -1,12 +1,16 @@
 {
   "id": "correctifs",
   "titre": "Correctifs de dépendances",
-  "description": "Sans horaire : à la main, ou après l'audit hebdomadaire s'il trouve une vulnérabilité haute ou critique corrigeable. npm audit fix sur une branche à part, vérifications du projet, Claude en renfort si elles échouent ; commit local seulement, rien n'est poussé.",
+  "description": "Sans horaire : à la main, ou après l'audit hebdomadaire s'il trouve une vulnérabilité haute ou critique corrigeable. npm audit fix sur une branche à part, vérifications du projet, Claude en renfort si elles échouent. Vérifications OK : fusion dans la branche de travail (fusionner) puis l'audit repasse une fois (relancerApres) ; commit local seulement, rien n'est poussé.",
   "type": "script",
   "script": "correctifs.mjs",
   "cron": null,
   "declenchePar": "audit-hebdo",
   "requis": ["projet", "correctifs.dossier", "correctifs.verifications"],
   "suivi": "correctifs-{{site.cle}}.md",
-  "parametres": { "claude": true }
+  "parametres": {
+    "claude": true,
+    "fusionner": true,
+    "relancerApres": true
+  }
 }
