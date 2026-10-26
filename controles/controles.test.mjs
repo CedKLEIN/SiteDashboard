@@ -20,7 +20,7 @@ describe("agents Claude", () => {
     expect(texte).toContain("Session lancée automatiquement par SiteDashboard (tâche « Indexation Google », site denivio.fr), le 26/10/2026 à 09:00");
     expect(texte).toContain("Produis TOUJOURS le rapport JSON");
     expect(texte).toContain("mcp__claude-in-chrome__*");
-    expect(texte).toContain("ferme-les tous avant de terminer");
+    expect(texte).toContain("ferme chacun de tes onglets");
     expect(preambule({ ...controle, chrome: false })).not.toContain("Chrome");
   });
 });
@@ -35,10 +35,17 @@ describe("test de connexion a Chrome avant un agent", () => {
   });
 
   it("la consigne ne demande qu'une action et une reponse fixe", () => {
-    expect(CONSIGNE_TEST_CHROME).toContain("mcp__claude-in-chrome__tabs_context_mcp");
+    // Liste les navigateurs relies, sans ouvrir d'onglet ni de groupe
+    expect(CONSIGNE_TEST_CHROME).toContain("mcp__claude-in-chrome__list_connected_browsers");
+    expect(CONSIGNE_TEST_CHROME).not.toContain("createIfEmpty");
     expect(CONSIGNE_TEST_CHROME).toContain("CHROME_CONNECTE");
-    // Sans groupe d'onglets, l'outil repond quand meme : il en cree un
-    expect(CONSIGNE_TEST_CHROME).toContain("createIfEmpty: true");
+  });
+
+  it("demande a l'agent Chrome de fermer tous ses onglets a la fin", () => {
+    const texte = preambule({ titre: "Indexation Google", site: "denivio.fr", chrome: true });
+    expect(texte).toContain("mcp__claude-in-chrome__tabs_close_mcp");
+    expect(texte).toContain("DERNIÈRE ÉTAPE OBLIGATOIRE");
+    expect(preambule({ titre: "Santé", site: "denivio.fr" })).not.toContain("tabs_close_mcp");
   });
 
   it("repere un Chrome qui efface les cookies de claude.ai a la fermeture", () => {

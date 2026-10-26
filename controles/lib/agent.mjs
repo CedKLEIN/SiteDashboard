@@ -64,11 +64,19 @@ export function construireConsigne(controle, { modeles = DOSSIER_MODELES, agents
   return `${texte}\n\nPrécisions propres à ce site et à cet agent (elles priment sur la consigne générale) :\n${precisions}`;
 }
 
+/**
+ * Chrome pour un agent : ses propres onglets, et tous refermes a la fin. Chaque
+ * session a son groupe d'onglets « Claude » ; un groupe laisse ouvert s'ajoute a
+ * ceux des passages precedents. Fermer le dernier onglet fait disparaitre le groupe.
+ */
+export const CONSIGNE_CHROME =
+  "Navigateur : utilise Chrome (outils mcp__claude-in-chrome__*), où mes connexions sont ouvertes. Travaille uniquement dans tes propres onglets (ton groupe d'onglets) ; ne touche pas aux miens. DERNIÈRE ÉTAPE OBLIGATOIRE, même en cas d'échec et après avoir écrit le rapport : appelle mcp__claude-in-chrome__tabs_context_mcp, puis ferme chacun de tes onglets avec mcp__claude-in-chrome__tabs_close_mcp jusqu'à ce que ton groupe ait disparu. Ne laisse aucun onglet ni groupe ouvert. Si Chrome n'est pas disponible, écris un rapport en échec qui le dit.";
+
 /** Ce que SiteDashboard ajoute devant la consigne : le contexte d'un passage sans surveillance. */
 export function preambule(controle, maintenant = new Date()) {
   return `Session lancée automatiquement par SiteDashboard (tâche « ${controle.titre} », site ${controle.site}), le ${maintenant.toLocaleDateString("fr-FR")} à ${maintenant.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}.
 Personne n'est là pour répondre : agis seul, fais des choix raisonnables et note-les. Produis TOUJOURS le rapport JSON demandé dans la consigne, même si tu t'arrêtes en cours ou échoues.
-${controle.chrome ? "Navigateur : utilise Chrome (outils mcp__claude-in-chrome__*), où mes connexions sont ouvertes. Travaille dans tes propres onglets et ferme-les tous avant de terminer ; ne touche pas aux miens. S'il n'est pas disponible, écris un rapport en échec qui le dit." : ""}
+${controle.chrome ? CONSIGNE_CHROME : ""}
 
 `;
 }
@@ -137,10 +145,10 @@ const REPONSE_CONNECTE = "CHROME_CONNECTE";
 
 /**
  * Consigne du test de connexion a Chrome : une seule action, une reponse fixe.
- * Seule une extension injoignable compte comme deconnectee : « pas encore de
- * groupe d'onglets » veut dire que l'extension a repondu.
+ * Liste les navigateurs relies au compte, sans ouvrir d'onglet : un test qui
+ * cree un groupe d'onglets en laisserait un de plus a chaque passage.
  */
-export const CONSIGNE_TEST_CHROME = `Appelle l'outil mcp__claude-in-chrome__tabs_context_mcp avec createIfEmpty: true (charge-le avec ToolSearch s'il le faut), sans rien faire d'autre. Si l'outil dit que l'extension n'est pas connectée ou pas joignable (« not connected », « isn't reachable »), ou s'il n'existe pas, réponds CHROME_NON_CONNECTE suivi du message d'erreur exact. Dans tous les autres cas (liste d'onglets, groupe créé, pas de groupe encore), l'extension a répondu : réponds exactement ${REPONSE_CONNECTE}.`;
+export const CONSIGNE_TEST_CHROME = `Appelle l'outil mcp__claude-in-chrome__list_connected_browsers (charge-le avec ToolSearch s'il le faut), sans rien faire d'autre : n'ouvre et ne crée aucun onglet. Si l'outil renvoie au moins un navigateur, réponds exactement ${REPONSE_CONNECTE}. Sinon (liste vide, erreur, permission refusée, outil introuvable), réponds CHROME_NON_CONNECTE suivi du message exact de l'outil.`;
 
 /** La sortie du test dit-elle que l'extension repond ? */
 export function chromeConnecte(sortie) {
