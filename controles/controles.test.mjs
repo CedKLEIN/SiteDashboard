@@ -9,7 +9,7 @@ import { avecAnalyse } from "./lancer.mjs";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { construireConsigne, preambule } from "./lib/agent.mjs";
+import { CONSIGNE_TEST_CHROME, chromeConnecte, construireConsigne, messageChromeDeconnecte, preambule } from "./lib/agent.mjs";
 import { DOSSIER_MODELES, ajouterAgent, applicables, chargerTout, composer, identifiant, pourInterface, rendre, retirerAgent } from "./lib/registre.mjs";
 import { chromeDansListe, trouverChrome } from "./lib/chrome.mjs";
 
@@ -22,6 +22,29 @@ describe("agents Claude", () => {
     expect(texte).toContain("mcp__claude-in-chrome__*");
     expect(texte).toContain("ferme-les tous avant de terminer");
     expect(preambule({ ...controle, chrome: false })).not.toContain("Chrome");
+  });
+});
+
+describe("test de connexion a Chrome avant un agent", () => {
+  it("reconnait la reponse de connexion, pas le refus", () => {
+    expect(chromeConnecte("CHROME_CONNECTE")).toBe(true);
+    expect(chromeConnecte("Résultat :\nCHROME_CONNECTE\n")).toBe(true);
+    expect(chromeConnecte("CHROME_NON_CONNECTE Browser extension is not connected.")).toBe(false);
+    expect(chromeConnecte("")).toBe(false);
+    expect(chromeConnecte(undefined)).toBe(false);
+  });
+
+  it("la consigne ne demande qu'une action et une reponse fixe", () => {
+    expect(CONSIGNE_TEST_CHROME).toContain("mcp__claude-in-chrome__tabs_context_mcp");
+    expect(CONSIGNE_TEST_CHROME).toContain("CHROME_CONNECTE");
+  });
+
+  it("dit quoi faire, avec le compte de Claude Code, et annonce le nouvel essai", () => {
+    const message = messageChromeDeconnecte("moi@exemple.fr");
+    expect(message).toContain("rien n'a été fait");
+    expect(message).toContain("connecte-toi avec le compte moi@exemple.fr");
+    expect(message).toContain("toutes les 30 minutes");
+    expect(messageChromeDeconnecte(null)).not.toContain("compte null");
   });
 });
 

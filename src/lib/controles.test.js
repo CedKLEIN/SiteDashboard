@@ -11,6 +11,8 @@ import {
   file,
   fusionnerTaches,
   horaireLisible,
+  planifierReessai,
+  reessaisDus,
   separerAjouts,
 } from "./controles";
 import { agentsAttendus, nbAgentsEnRetard } from "./tachesPlanifiees";
@@ -184,6 +186,62 @@ describe("horaireLisible", () => {
     expect(horaireLisible("30 7 * * *")).toBe("tous les jours à 07:30");
     expect(horaireLisible("0 7 * * 1")).toBe("le lundi à 07:00");
     expect(horaireLisible(null)).toBe("à la demande");
+  });
+});
+
+describe("nouveaux essais d'un agent dont le travail n'a pas pu se faire", () => {
+  const INDEXATION = { id: "indexation", cron: "0 9 * * *", type: "claude", chrome: true };
+  const a = (h, m = 0) => new Date(2026, 9, 26, h, m);
+
+  it("Chrome deconnecte a 9 h : nouvel essai a 9 h 30, pas avant", () => {
+    const reessais = planifierReessai({}, "indexation", { statut: "echec", reessai: true }, a(9, 0));
+    expect(reessais.indexation).toMatchObject({ essais: 1, prochain: a(9, 30).toISOString() });
+    const controles = appliquerReglages([INDEXATION]);
+    expect(reessaisDus(reessais, controles, a(9, 29))).toEqual([]);
+    expect(reessaisDus(reessais, controles, a(9, 30))).toEqual(["indexation"]);
+  });
+
+  it("un passage reussi efface les essais en attente", () => {
+    const reessais = planifierReessai({}, "indexation", { reessai: true }, a(9));
+    expect(planifierReessai(reessais, "indexation", { statut: "ok" }, a(9, 31))).toEqual({});
+  });
+
+  it("au plus 8 essais dans la journee, puis on attend le lendemain", () => {
+    let reessais = {};
+    for (let i = 0; i < 8; i += 1) reessais = planifierReessai(reessais, "indexation", { reessai: true }, a(9 + i));
+    expect(reessais.indexation.essais).toBe(8);
+    expect(planifierReessai(reessais, "indexation", { reessai: true }, a(17))).toEqual({});
+  });
+
+  it("le compte repart a zero un autre jour, et un essai d'hier n'est pas relance", () => {
+    const hier = planifierReessai({}, "indexation", { reessai: true }, new Date(2026, 9, 25, 23, 50));
+    expect(reessaisDus(hier, appliquerReglages([INDEXATION]), a(9))).toEqual([]);
+    expect(planifierReessai(hier, "indexation", { reessai: true }, a(9)).indexation.essais).toBe(1);
+  });
+
+  it("une tache desactivee n'est pas reessayee", () => {
+    const reessais = planifierReessai({}, "indexation", { reessai: true }, a(9));
+    const desactivee = appliquerReglages([INDEXATION], { desactives: ["indexation"] });
+    expect(reessaisDus(reessais, desactivee, a(10))).toEqual([]);
+  });
+
+  it("ne touche pas aux essais des autres taches", () => {
+    const reessais = planifierReessai({}, "seo", { reessai: true }, a(9));
+    expect(Object.keys(planifierReessai(reessais, "indexation", { statut: "ok" }, a(9)))).toEqual(["seo"]);
+  });
+});
+
+describe("badge Agents : un rapport en echec compte", () => {
+  it("compte bloques, pas lances et rapports en echec, pas les rapports ok ou a regarder", () => {
+    const attendus = [
+      { situation: "bloque" },
+      { situation: "non_lance" },
+      { situation: "recu", rapport: { statut: "echec" } },
+      { situation: "recu", rapport: { statut: "attention" } },
+      { situation: "recu", rapport: { statut: "ok" } },
+      { situation: "prevu" },
+    ];
+    expect(nbAgentsEnRetard(attendus)).toBe(3);
   });
 });
 

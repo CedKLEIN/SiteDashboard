@@ -8,6 +8,7 @@ mod devises;
 mod domaine;
 mod icones;
 mod mise_a_jour;
+mod notifications;
 mod reseau;
 mod sauvegarde;
 
@@ -161,6 +162,7 @@ pub fn run() {
             mise_a_jour::lancer_mise_a_jour,
             controles::lancer_controle,
             controles::registre_agents,
+            notifications::notifications_windows,
             tracer
         ])
         .run(tauri::generate_context!())

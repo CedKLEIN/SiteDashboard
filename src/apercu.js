@@ -91,6 +91,8 @@ export async function installerApercu() {
         return agents?.registre ?? { controles: [], modeles: [] };
       case "lancer_controle":
         return { code: 0, resume: { id: args.id, statut: "ok", claude: "non" }, erreurs: "" };
+      case "notifications_windows":
+        return true;
       case "plugin:notification|is_permission_granted":
         return false;
       case "plugin:notification|request_permission":

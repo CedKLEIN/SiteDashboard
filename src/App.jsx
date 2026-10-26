@@ -92,7 +92,7 @@ export default function App() {
 
   const controles = useControles(revision, signalerModification);
   const agents = useAgentsAttendus(revision, controles.controles, controles.derniers, controles.ajouts);
-  useNotifications(revision, agents.attendus);
+  const notifications = useNotifications(revision, agents.attendus);
   const miseAJour = useMiseAJour();
 
   const site = sites.find((s) => s.id === siteOuvert);
@@ -135,6 +135,12 @@ export default function App() {
       alertes={{ agents: nbAgentsEnRetard(agents.attendus) }}
       miseAJour={resumeMiseAJour(miseAJour.etat)}
     >
+      {notifications.bloqueesParWindows && (
+        <p className="mb-4 rounded-lg border border-depense/40 bg-depense/10 px-3 py-2 text-sm">
+          Les notifications sont coupées dans Windows : aucune alerte (site en panne, agent en échec)
+          ne s&apos;affichera. Rallume-les dans Paramètres &gt; Système &gt; Notifications.
+        </p>
+      )}
       {site ? (
         <DetailSite
           key={site.id}

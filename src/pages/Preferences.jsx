@@ -15,7 +15,7 @@ import {
 } from "../lib/sauvegarde";
 import { JOURS_HISTORIQUE_VERIFICATIONS } from "../lib/monitoring";
 import { notificationTest } from "../lib/notifications";
-import { CLE_NOTIFICATIONS } from "../lib/useNotifications";
+import { CLE_NOTIFICATIONS, notificationsWindows } from "../lib/useNotifications";
 import { tracer } from "../lib/trace";
 
 /** Version installee, commits plus recents du depot, et lancement de l'installeur. */
@@ -164,7 +164,9 @@ function Notifications() {
 
   async function tester() {
     try {
-      setEssai((await notificationTest()) ? "envoyee" : "refusee");
+      // Windows accepte l'envoi meme quand il a coupe toutes les notifications : on le verifie
+      if (!(await notificationsWindows())) setEssai("coupees");
+      else setEssai((await notificationTest()) ? "envoyee" : "refusee");
     } catch (e) {
       tracer("notification", `essai impossible: ${e}`);
       setEssai("refusee");
@@ -187,6 +189,12 @@ function Notifications() {
           Envoyer une notification de test
         </Bouton>
         {essai === "envoyee" && <span className="text-xs text-revenu">Envoyée</span>}
+        {essai === "coupees" && (
+          <span className="text-xs text-depense">
+            Non envoyée : les notifications sont coupées pour toutes les applis dans Paramètres &gt;
+            Système &gt; Notifications
+          </span>
+        )}
         {essai === "refusee" && (
           <span className="text-xs text-depense">
             Refusée par Windows : vérifie Paramètres &gt; Système &gt; Notifications

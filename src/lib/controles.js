@@ -84,6 +84,35 @@ export function ajouterSuites(attente, suites, controles) {
   return [...new Set([...attente, ...(suites ?? []).filter((id) => actives.has(id))])];
 }
 
+/** Delai entre deux essais d'un agent dont le travail n'a pas pu se faire (Chrome deconnecte). */
+export const DELAI_REESSAI_MIN = 30;
+/** Essais supplementaires au plus, le meme jour : 8 x 30 min = 4 h. */
+export const MAX_REESSAIS = 8;
+
+/**
+ * Nouveaux essais (`reessais` : id -> { jour, essais, prochain ISO }) apres un
+ * passage termine. Le resume demande un essai (`reessai`) : le suivant est
+ * prevu dans DELAI_REESSAI_MIN, sans depasser MAX_REESSAIS dans la journee.
+ * Un passage reussi efface les essais en attente.
+ */
+export function planifierReessai(reessais, id, resume, maintenant = new Date()) {
+  const { [id]: avant, ...autres } = reessais;
+  if (!resume?.reessai) return autres;
+  const jour = maintenant.toDateString();
+  const essais = avant?.jour === jour ? avant.essais + 1 : 1;
+  if (essais > MAX_REESSAIS) return autres;
+  const prochain = new Date(maintenant.getTime() + DELAI_REESSAI_MIN * 60_000);
+  return { ...autres, [id]: { jour, essais, prochain: prochain.toISOString() } };
+}
+
+/** Ids dont l'essai suivant est venu (le jour meme), parmi les taches actives. */
+export function reessaisDus(reessais, controles, maintenant = new Date()) {
+  const actives = new Set(controles.filter((c) => c.actif !== false).map((c) => c.id));
+  return Object.entries(reessais)
+    .filter(([id, r]) => actives.has(id) && r.jour === maintenant.toDateString() && new Date(r.prochain) <= maintenant)
+    .map(([id]) => id);
+}
+
 /** File d'attente d'un controle : les agents Claude, longs, ne bloquent pas les scripts. */
 export function file(controle) {
   return controle.type === "claude" ? "claude" : "script";

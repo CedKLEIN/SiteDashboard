@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ajouterSuites, appliquerReglages, controlesDus, enregistrerNouvelles, file, separerAjouts } from "./controles";
+import {
+  ajouterSuites,
+  appliquerReglages,
+  controlesDus,
+  enregistrerNouvelles,
+  file,
+  planifierReessai,
+  reessaisDus,
+  separerAjouts,
+} from "./controles";
 import { ecrirePreference, lirePreference } from "./queries";
 import { tracer } from "./trace";
 
@@ -48,6 +57,8 @@ export function useControles(rafraichissement, onTermine) {
   const taches = useRef([]);
   // Taches demandees par un controle termine (l'audit demande le correctif), lancees au cycle suivant
   const attente = useRef([]);
+  // Agents dont le travail n'a pas pu se faire (Chrome deconnecte) : reessayes toutes les 30 min
+  const reessais = useRef({});
   const reglagesActuels = useRef(reglages);
   // Relu au demarrage, puis a chaque ajout ou retrait
   const [versionRegistre, setVersionRegistre] = useState(0);
@@ -92,6 +103,7 @@ export function useControles(rafraichissement, onTermine) {
         const r = await invoke("lancer_controle", { id });
         resultat = r.resume ?? { statut: "echec", erreur: r.erreurs || `code ${r.code}` };
         if (r.code !== 0) tracer("controles", `${id} : code ${r.code} ${r.erreurs}`);
+        reessais.current = planifierReessai(reessais.current, id, r.resume);
         attente.current = ajouterSuites(
           attente.current,
           r.resume?.suites,
@@ -142,9 +154,12 @@ export function useControles(rafraichissement, onTermine) {
       setAjouts(ajoutsTous);
       setReglages({ horaires, desactives });
       // onTermine relance ce cycle : les controles dus s'enchainent, file par file
-      const dus = controlesDus(appliquerReglages(registre.controles, { horaires, desactives }), lus, new Date(), ajoutsTous);
-      // Les taches demandees par un controle passent avant les horaires
-      const demandees = attente.current.map((id) => registre.controles.find((c) => c.id === id)).filter(Boolean);
+      const avecReglages = appliquerReglages(registre.controles, { horaires, desactives });
+      const dus = controlesDus(avecReglages, lus, new Date(), ajoutsTous);
+      // Les taches demandees par un controle, et les nouveaux essais, passent avant les horaires
+      const demandees = [...attente.current, ...reessaisDus(reessais.current, avecReglages)]
+        .map((id) => registre.controles.find((c) => c.id === id))
+        .filter(Boolean);
       for (const voie of ["script", "claude"]) {
         const prochain = [...demandees, ...dus].find((c) => file(c) === voie);
         if (prochain && !verrous.current[voie]) lancer(prochain.id);

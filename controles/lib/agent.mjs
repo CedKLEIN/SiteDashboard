@@ -133,6 +133,54 @@ export function ouvrirJournal(id, debut) {
   return journal;
 }
 
+const REPONSE_CONNECTE = "CHROME_CONNECTE";
+
+/** Consigne du test de connexion a Chrome : une seule action, une reponse fixe. */
+export const CONSIGNE_TEST_CHROME = `Appelle l'outil mcp__claude-in-chrome__tabs_context_mcp (charge-le avec ToolSearch s'il le faut), sans rien faire d'autre. S'il renvoie une liste d'onglets ou un groupe d'onglets, réponds exactement ${REPONSE_CONNECTE}. Sinon réponds CHROME_NON_CONNECTE suivi du message d'erreur exact.`;
+
+/** La sortie du test dit-elle que l'extension repond ? */
+export function chromeConnecte(sortie) {
+  return new RegExp(`(^|\\s)${REPONSE_CONNECTE}(\\s|$)`).test(String(sortie ?? ""));
+}
+
+/** Message pour l'utilisateur quand l'extension ne repond pas : quoi faire, concretement. */
+export function messageChromeDeconnecte(compte) {
+  return `Extension Claude in Chrome non connectée : rien n'a été fait. Dans Chrome, clique sur l'icône Claude (menu des extensions) et connecte-toi${compte ? ` avec le compte ${compte}` : ""}, celui de Claude Code. SiteDashboard réessaie tout seul toutes les 30 minutes ; « Lancer maintenant » relance tout de suite.`;
+}
+
+/** Compte de Claude Code (ce que l'extension doit utiliser), ou null. */
+function compteClaudeCode() {
+  try {
+    return JSON.parse(readFileSync(path.join(os.homedir(), ".claude.json"), "utf8")).oauthAccount?.emailAddress ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Verifie, avant une longue session, que Claude Code atteint bien Chrome par
+ * l'extension : une session courte (une minute au plus) qui liste les onglets.
+ * Un second essai apres une pause laisse a l'extension le temps de demarrer
+ * dans un Chrome qu'on vient d'ouvrir.
+ */
+async function testerChrome({ claude, cwd, journal, essais = 2, pauseMs = 20_000 }) {
+  let sortie = "";
+  for (let i = 1; i <= essais; i += 1) {
+    appendFileSync(journal, `[SiteDashboard] test de connexion à Chrome (essai ${i})\n`);
+    ({ sortie } = await sessionClaude({
+      claude,
+      args: ["-p", "--output-format", "text", "--permission-mode", "auto", "--chrome"],
+      cwd,
+      texte: CONSIGNE_TEST_CHROME,
+      journal,
+      dureeMaxMin: 3,
+    }));
+    if (chromeConnecte(sortie)) return { connecte: true };
+    if (i < essais) await new Promise((r) => setTimeout(r, pauseMs));
+  }
+  return { connecte: false, sortie };
+}
+
 /** Lance la session et attend sa fin. Renvoie le resume pour SiteDashboard. */
 export async function lancerAgent(controle, { essai = false } = {}) {
   const debut = new Date();
@@ -160,6 +208,18 @@ export async function lancerAgent(controle, { essai = false } = {}) {
   const chrome = controle.chrome ? await preparerChrome() : { ouvertParNous: false };
   if (chrome.message) appendFileSync(journal, `[SiteDashboard] ${chrome.message}\n`);
 
+  // Extension muette : inutile de lancer une session de plusieurs heures qui
+  // ne pourra rien faire. Rapport en echec qui dit quoi faire, et nouvel essai.
+  if (controle.chrome) {
+    const test = await testerChrome({ claude, cwd: controle.projet, journal });
+    if (!test.connecte) {
+      if (chrome.ouvertParNous) await fermerChrome();
+      const message = messageChromeDeconnecte(compteClaudeCode());
+      appendFileSync(journal, `\n[SiteDashboard] ${message}\n`);
+      return { id: controle.id, statut: "echec", rapport: rapportEchec(controle, debut, message), claude: "session", reessai: true, erreur: message };
+    }
+  }
+
   const args = ["-p", "--output-format", "text", "--permission-mode", "auto"];
   if (controle.chrome) args.push("--chrome");
   const { code, sortie } = await sessionClaude({
@@ -180,11 +240,19 @@ export async function lancerAgent(controle, { essai = false } = {}) {
   if (existsSync(rapport) && statSync(rapport).mtime >= debut) {
     try {
       const { statut } = JSON.parse(readFileSync(rapport, "utf8"));
-      return { id: controle.id, statut, rapport, claude: "session", code };
+      // Un agent Chrome en echec n'a pas fait son travail (deconnexion en cours de route) : nouvel essai
+      return { id: controle.id, statut, rapport, claude: "session", code, ...(statut === "echec" && controle.chrome ? { reessai: true } : {}) };
     } catch {
       // rapport illisible : traite comme absent
     }
   }
   const message = `L'agent s'est arrêté sans écrire son rapport (code ${code}) : ${fin(sortie) || "aucune sortie"}`;
-  return { id: controle.id, statut: "echec", rapport: rapportEchec(controle, debut, message), claude: "session", code };
+  return {
+    id: controle.id,
+    statut: "echec",
+    rapport: rapportEchec(controle, debut, message),
+    claude: "session",
+    code,
+    ...(controle.chrome ? { reessai: true } : {}),
+  };
 }

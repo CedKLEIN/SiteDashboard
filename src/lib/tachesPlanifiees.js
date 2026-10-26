@@ -260,7 +260,13 @@ export function texteAttendu(attendu) {
   return `${attendu.titre} — ${attendu.site} — ${libelle}${heure} : ${attendu.message}`;
 }
 
-/** Nombre d'agents qui demandent un regard : bloques ou jamais lances. */
+/**
+ * Nombre d'agents qui demandent un regard aujourd'hui : bloques, jamais lances,
+ * ou dont le rapport est en echec (le travail n'a pas ete fait). Le badge
+ * retombe quand l'agent relance rend un rapport qui n'est plus en echec.
+ */
 export function nbAgentsEnRetard(attendus) {
-  return attendus.filter((a) => a.situation === "bloque" || a.situation === "non_lance").length;
+  return attendus.filter(
+    (a) => a.situation === "bloque" || a.situation === "non_lance" || a.rapport?.statut === "echec",
+  ).length;
 }
