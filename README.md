@@ -73,6 +73,15 @@ node controles/lancer.mjs sante-prod-denivio-quotidienne --essai   # affiche, n'
 node controles/lancer.mjs audit-hebdo-roisempereurs --sans-claude  # passage réel, sans Claude
 ```
 
+**Correctifs de dépendances** (`correctifs`, sans horaire) : lancé à la main, ou après
+l'audit hebdomadaire quand il trouve une vulnérabilité haute ou critique corrigeable sans
+version majeure (pas deux fois pour la même liste ; décocher la tâche coupe ce
+déclenchement). Sur un dépôt propre seulement : `npm audit fix` (sans `--force`) sur une
+branche `correctifs/<jour>`, puis les vérifications de la fiche (`correctifs.verifications`).
+Si l'une échoue, une session Claude reçoit l'erreur et adapte le code ; SiteDashboard
+relance lui-même les vérifications. Tout passe : commit local sur la branche, à fusionner
+soi-même (rien n'est poussé). Sinon : tout est annulé, le dépôt revient à son état de départ.
+
 Prérequis : Node et Edge (navigateur des mesures, toujours présent sous Windows) ;
 Claude Code en ligne de commande pour les analyses (`npm install -g @anthropic-ai/claude-code`
 puis `claude` une fois pour se connecter, **depuis un terminal Windows**, pas depuis l'appli

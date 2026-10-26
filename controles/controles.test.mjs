@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import os from "node:os";
 import path from "node:path";
 import { construireConsigne, preambule } from "./lib/agent.mjs";
-import { DOSSIER_MODELES, ajouterAgent, applicables, chargerTout, composer, identifiant, rendre, retirerAgent } from "./lib/registre.mjs";
+import { DOSSIER_MODELES, ajouterAgent, applicables, chargerTout, composer, identifiant, pourInterface, rendre, retirerAgent } from "./lib/registre.mjs";
 import { chromeDansListe, trouverChrome } from "./lib/chrome.mjs";
 
 describe("agents Claude", () => {
@@ -247,6 +247,23 @@ describe("registre : modeles appliques aux sites", () => {
     expect(idees).toMatchObject({ cron: "0 10 * * 6", chrome: true, dureeMaxMin: 90, parametres: { corriger: true }, soumissionBingAuto: true });
   });
 
+  it("compose une tache sans horaire, avec ce qui la declenche", () => {
+    const correctifs = { id: "correctifs", titre: "Correctifs", type: "script", script: "correctifs.mjs", cron: null, declenchePar: "audit-hebdo", requis: ["correctifs.dossier"] };
+    const fiches = [{ ...sites[0], correctifs: { dossier: "C:\\p\\a\\front", verifications: ["npm test"] } }, sites[1]];
+    const [a, b] = composer({
+      modeles: [correctifs],
+      sites: fiches,
+      agents: [
+        { id: "correctifs-a", modele: "correctifs", site: "a" },
+        { id: "correctifs-b", modele: "correctifs", site: "b" },
+      ],
+    });
+    expect(a).toMatchObject({ cron: null, declenchePar: "audit-hebdo" });
+    expect(a.erreur).toBeUndefined();
+    expect(b.erreur).toBe("fiche b incomplète : correctifs.dossier");
+    expect(pourInterface([a])[0]).toMatchObject({ id: "correctifs-a", cron: null, declenchePar: "audit-hebdo" });
+  });
+
   it("garde visible un agent mal configure", () => {
     const [inconnu, sansFiche, incomplet] = composer({
       modeles,
@@ -314,9 +331,12 @@ describe("registre : modeles appliques aux sites", () => {
 
   it("livre des modeles complets, et une consigne pour chaque agent Claude", () => {
     const { modeles: livres } = chargerTout({ sites: "absent", agents: "absent.json" });
-    expect(livres.map((m) => m.id).sort()).toEqual(["audit-hebdo", "bing", "idees-hebdo", "indexation-seo", "sante-prod"]);
+    expect(livres.map((m) => m.id).sort()).toEqual(["audit-hebdo", "bing", "correctifs", "idees-hebdo", "indexation-seo", "sante-prod"]);
     for (const m of livres) {
-      expect(m).toMatchObject({ titre: expect.any(String), description: expect.any(String), cron: expect.stringMatching(/^\d+ \d+ \* \* [\d*,-]+$/) });
+      expect(m).toMatchObject({ titre: expect.any(String), description: expect.any(String) });
+      // Sans horaire, une tache doit dire qui la declenche (sinon elle ne part qu'a la main)
+      if (m.cron === null) expect(livres.map((x) => x.id)).toContain(m.declenchePar);
+      else expect(m.cron).toMatch(/^\d+ \d+ \* \* [\d*,-]+$/);
       if (m.type === "claude") expect(existsSync(path.join(DOSSIER_MODELES, m.consigne))).toBe(true);
       else expect(existsSync(path.join(import.meta.dirname, m.script))).toBe(true);
     }

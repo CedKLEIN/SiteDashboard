@@ -131,7 +131,8 @@ function AjouterTache({ modeles, onAjouter, onFermer }) {
       </div>
       {modele && (
         <p className="text-texte-doux">
-          {modele.description} Horaire par défaut : {horaireLisible(modele.cron)}, réglable ensuite.
+          {modele.description}
+          {modele.cron && ` Horaire par défaut : ${horaireLisible(modele.cron)}, réglable ensuite.`}
         </p>
       )}
       {modele && possibles.length === 0 && (
@@ -148,15 +149,34 @@ function LigneTache({ controle, dernier, resultat, enCours, onLancer, onHoraire,
   const actif = enCours[file(controle)] === controle.id;
   const fileOccupee = Boolean(enCours[file(controle)]);
   const Icone = controle.type === "claude" ? Sparkles : Bot;
+  // Sans horaire : la case coupe seulement le declenchement par un autre controle
+  const aLaDemande = !controle.cronParDefaut;
+  const declencheur = controle.declenchePar === "audit-hebdo" ? "l'audit hebdomadaire" : controle.declenchePar;
+  const planning = aLaDemande
+    ? controle.declenchePar && controle.actif
+      ? `à la demande, et lancée après ${declencheur} s'il le demande`
+      : "à la demande seulement"
+    : controle.actif
+      ? horaireLisible(controle.cron)
+      : "désactivée";
 
   return (
-    <li className={`py-2 ${controle.actif ? "" : "opacity-50"}`}>
+    <li className={`py-2 ${controle.actif || aLaDemande ? "" : "opacity-50"}`}>
       <div className="flex items-center gap-3">
         <input
           type="checkbox"
           checked={controle.actif}
+          disabled={aLaDemande && !controle.declenchePar}
           onChange={(e) => onActiver(controle.id, e.target.checked)}
-          title={controle.actif ? "Désactiver cette tâche" : "Activer cette tâche"}
+          title={
+            aLaDemande
+              ? controle.actif
+                ? `Ne plus la lancer automatiquement après ${declencheur}`
+                : `La lancer automatiquement après ${declencheur}`
+              : controle.actif
+                ? "Désactiver cette tâche"
+                : "Activer cette tâche"
+          }
           aria-label={`Activer ${controle.titre} (${controle.site})`}
         />
         <Icone size={16} className="shrink-0 text-texte-doux" aria-hidden="true" />
@@ -171,7 +191,7 @@ function LigneTache({ controle, dernier, resultat, enCours, onLancer, onHoraire,
             </p>
           )}
           <p className="text-[11px] text-texte-doux">
-            {controle.actif ? horaireLisible(controle.cron) : "désactivée"}
+            {planning}
             {controle.cron !== controle.cronParDefaut && " (modifié)"}
             {" · "}dernier passage {dernierPassage(dernier)}
             {resultat && (
@@ -186,15 +206,17 @@ function LigneTache({ controle, dernier, resultat, enCours, onLancer, onHoraire,
             )}
           </p>
         </div>
-        <Bouton
-          variante="fantome"
-          className="flex shrink-0 items-center gap-1.5 px-2 py-1 text-xs"
-          onClick={() => setEdition((e) => !e)}
-          title="Modifier l'horaire"
-        >
-          <Clock size={13} />
-          Horaire
-        </Bouton>
+        {!aLaDemande && (
+          <Bouton
+            variante="fantome"
+            className="flex shrink-0 items-center gap-1.5 px-2 py-1 text-xs"
+            onClick={() => setEdition((e) => !e)}
+            title="Modifier l'horaire"
+          >
+            <Clock size={13} />
+            Horaire
+          </Bouton>
+        )}
         <Bouton
           variante="fantome"
           className="flex shrink-0 items-center gap-1.5 px-2 py-1 text-xs"

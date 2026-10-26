@@ -80,7 +80,9 @@ export function composer({ modeles, sites, agents }) {
       ...base,
       titre: agent.titre ?? modele.titre,
       type: modele.type,
-      cron: agent.cron ?? modele.cron,
+      // null : pas d'horaire, lancee a la main ou a la demande d'un autre controle
+      cron: agent.cron ?? modele.cron ?? null,
+      declenchePar: modele.declenchePar ?? null,
       chrome: Boolean(modele.chrome),
       dureeMaxMin: modele.dureeMaxMin,
       script: modele.script,
@@ -123,8 +125,8 @@ export function applicables({ modeles, sites, agents }) {
 
 /** Ce que l'interface recoit : sans les fiches completes. */
 export function pourInterface(controles) {
-  return controles.map(({ id, modele, siteCle, site, titre, type, cron, chrome, erreur }) => ({
-    id, modele, siteCle, site, titre, type, cron, chrome, ...(erreur ? { erreur } : {}),
+  return controles.map(({ id, modele, siteCle, site, titre, type, cron, declenchePar, chrome, erreur }) => ({
+    id, modele, siteCle, site, titre, type, cron, declenchePar: declenchePar ?? null, chrome, ...(erreur ? { erreur } : {}),
   }));
 }
 

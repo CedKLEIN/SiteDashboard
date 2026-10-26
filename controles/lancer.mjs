@@ -8,7 +8,9 @@
  * 3. une anomalie NOUVELLE : Claude l'analyse (lecture seule) et son diagnostic
  *    remplace le resume du rapport ; une anomalie deja analysee reprend
  *    l'analyse precedente sans rappeler Claude ;
- * 4. ecrit le rapport (meme format que les agents) et une section de journal.
+ * 4. ecrit le rapport (meme format que les agents) et une section de journal ;
+ * 5. liste les taches que le controle demande de lancer ensuite (`suites` : la
+ *    tache « Correctifs de dependances » apres un audit, par exemple).
  *
  * Derniere ligne de la sortie : un resume JSON, lu par SiteDashboard.
  */
@@ -33,6 +35,20 @@ import {
 const DOSSIER = import.meta.dirname;
 const LIBELLES = { ok: "OK", attention: "à regarder", echec: "en échec" };
 
+/**
+ * Taches qu'un controle demande de lancer ensuite (`resultat.suites` : modele et
+ * signature de ce qui justifie la demande) : celles du meme site, sauf si elles
+ * ont deja traite cette signature. SiteDashboard ne lance que les actives.
+ */
+export function suitesDemandees(controle, suites, registre, lireEtatDe = lireEtat) {
+  return (suites ?? []).flatMap(({ modele, signature }) =>
+    registre
+      .filter((c) => c.modele === modele && c.siteCle === controle.siteCle && !c.erreur)
+      .filter((c) => lireEtatDe(c.id).signatureTraitee !== signature)
+      .map((c) => c.id),
+  );
+}
+
 /** Fusionne l'analyse de Claude dans le rapport du script. */
 export function avecAnalyse(rapport, analyse, { reprise = null } = {}) {
   return {
@@ -45,7 +61,8 @@ export function avecAnalyse(rapport, analyse, { reprise = null } = {}) {
 }
 
 export async function lancer(id, { claude = true, ecrire = true } = {}) {
-  const controle = chargerRegistre().find((c) => c.id === id);
+  const registre = chargerRegistre();
+  const controle = registre.find((c) => c.id === id);
   if (!controle) throw new Error(`controle inconnu : ${id}`);
   // Modele ou fiche manquant : un rapport en echec le dit, plutot qu'un silence
   if (controle.erreur) {
@@ -132,11 +149,12 @@ export async function lancer(id, { claude = true, ecrire = true } = {}) {
   }
 
   rapport.fin = isoLocal(new Date());
+  const suites = suitesDemandees(controle, resultat.suites, registre);
   if (!ecrire) {
     // --essai : on montre tout, on n'ecrit rien (ni rapport, ni journal, ni etat)
     console.log(JSON.stringify(rapport, null, 2));
     console.log(resultat.sectionJournal);
-    return { id, statut: rapport.statut, rapport: null, claude: claudeEtat };
+    return { id, statut: rapport.statut, rapport: null, claude: claudeEtat, suites };
   }
   const chemin = ecrireRapport(rapport);
   ecrireEtat(id, nouvelEtat);
@@ -153,7 +171,7 @@ export async function lancer(id, { claude = true, ecrire = true } = {}) {
     journaliser(controle.fichierSuivi, `${controle.titre} — ${controle.site}`, section);
   }
 
-  return { id, statut: rapport.statut, rapport: chemin, claude: claudeEtat };
+  return { id, statut: rapport.statut, rapport: chemin, claude: claudeEtat, suites };
 }
 
 // Lance en ligne de commande, sauf importe (tests)

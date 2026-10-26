@@ -74,7 +74,7 @@ ${controle.chrome ? "Navigateur : utilise Chrome (outils mcp__claude-in-chrome__
 }
 
 /** Fin d'un texte, sur ses dernieres lignes non vides. */
-function fin(texte, lignes = 8) {
+export function fin(texte, lignes = 8) {
   return texte.trim().split(/\r?\n/).filter(Boolean).slice(-lignes).join(" / ").slice(0, 400);
 }
 
@@ -92,6 +92,45 @@ function rapportEchec(controle, debut, message) {
     fichier: controle.fichierSuivi,
     source: "agent-claude",
   });
+}
+
+/**
+ * Une session `claude -p` : la consigne passe par l'entree standard (trop longue
+ * pour une ligne de commande Windows), la sortie va au journal au fil de l'eau.
+ * Interrompue apres `dureeMaxMin`. Renvoie { code, sortie }.
+ */
+export function sessionClaude({ claude, args, cwd, texte, journal, dureeMaxMin = 120 }) {
+  return new Promise((resolve) => {
+    const processus = spawn(claude, args, { cwd, shell: claude.endsWith(".cmd"), windowsHide: true });
+    let tout = "";
+    const garder = (d) => {
+      tout += d;
+      appendFileSync(journal, d);
+    };
+    const minuterie = setTimeout(() => {
+      processus.kill();
+      garder(`\n[SiteDashboard] session interrompue apres ${dureeMaxMin} min\n`);
+    }, dureeMaxMin * 60_000);
+    processus.stdout.on("data", garder);
+    processus.stderr.on("data", garder);
+    processus.on("error", (e) => {
+      clearTimeout(minuterie);
+      resolve({ code: -1, sortie: `${tout}\n${e.message}` });
+    });
+    processus.on("close", (c) => {
+      clearTimeout(minuterie);
+      resolve({ code: c, sortie: tout });
+    });
+    processus.stdin.end(texte);
+  });
+}
+
+/** Journal du passage d'une tache : %USERPROFILE%\.sitedashboard\journaux\<id>-<jour>.log */
+export function ouvrirJournal(id, debut) {
+  mkdirSync(DOSSIER_JOURNAUX, { recursive: true });
+  const journal = path.join(DOSSIER_JOURNAUX, `${id}-${jourLocal(debut)}.log`);
+  writeFileSync(journal, `=== ${isoLocal(debut)} ${id}\n`, "utf8");
+  return journal;
 }
 
 /** Lance la session et attend sa fin. Renvoie le resume pour SiteDashboard. */
@@ -115,9 +154,7 @@ export async function lancerAgent(controle, { essai = false } = {}) {
     return { id: controle.id, statut: "ok", claude: "session", essai: true };
   }
 
-  mkdirSync(DOSSIER_JOURNAUX, { recursive: true });
-  const journal = path.join(DOSSIER_JOURNAUX, `${controle.id}-${jourLocal(debut)}.log`);
-  writeFileSync(journal, `=== ${isoLocal(debut)} ${controle.id}\n`, "utf8");
+  const journal = ouvrirJournal(controle.id, debut);
 
   // Chrome ferme : SiteDashboard l'ouvre pour l'agent, et le referme apres
   const chrome = controle.chrome ? await preparerChrome() : { ouvertParNous: false };
@@ -125,28 +162,13 @@ export async function lancerAgent(controle, { essai = false } = {}) {
 
   const args = ["-p", "--output-format", "text", "--permission-mode", "auto"];
   if (controle.chrome) args.push("--chrome");
-  const { code, sortie } = await new Promise((resolve) => {
-    const processus = spawn(claude, args, { cwd: controle.projet, shell: claude.endsWith(".cmd"), windowsHide: true });
-    let tout = "";
-    const garder = (d) => {
-      tout += d;
-      appendFileSync(journal, d);
-    };
-    const minuterie = setTimeout(() => {
-      processus.kill();
-      garder(`\n[SiteDashboard] session interrompue apres ${controle.dureeMaxMin} min\n`);
-    }, (controle.dureeMaxMin ?? 120) * 60_000);
-    processus.stdout.on("data", garder);
-    processus.stderr.on("data", garder);
-    processus.on("error", (e) => {
-      clearTimeout(minuterie);
-      resolve({ code: -1, sortie: `${tout}\n${e.message}` });
-    });
-    processus.on("close", (c) => {
-      clearTimeout(minuterie);
-      resolve({ code: c, sortie: tout });
-    });
-    processus.stdin.end(texte);
+  const { code, sortie } = await sessionClaude({
+    claude,
+    args,
+    cwd: controle.projet,
+    texte,
+    journal,
+    dureeMaxMin: controle.dureeMaxMin ?? 120,
   });
   if (chrome.ouvertParNous) {
     await fermerChrome();

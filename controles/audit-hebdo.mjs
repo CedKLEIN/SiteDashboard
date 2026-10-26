@@ -5,7 +5,9 @@
  * Reprend les consignes des agents « Audit hebdo ». Attention en cas de
  * regression de performance (LCP +30 %, octets +20 % sur une semaine), de
  * vulnerabilite haute ou critique, ou d'une categorie d'anomalies de donnees
- * en hausse. Rien n'est modifie : ni code, ni paquet, ni donnee.
+ * en hausse. Rien n'est modifie : ni code, ni paquet, ni donnee. Une
+ * vulnerabilite haute ou critique corrigeable demande la tache « Correctifs de
+ * dependances » du site (voir correctifs.mjs), qui, elle, modifie.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -13,6 +15,7 @@ import path from "node:path";
 import { gzipSync } from "node:zlib";
 import { pathToFileURL } from "node:url";
 import { nombre, secondes, tableau } from "./lib/commun.mjs";
+import { grave, signatureCorrectifs, vulnerabilites } from "./lib/dependances.mjs";
 import { mesurerPerformance } from "./lib/navigateur.mjs";
 
 const EXTENSIONS = path.join(import.meta.dirname, "extensions");
@@ -65,9 +68,10 @@ function dependances(c, ajouter) {
   const audit = JSON.parse(sortieDe("npm.cmd", ["audit", "--json"], c.front) || "{}");
   const v = audit.metadata?.vulnerabilities ?? {};
   critiques += (v.high ?? 0) + (v.critical ?? 0);
-  const vulnerables = Object.entries(audit.vulnerabilities ?? {})
-    .filter(([, d]) => ["high", "critical"].includes(d.severity))
-    .map(([nom, d]) => `${nom} (${d.severity}${d.fixAvailable ? ", correctif dispo" : ""})`);
+  const vulns = vulnerabilites(audit);
+  const vulnerables = vulns
+    .filter(grave)
+    .map((d) => `${d.nom} (${d.gravite}${d.correctif === "compatible" ? ", correctif dispo" : d.correctif === "majeur" ? ", correctif en version majeure" : ""})`);
   lignes.push(["Front : vulnérabilités", `critique ${v.critical ?? 0}, haute ${v.high ?? 0}, moyenne ${v.moderate ?? 0}, basse ${v.low ?? 0}`, vulnerables.join(", ")]);
 
   const obsoletes = JSON.parse(sortieDe("npm.cmd", ["outdated", "--json"], c.front) || "{}");
@@ -87,7 +91,11 @@ function dependances(c, ajouter) {
 
   if (critiques > 0) ajouter("attention", `Dépendances : ${critiques} vulnérabilité(s) haute(s) ou critique(s)${vulnerables.length ? ` (${vulnerables.slice(0, 3).join(", ")})` : ""}`);
   ajouter("ok", `Dépendances : front ${v.total ?? 0} vulnérabilité(s), ${majeures.length} mise(s) à jour majeure(s) ; back ${vulnBackLignes.length} vulnérabilité(s)`);
-  return `### Dépendances\n\n${tableau(["Contrôle", "Résultat", "Détail"], lignes)}`;
+  return {
+    section: `### Dépendances\n\n${tableau(["Contrôle", "Résultat", "Détail"], lignes)}`,
+    // Lu par lancer.mjs : demande la tache « Correctifs de dependances » du site
+    signature: signatureCorrectifs(vulns),
+  };
 }
 
 function tailleBundle(dossier, etat, ajouter) {
@@ -112,6 +120,7 @@ export async function executer(controle, { etat }) {
   const points = [];
   const ajouter = (niveau, texte) => points.push({ niveau, texte });
   const sections = [];
+  const suites = [];
   const nouvelEtat = { ...etat };
 
   const etapes = [
@@ -129,7 +138,10 @@ export async function executer(controle, { etat }) {
       sections.push(r.section);
     }],
     ["dépendances", async () => {
-      if (c.front && c.back) sections.push(dependances(c, ajouter));
+      if (!c.front || !c.back) return;
+      const r = dependances(c, ajouter);
+      sections.push(r.section);
+      if (r.signature) suites.push({ modele: "correctifs", signature: r.signature });
     }],
     ["bundle", async () => {
       const r = tailleBundle(c.bundle, etat, ajouter);
@@ -151,5 +163,5 @@ export async function executer(controle, { etat }) {
     ? `${anomalies.length} point(s) à regarder : ${anomalies.map((p) => p.texte).join(" ; ").slice(0, 220)}`
     : "Rien à signaler : performance stable, données cohérentes, aucune vulnérabilité haute ou critique.";
   const sectionJournal = sections.join("\n\n");
-  return { points, resume, sectionJournal, detail: sectionJournal, nouvelEtat };
+  return { points, resume, sectionJournal, detail: sectionJournal, nouvelEtat, suites };
 }

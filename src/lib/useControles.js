@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { appliquerReglages, controlesDus, enregistrerNouvelles, file, separerAjouts } from "./controles";
+import { ajouterSuites, appliquerReglages, controlesDus, enregistrerNouvelles, file, separerAjouts } from "./controles";
 import { ecrirePreference, lirePreference } from "./queries";
 import { tracer } from "./trace";
 
@@ -31,6 +31,10 @@ async function lireJson(cle, defaut) {
  *
  * Le lancement est note a la fin, meme en cas d'echec : un controle casse ne
  * doit pas etre relance chaque minute, son rapport en echec suffit a le dire.
+ *
+ * Une tache sans horaire n'est jamais due : elle part a la main, ou quand un
+ * controle la demande en finissant (l'audit demande le correctif des
+ * dependances), au cycle suivant, avant les taches a l'heure.
  */
 export function useControles(rafraichissement, onTermine) {
   const [registre, setRegistre] = useState({ charge: false, controles: [], modeles: [], erreur: null });
@@ -42,6 +46,9 @@ export function useControles(rafraichissement, onTermine) {
   // Verrous hors du rendu : StrictMode et deux cycles proches ne doivent pas lancer en double
   const verrous = useRef({ script: false, claude: false });
   const taches = useRef([]);
+  // Taches demandees par un controle termine (l'audit demande le correctif), lancees au cycle suivant
+  const attente = useRef([]);
+  const reglagesActuels = useRef(reglages);
   // Relu au demarrage, puis a chaque ajout ou retrait
   const [versionRegistre, setVersionRegistre] = useState(0);
   const recharger = useCallback(() => setVersionRegistre((v) => v + 1), []);
@@ -65,6 +72,10 @@ export function useControles(rafraichissement, onTermine) {
     taches.current = registre.controles;
   }, [registre.controles]);
 
+  useEffect(() => {
+    reglagesActuels.current = reglages;
+  }, [reglages]);
+
   const controles = useMemo(() => appliquerReglages(registre.controles, reglages), [registre.controles, reglages]);
 
   const lancer = useCallback(
@@ -74,12 +85,18 @@ export function useControles(rafraichissement, onTermine) {
       const voie = file(controle);
       if (verrous.current[voie]) return false;
       verrous.current[voie] = true;
+      attente.current = attente.current.filter((x) => x !== id);
       setEnCours((avant) => ({ ...avant, [voie]: id }));
       let resultat;
       try {
         const r = await invoke("lancer_controle", { id });
         resultat = r.resume ?? { statut: "echec", erreur: r.erreurs || `code ${r.code}` };
         if (r.code !== 0) tracer("controles", `${id} : code ${r.code} ${r.erreurs}`);
+        attente.current = ajouterSuites(
+          attente.current,
+          r.resume?.suites,
+          appliquerReglages(taches.current, reglagesActuels.current),
+        );
       } catch (e) {
         resultat = { statut: "echec", erreur: String(e) };
         tracer("controles", `${id} : ${e}`);
@@ -126,8 +143,10 @@ export function useControles(rafraichissement, onTermine) {
       setReglages({ horaires, desactives });
       // onTermine relance ce cycle : les controles dus s'enchainent, file par file
       const dus = controlesDus(appliquerReglages(registre.controles, { horaires, desactives }), lus, new Date(), ajoutsTous);
+      // Les taches demandees par un controle passent avant les horaires
+      const demandees = attente.current.map((id) => registre.controles.find((c) => c.id === id)).filter(Boolean);
       for (const voie of ["script", "claude"]) {
-        const prochain = dus.find((c) => file(c) === voie);
+        const prochain = [...demandees, ...dus].find((c) => file(c) === voie);
         if (prochain && !verrous.current[voie]) lancer(prochain.id);
       }
     })().catch((e) => tracer("controles", `planning impossible : ${e}`));

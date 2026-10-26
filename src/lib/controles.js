@@ -73,6 +73,17 @@ export function separerAjouts(derniers = {}) {
   return { derniers: lancements, ajouts };
 }
 
+/**
+ * Taches a lancer a la demande d'un controle termine (`suites` de son resume,
+ * voir controles/lancer.mjs), ajoutees a la file `attente` sans doublon. Seules
+ * les taches actives sont prises : decocher une tache sans horaire coupe son
+ * declenchement automatique, le bouton « Lancer maintenant » reste.
+ */
+export function ajouterSuites(attente, suites, controles) {
+  const actives = new Set(controles.filter((c) => c.actif !== false).map((c) => c.id));
+  return [...new Set([...attente, ...(suites ?? []).filter((id) => actives.has(id))])];
+}
+
 /** File d'attente d'un controle : les agents Claude, longs, ne bloquent pas les scripts. */
 export function file(controle) {
   return controle.type === "claude" ? "claude" : "script";
@@ -104,8 +115,9 @@ export function controlesDus(controles, derniers = {}, maintenant = new Date(), 
 
 const JOURS = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
 
-/** '30 7 * * *' -> 'tous les jours à 07:30' ; '0 7 * * 1' -> 'le lundi à 07:00'. */
+/** '30 7 * * *' -> 'tous les jours à 07:30' ; '0 7 * * 1' -> 'le lundi à 07:00' ; null -> 'à la demande'. */
 export function horaireLisible(cron) {
+  if (!cron) return "à la demande";
   const [minute, heure, , , jour] = String(cron).split(/\s+/);
   const hh = `${heure.padStart(2, "0")}:${minute.padStart(2, "0")}`;
   if (jour === "*") return `tous les jours à ${hh}`;

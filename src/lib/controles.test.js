@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ajouterSuites,
   appliquerReglages,
   commeTachesPlanifiees,
   composerCron,
@@ -182,6 +183,47 @@ describe("horaireLisible", () => {
   it("dit l'horaire en francais", () => {
     expect(horaireLisible("30 7 * * *")).toBe("tous les jours à 07:30");
     expect(horaireLisible("0 7 * * 1")).toBe("le lundi à 07:00");
+    expect(horaireLisible(null)).toBe("à la demande");
+  });
+});
+
+describe("taches sans horaire (correctifs de dependances)", () => {
+  const AUDIT = { id: "audit-a", site: "a.fr", titre: "Audit", cron: "0 7 * * 1" };
+  const CORRECTIF = { id: "correctifs-a", site: "a.fr", titre: "Correctifs", cron: null, declenchePar: "audit-hebdo" };
+  const AUTRE = { id: "correctifs-b", site: "b.fr", titre: "Correctifs", cron: null, declenchePar: "audit-hebdo" };
+
+  it("n'est jamais due par l'horaire, meme jamais lancee ou apres des semaines", () => {
+    const [correctif] = appliquerReglages([CORRECTIF]);
+    expect(correctif).toMatchObject({ cron: null, cronParDefaut: null, actif: true });
+    expect(dernierPassagePrevu(null, MAINTENANT)).toBeNull();
+    expect(controlesDus([correctif], {}, MAINTENANT)).toEqual([]);
+    expect(controlesDus([correctif], { "correctifs-a": "2026-01-01T00:00:00Z" }, MAINTENANT)).toEqual([]);
+  });
+
+  it("n'est pas attendue dans « Attendus aujourd'hui » et ne fait pas monter le badge", () => {
+    const taches = commeTachesPlanifiees([AUDIT, CORRECTIF], {}, {});
+    const attendus = agentsAttendus({ taches: taches.taches, config: JSON.stringify(taches), rapports: [], maintenant: new Date(2026, 9, 26, 12, 0) });
+    expect(attendus.map((a) => a.agent)).not.toContain("correctifs-a");
+    expect(nbAgentsEnRetard(attendus)).toBe(1); // l'audit du lundi, pas le correctif
+  });
+
+  it("l'audit la demande : elle part, une seule fois, si elle est active", () => {
+    const controles = appliquerReglages([AUDIT, CORRECTIF, AUTRE]);
+    expect(ajouterSuites([], ["correctifs-a"], controles)).toEqual(["correctifs-a"]);
+    // Deja en attente : pas de doublon
+    expect(ajouterSuites(["correctifs-a"], ["correctifs-a"], controles)).toEqual(["correctifs-a"]);
+    expect(ajouterSuites(["correctifs-b"], ["correctifs-a"], controles)).toEqual(["correctifs-b", "correctifs-a"]);
+  });
+
+  it("decochee : plus de declenchement automatique (le lancement a la main reste)", () => {
+    const controles = appliquerReglages([AUDIT, CORRECTIF], { desactives: ["correctifs-a"] });
+    expect(ajouterSuites([], ["correctifs-a"], controles)).toEqual([]);
+  });
+
+  it("rien demande, ou une tache inconnue : la file ne change pas", () => {
+    const controles = appliquerReglages([CORRECTIF]);
+    expect(ajouterSuites([], undefined, controles)).toEqual([]);
+    expect(ajouterSuites([], ["supprimee"], controles)).toEqual([]);
   });
 });
 
