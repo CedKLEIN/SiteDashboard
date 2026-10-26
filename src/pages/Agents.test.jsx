@@ -114,7 +114,7 @@ describe("page Agents par site", () => {
     expect(screen.getByText("Bloquée ?")).toBeTruthy();
   });
 
-  it("une tache lancee depuis l'appli se montre en cours, son carre du jour en bleu", async () => {
+  it("une tache lancee depuis l'appli se montre en cours, avec un carre bleu de plus", async () => {
     invoke.mockResolvedValue({ dossier: RACINE, existe: true, fichiers: FICHIERS });
     const controles = {
       controles: [{ id: "sante", site: "denivio.fr", titre: "Santé de la prod", cron: "45 7 * * *", type: "script" }],
@@ -129,7 +129,7 @@ describe("page Agents par site", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Denivio/ }));
     const ligne = screen.getByRole("button", { name: /Santé de la prod/, expanded: false });
     expect(ligne.textContent).toContain("En cours");
-    expect(within(ligne).getByTitle(/en cours/).style.background).toBe("rgb(56, 189, 248)");
+    expect(within(ligne).getByTitle("En cours").style.background).toBe("rgb(56, 189, 248)");
   });
 
   it("les reglages des taches sont replies en bas", async () => {

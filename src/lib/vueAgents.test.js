@@ -118,19 +118,30 @@ describe("a faire", () => {
   });
 });
 
-describe("frise des derniers jours", () => {
-  it("un carre par jour, du plus ancien a aujourd'hui ; le dernier rapport du jour compte", () => {
-    const rapports = [
-      rapport("d.fr", "2026-10-26", "x", "echec", { fin: "2026-10-26T09:15:00+01:00" }),
-      rapport("d.fr", "2026-10-26", "x", "ok", { fin: "2026-10-26T12:30:00+01:00" }),
-      rapport("d.fr", "2026-10-24", "x", "attention"),
-    ];
-    const jours = frise(rapports, 3, MAINTENANT);
-    expect(jours).toEqual([
-      { date: "2026-10-24", statut: "attention" },
-      { date: "2026-10-25", statut: null },
-      { date: "2026-10-26", statut: "ok" },
-    ]);
+describe("frise des derniers passages", () => {
+  // Du plus recent au plus ancien, comme vueParSite les trie
+  const passages = [
+    rapport("d.fr", "2026-10-26", "x", "ok", { debut: "2026-10-26T12:30:00+01:00" }),
+    rapport("d.fr", "2026-10-26", "x", "echec", { debut: "2026-10-26T09:15:00+01:00" }),
+    rapport("d.fr", "2026-10-24", "x", "attention"),
+  ];
+
+  it("un carre par passage, pas par jour : du plus ancien au plus recent, cases vides a gauche", () => {
+    expect(frise(passages, { places: 4 }).map((p) => p?.statut ?? null)).toEqual([null, "attention", "echec", "ok"]);
+    expect(frise(passages, { places: 4 })[3]).toMatchObject({ date: "2026-10-26", debut: "2026-10-26T12:30:00+01:00" });
+  });
+
+  it("sept relances dans la journee remplissent la frise", () => {
+    const sept = Array.from({ length: 9 }, (_, i) => rapport("d.fr", "2026-10-26", `x@${i}`, i === 0 ? "ok" : "echec"));
+    const carres = frise(sept);
+    expect(carres).toHaveLength(7);
+    expect(carres.every((p) => p?.date === "2026-10-26")).toBe(true);
+    expect(carres.at(-1).statut).toBe("ok");
+  });
+
+  it("la tache qui tourne ajoute un carre bleu a droite et pousse le plus ancien", () => {
+    const carres = frise(passages, { enCours: true, places: 3 });
+    expect(carres.map((p) => (p?.enCours ? "bleu" : p?.statut))).toEqual(["echec", "ok", "bleu"]);
   });
 });
 
@@ -168,8 +179,9 @@ describe("vue par site", () => {
     const indexation = denivio.taches[0];
     expect(indexation.planning).toBe("tous les jours à 09:00");
     expect(indexation.rapports.map((r) => r.date)).toEqual(["2026-10-26", "2026-10-25"]);
-    expect(indexation.frise.at(-1)).toEqual({ date: "2026-10-26", statut: "echec" });
-    expect(indexation.frise.at(-2)).toEqual({ date: "2026-10-25", statut: "ok" });
+    expect(indexation.frise.at(-1)).toMatchObject({ date: "2026-10-26", statut: "echec" });
+    expect(indexation.frise.at(-2)).toMatchObject({ date: "2026-10-25", statut: "ok" });
+    expect(indexation.frise.at(-3)).toBeNull();
     expect(denivio.taches.find((t) => t.id === "correctifs-d").planning).toBe("à la demande");
     expect(denivio.resume).toBe("Indexation Google : Chrome déconnecté.");
   });
@@ -181,17 +193,30 @@ describe("vue par site", () => {
     expect(vues[0].aFaire.map((a) => a.texte)).toEqual(["Bloquée"]);
   });
 
+  it("une relance qui corrige un probleme l'efface de « À faire », meme si le planning gardait l'ancien rapport", () => {
+    const matin = rapport("denivio.fr", "2026-10-26", "indexation-d", "attention", {
+      debut: "2026-10-26T09:00:00+01:00",
+      points: [{ niveau: "attention", texte: "Bing déconnecté" }],
+    });
+    const soir = rapport("denivio.fr", "2026-10-26", "indexation-d", "ok", { debut: "2026-10-26T18:00:00+01:00" });
+    soir.cle = "denivio.fr/2026-10-26/indexation-d@relance";
+    const attendus = [{ id: "indexation-d", agent: "indexation-d", site: "denivio.fr", titre: "Indexation Google", situation: "recu", rapport: matin }];
+    const [denivio] = vueParSite({ rapports: [matin, soir], attendus, controles, aujourdhui: MAINTENANT });
+    expect(denivio.aFaire).toEqual([]);
+    expect(denivio.taches.find((t) => t.id === "indexation-d").niveau).toBe("ok");
+  });
+
   it("rien du tout : aucune carte", () => {
     expect(vueParSite({ aujourdhui: MAINTENANT })).toEqual([]);
   });
 
-  it("une tache qui tourne : en cours, carre du jour en bleu, le niveau du rapport precedent reste", () => {
+  it("une tache qui tourne : en cours, un carre bleu en plus a droite, le niveau du rapport precedent reste", () => {
     const [denivio] = vueParSite({ rapports, controles, sites, enCours: ["indexation-d", "correctifs-d"], aujourdhui: MAINTENANT });
     const indexation = denivio.taches.find((t) => t.id === "indexation-d");
     expect(indexation).toMatchObject({ enCours: true, niveau: "action" });
     expect(libelleNiveau(indexation)).toBe("En cours");
-    expect(indexation.frise.at(-1)).toEqual({ date: "2026-10-26", statut: "echec", enCours: true });
-    expect(indexation.frise.at(-2).enCours).toBeUndefined();
+    expect(indexation.frise.at(-1)).toEqual({ enCours: true });
+    expect(indexation.frise.at(-2)).toMatchObject({ date: "2026-10-26", statut: "echec" });
     // Sans rapport du jour, la tache qui tourne est en cours
     expect(denivio.taches.find((t) => t.id === "correctifs-d").niveau).toBe("en_cours");
   });

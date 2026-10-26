@@ -23,7 +23,8 @@ export function decouperChemin(chemin) {
   const morceaux = String(chemin ?? "").split(/[\\/]/).filter(Boolean);
   const nom = morceaux.at(-1) ?? "";
   return {
-    agent: nom.replace(/\.json$/i, ""),
+    // `sante@091200.json` : un passage precedent du meme jour (voir archiverRapport)
+    agent: nom.replace(/\.json$/i, "").replace(/@[\d-]+$/, ""),
     date: morceaux.at(-2) ?? "",
     site: morceaux.at(-3) ?? "",
   };

@@ -212,7 +212,12 @@ export function agentsAttendus({ taches = [], config = "", rapports = [], mainte
       continue;
     }
 
-    const rapport = rapports.find((r) => r.agent === promis.agent && r.date === aujourdhui) ?? null;
+    // Plusieurs passages dans la journee : le dernier compte
+    const rapport =
+      rapports
+        .filter((r) => r.agent === promis.agent && r.date === aujourdhui)
+        .sort((a, b) => String(a.fin ?? a.debut ?? "").localeCompare(String(b.fin ?? b.debut ?? "")))
+        .at(-1) ?? null;
     const { situation, message } = situationAgent({
       prevueA,
       lanceA,

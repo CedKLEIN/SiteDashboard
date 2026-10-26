@@ -1,12 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { empreinte, isoLocal, jsonLd, liens, meta, pointsDuRapport, statutGlobal, texteVisible, racine } from "./lib/commun.mjs";
+import { archiverRapport, empreinte, isoLocal, jsonLd, liens, meta, pointsDuRapport, statutGlobal, texteVisible, racine } from "./lib/commun.mjs";
 import { extraireJson, validerAnalyse } from "./lib/claude.mjs";
 import { analyserCatalogue, analyserHistoire, clesObjet, hausses, souverainsCites } from "./lib/donnees.mjs";
 import { configSante, defautsSeo, locs, verifierApi } from "./sante-prod.mjs";
 import { aSoumettre, configBing, ordonner } from "./bing.mjs";
 import { avecAnalyse } from "./lancer.mjs";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CONSIGNE_TEST_CHROME, chromeConnecte, construireConsigne, messageChromeDeconnecte, preambule } from "./lib/agent.mjs";
@@ -389,6 +389,25 @@ describe("registre : modeles appliques aux sites", () => {
       else expect(m.cron).toMatch(/^\d+ \d+ \* \* [\d*,-]+$/);
       if (m.type === "claude") expect(existsSync(path.join(DOSSIER_MODELES, m.consigne))).toBe(true);
       else expect(existsSync(path.join(import.meta.dirname, m.script))).toBe(true);
+    }
+  });
+});
+
+describe("historique des passages d'un meme jour", () => {
+  it("garde le rapport precedent sous <agent>@<heure de debut>.json avant une relance", () => {
+    const dossier = mkdtempSync(path.join(os.tmpdir(), "rapports-"));
+    try {
+      const chemin = path.join(dossier, "indexation.json");
+      expect(archiverRapport(chemin)).toBeNull();
+      writeFileSync(chemin, JSON.stringify({ debut: "2026-10-26T09:12:05+01:00" }));
+      expect(path.basename(archiverRapport(chemin))).toBe("indexation@091205.json");
+      expect(existsSync(chemin)).toBe(false);
+      // Deux passages a la meme seconde ne s'ecrasent pas
+      writeFileSync(chemin, JSON.stringify({ debut: "2026-10-26T09:12:05+01:00" }));
+      expect(path.basename(archiverRapport(chemin))).toBe("indexation@091205-2.json");
+      expect(readdirSync(dossier).sort()).toEqual(["indexation@091205-2.json", "indexation@091205.json"]);
+    } finally {
+      rmSync(dossier, { recursive: true, force: true });
     }
   });
 });

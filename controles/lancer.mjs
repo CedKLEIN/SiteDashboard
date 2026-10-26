@@ -20,6 +20,8 @@ import { lancerAgent } from "./lib/agent.mjs";
 import { chargerRegistre } from "./lib/registre.mjs";
 import { analyser } from "./lib/claude.mjs";
 import {
+  archiverRapport,
+  cheminRapport,
   ecrireEtat,
   ecrireRapport,
   empreinte,
@@ -64,6 +66,8 @@ export async function lancer(id, { claude = true, ecrire = true } = {}) {
   const registre = chargerRegistre();
   const controle = registre.find((c) => c.id === id);
   if (!controle) throw new Error(`controle inconnu : ${id}`);
+  // Relance le meme jour : le passage precedent reste dans l'historique
+  if (ecrire) archiverRapport(cheminRapport(controle.site, id));
   // Modele ou fiche manquant : un rapport en echec le dit, plutot qu'un silence
   if (controle.erreur) {
     const debut = new Date();

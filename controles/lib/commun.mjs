@@ -7,7 +7,7 @@
  * l'onglet Agents de SiteDashboard, les notifications et l'historique n'y
  * voient aucune difference.
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import tls from "node:tls";
@@ -205,6 +205,29 @@ export function pointsDuRapport(points, max = 6) {
 
 export function cheminRapport(site, agent, date = new Date()) {
   return path.join(RACINE_RAPPORTS, site, jourLocal(date), `${agent}.json`);
+}
+
+/**
+ * Avant un nouveau passage le meme jour : le rapport precedent est garde a cote,
+ * sous `<agent>@<HHMMSS>.json` (heure de son debut). `<agent>.json` reste le
+ * dernier passage, celui que lisent les agents et SiteDashboard ; les autres
+ * forment l'historique du jour. `chemin` : celui de cheminRapport. Renvoie le
+ * nouveau chemin, ou null.
+ */
+export function archiverRapport(chemin) {
+  if (!existsSync(chemin)) return null;
+  const agent = path.basename(chemin, ".json");
+  let heure = null;
+  try {
+    heure = /T(\d{2}):(\d{2}):(\d{2})/.exec(JSON.parse(readFileSync(chemin, "utf8")).debut ?? "");
+  } catch {
+    // Rapport illisible : l'heure du fichier
+  }
+  const suffixe = heure ? heure.slice(1).join("") : isoLocal(statSync(chemin).mtime).slice(11, 19).replaceAll(":", "");
+  let cible = path.join(path.dirname(chemin), `${agent}@${suffixe}.json`);
+  for (let i = 2; existsSync(cible); i += 1) cible = path.join(path.dirname(chemin), `${agent}@${suffixe}-${i}.json`);
+  renameSync(chemin, cible);
+  return cible;
 }
 
 export function ecrireRapport(rapport) {

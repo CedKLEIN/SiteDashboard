@@ -47,17 +47,25 @@ function PastilleStatut({ etat, couleur = couleurEtat(etat), children }) {
   );
 }
 
-/** Les derniers jours d'une tache, un carre par jour (gris : pas de rapport, bleu : tourne). */
-function Frise({ jours }) {
+/** Libelle d'un carre de la frise, au survol. */
+function titrePassage(p) {
+  if (!p) return "Pas de passage";
+  if (p.enCours) return "En cours";
+  const heure = heureRapport(p.debut);
+  return `${jourLisible(p.date)}${heure ? ` à ${heure}` : ""} : ${STATUTS_RAPPORT[p.statut]?.libelle}`;
+}
+
+/** Les derniers passages d'une tache, un carre chacun (gris : vide, bleu : tourne en ce moment). */
+function Frise({ passages }) {
   return (
-    <span className="flex shrink-0 gap-0.5" aria-label="Derniers jours">
-      {jours.map((j) => (
+    <span className="flex shrink-0 gap-0.5" aria-label="Derniers passages">
+      {passages.map((p, i) => (
         <span
-          key={j.date}
-          title={`${jourLisible(j.date)} : ${j.enCours ? "en cours" : j.statut ? STATUTS_RAPPORT[j.statut]?.libelle : "pas de rapport"}`}
-          className={`size-3 rounded-[3px] ${j.enCours ? "animate-pulse" : ""}`}
+          key={p?.cle ?? (p?.enCours ? "en-cours" : `vide-${i}`)}
+          title={titrePassage(p)}
+          className={`size-3 rounded-[3px] ${p?.enCours ? "animate-pulse" : ""}`}
           style={{
-            background: j.enCours ? COULEUR_EN_COURS : j.statut ? couleurEtat(etatRapport(j.statut)) : "var(--color-bord)",
+            background: p?.enCours ? COULEUR_EN_COURS : p ? couleurEtat(etatRapport(p.statut)) : "var(--color-bord)",
           }}
         />
       ))}
@@ -209,7 +217,8 @@ function DetailTache({ tache, controles }) {
       ) : (
         <>
           <p className="mb-1.5 text-[11px] text-texte-doux">Les {RAPPORTS_MAX} derniers passages au plus</p>
-          <Historique rapports={tache.rapports} />
+          {/* Un nouveau passage rouvre l'historique sur lui */}
+          <Historique key={tache.rapports[0].cle} rapports={tache.rapports} />
         </>
       )}
     </div>
@@ -234,7 +243,7 @@ function LigneTache({ tache, ouverte, onBasculer, controles }) {
           {!tache.enCours && tache.rapportDuJour && ` · ${heureRapport(tache.rapportDuJour.debut) ?? ""}`}
         </PastilleStatut>
         <span className="hidden w-40 shrink-0 truncate text-[11px] text-texte-doux sm:block">{tache.planning ?? ""}</span>
-        <Frise jours={tache.frise} />
+        <Frise passages={tache.frise} />
       </button>
       {ouverte && <DetailTache tache={tache} controles={controles} />}
     </li>

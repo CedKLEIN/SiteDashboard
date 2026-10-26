@@ -10,10 +10,7 @@
 import { STATUTS_RAPPORT, dateDepuis, domaine, rattacherSite } from "./rapportsAgents";
 import { horaireLisible } from "./controles";
 
-/** Jours montres dans la frise d'une tache. */
-export const JOURS_FRISE = 7;
-
-/** Rapports gardes dans l'historique d'une tache, le plus recent d'abord. */
+/** Passages gardes dans la frise et l'historique d'une tache. */
 export const RAPPORTS_MAX = 7;
 
 /** Une tache qui tourne en ce moment : bleu, distinct des etats et de l'accent. */
@@ -76,15 +73,20 @@ export function etatNiveau(niveau) {
   return "aucun";
 }
 
-/** Les `jours` derniers jours, du plus ancien a aujourd'hui : [{ date, statut | null }]. */
-export function frise(rapports, jours = JOURS_FRISE, aujourdhui = new Date()) {
-  return Array.from({ length: jours }, (_, i) => {
-    const date = dateDepuis(jours - 1 - i, aujourdhui);
-    const duJour = rapports.filter((r) => r.date === date);
-    // Plusieurs rapports le meme jour (relance) : le dernier ecrit compte
-    const dernier = duJour.sort((a, b) => String(a.fin ?? a.debut ?? "").localeCompare(String(b.fin ?? b.debut ?? ""))).at(-1);
-    return { date, statut: dernier?.statut ?? null };
-  });
+/**
+ * Les derniers passages d'une tache, un carre chacun, du plus ancien au plus
+ * recent : [{ cle, date, debut, statut } | { enCours: true } | null]. Un
+ * carre est un passage, pas un jour : sept relances dans la journee remplissent
+ * la frise. La tache qui tourne ajoute un carre a droite et pousse le plus ancien.
+ * Moins de passages que de carres : des cases vides (null) a gauche.
+ */
+export function frise(rapportsRecentsDabord, { enCours = false, places = RAPPORTS_MAX } = {}) {
+  const passages = rapportsRecentsDabord
+    .slice(0, enCours ? places - 1 : places)
+    .reverse()
+    .map((r) => ({ cle: r.cle, date: r.date, debut: r.debut, statut: r.statut }));
+  if (enCours) passages.push({ enCours: true });
+  return [...Array(places - passages.length).fill(null), ...passages];
 }
 
 /**
@@ -188,7 +190,7 @@ export function vueParSite({ rapports = [], attendus = [], controles = [], sites
   }
   for (const a of attendus) {
     const t = tacheDe(a.site, a.agent);
-    t.attendu = a;
+    t.attendu = { ...a };
     if (t.titre === t.id) t.titre = a.titre;
   }
   for (const r of rapports) {
@@ -201,12 +203,17 @@ export function vueParSite({ rapports = [], attendus = [], controles = [], sites
     .map(({ cle, nomSite, taches }) => {
       const liste = [...taches.values()].map((t) => {
         const tries = [...t.rapports].sort((a, b) => `${b.date}${b.fin ?? b.debut ?? ""}`.localeCompare(`${a.date}${a.fin ?? a.debut ?? ""}`));
+        // Le dernier passage du jour fait foi : une relance qui corrige un probleme l'efface de « À faire »
         const rapportDuJour = tries.find((r) => r.date === jour) ?? null;
+        if (t.attendu && rapportDuJour) Object.assign(t.attendu, { rapport: rapportDuJour, situation: "recu" });
         const tourne = enCours.includes(t.id) || t.attendu?.situation === "en_cours";
-        const jours = frise(tries, JOURS_FRISE, aujourdhui);
-        // Le carre du jour passe en bleu tant que la tache tourne
-        if (tourne) jours[jours.length - 1] = { ...jours.at(-1), enCours: true };
-        const tache = { ...t, rapports: tries.slice(0, RAPPORTS_MAX), rapportDuJour, frise: jours, enCours: tourne };
+        const tache = {
+          ...t,
+          rapports: tries.slice(0, RAPPORTS_MAX),
+          rapportDuJour,
+          frise: frise(tries, { enCours: tourne }),
+          enCours: tourne,
+        };
         return { ...tache, niveau: niveauTache(tache) };
       });
       // Les taches qui vont le plus mal en tete, puis par titre

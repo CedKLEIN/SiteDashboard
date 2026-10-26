@@ -65,6 +65,8 @@ describe("decouperChemin", () => {
       agent: "sante-prod",
     });
     expect(decouperChemin("/home/moi/r/denivio.fr/2026-10-24/seo.JSON").agent).toBe("seo");
+    // Un passage precedent du meme jour garde le nom de son agent
+    expect(decouperChemin("/home/moi/r/denivio.fr/2026-10-24/seo@091205-2.json").agent).toBe("seo");
   });
 });
 
