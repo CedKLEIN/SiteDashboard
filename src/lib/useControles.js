@@ -13,12 +13,16 @@ import {
 import { ecrirePreference, lirePreference } from "./queries";
 import { tracer } from "./trace";
 
-/** Preferences JSON : derniers lancements, ajouts des taches, horaires modifies, agents desactives. */
+/**
+ * Preferences JSON : derniers lancements, ajouts des taches, horaires modifies,
+ * agents desactives, nouveaux essais prevus (gardes si l'appli redemarre).
+ */
 const CLES = {
   derniers: "controles_derniers",
   ajouts: "controles_ajouts",
   horaires: "controles_horaires",
   desactives: "controles_desactives",
+  reessais: "controles_reessais",
 };
 
 async function lireJson(cle, defaut) {
@@ -57,8 +61,6 @@ export function useControles(rafraichissement, onTermine) {
   const taches = useRef([]);
   // Taches demandees par un controle termine (l'audit demande le correctif), lancees au cycle suivant
   const attente = useRef([]);
-  // Agents dont le travail n'a pas pu se faire (Chrome deconnecte) : reessayes toutes les 30 min
-  const reessais = useRef({});
   const reglagesActuels = useRef(reglages);
   // Relu au demarrage, puis a chaque ajout ou retrait
   const [versionRegistre, setVersionRegistre] = useState(0);
@@ -103,7 +105,9 @@ export function useControles(rafraichissement, onTermine) {
         const r = await invoke("lancer_controle", { id });
         resultat = r.resume ?? { statut: "echec", erreur: r.erreurs || `code ${r.code}` };
         if (r.code !== 0) tracer("controles", `${id} : code ${r.code} ${r.erreurs}`);
-        reessais.current = planifierReessai(reessais.current, id, r.resume);
+        // Agents dont le travail n'a pas pu se faire (Chrome deconnecte) : reessayes toutes les 30 min
+        const reessais = planifierReessai(await lireJson(CLES.reessais, {}), id, r.resume);
+        await ecrirePreference(CLES.reessais, JSON.stringify(reessais));
         attente.current = ajouterSuites(
           attente.current,
           r.resume?.suites,
@@ -133,11 +137,12 @@ export function useControles(rafraichissement, onTermine) {
     if (!registre.charge) return undefined;
     let annule = false;
     (async () => {
-      let [lus, ajoutsLus, horaires, desactives] = await Promise.all([
+      let [lus, ajoutsLus, horaires, desactives, reessais] = await Promise.all([
         lireJson(CLES.derniers, {}),
         lireJson(CLES.ajouts, null),
         lireJson(CLES.horaires, {}),
         lireJson(CLES.desactives, []),
+        lireJson(CLES.reessais, {}),
       ]);
       if (annule) return;
       if (ajoutsLus === null) {
@@ -157,7 +162,7 @@ export function useControles(rafraichissement, onTermine) {
       const avecReglages = appliquerReglages(registre.controles, { horaires, desactives });
       const dus = controlesDus(avecReglages, lus, new Date(), ajoutsTous);
       // Les taches demandees par un controle, et les nouveaux essais, passent avant les horaires
-      const demandees = [...attente.current, ...reessaisDus(reessais.current, avecReglages)]
+      const demandees = [...attente.current, ...reessaisDus(reessais, avecReglages)]
         .map((id) => registre.controles.find((c) => c.id === id))
         .filter(Boolean);
       for (const voie of ["script", "claude"]) {
