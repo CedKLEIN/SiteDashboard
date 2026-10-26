@@ -32,6 +32,7 @@ const FICHIERS = [
     titre: "Indexation Google",
     statut: "echec",
     debut: `${AUJOURDHUI}T09:12:00+01:00`,
+    fin: `${AUJOURDHUI}T09:20:00+01:00`,
     resume: "Extension Chrome déconnectée.",
     points: [
       { niveau: "echec", texte: "Reconnecter l'extension Claude in Chrome" },
@@ -77,9 +78,12 @@ describe("page Agents par site", () => {
     const tache = screen.getByRole("button", { name: /Indexation Google/, expanded: false });
     expect(tache.textContent).toContain("Échec");
     fireEvent.click(tache);
-    // Les rapports de la tache, le plus recent d'abord
-    expect(screen.getByText("8 demandes")).toBeTruthy();
+    // Le dernier passage est ouvert, avec son heure et sa duree ; les autres sont replies
     expect(screen.getByText("Extension Chrome déconnectée.")).toBeTruthy();
+    expect(screen.getByText(/lancé à 09:12 · 8 min/)).toBeTruthy();
+    expect(screen.queryByText("8 demandes")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /hier|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche/i, expanded: false }));
+    expect(screen.getByText("8 demandes")).toBeTruthy();
 
     fireEvent.click(screen.getAllByRole("button", { name: "Copier ce rapport" })[0]);
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Indexation Google — denivio.fr"));
@@ -108,6 +112,24 @@ describe("page Agents par site", () => {
     fireEvent.click(carte);
     expect(screen.getByText("Lancé à 09:04, toujours sans rapport après 1 h")).toBeTruthy();
     expect(screen.getByText("Bloquée ?")).toBeTruthy();
+  });
+
+  it("une tache lancee depuis l'appli se montre en cours, son carre du jour en bleu", async () => {
+    invoke.mockResolvedValue({ dossier: RACINE, existe: true, fichiers: FICHIERS });
+    const controles = {
+      controles: [{ id: "sante", site: "denivio.fr", titre: "Santé de la prod", cron: "45 7 * * *", type: "script" }],
+      modeles: [],
+      derniers: {},
+      resultats: {},
+      enCours: { script: "sante", claude: null },
+      erreurRegistre: null,
+      lancer: vi.fn(),
+    };
+    render(<Agents sites={SITES} rafraichissement={0} controles={controles} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Denivio/ }));
+    const ligne = screen.getByRole("button", { name: /Santé de la prod/, expanded: false });
+    expect(ligne.textContent).toContain("En cours");
+    expect(within(ligne).getByTitle(/en cours/).style.background).toBe("rgb(56, 189, 248)");
   });
 
   it("les reglages des taches sont replies en bas", async () => {

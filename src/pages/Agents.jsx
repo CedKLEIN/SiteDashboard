@@ -15,7 +15,16 @@ import {
   lireRapport,
   texteRapport,
 } from "../lib/rapportsAgents";
-import { STATUTS_SITE, etatNiveau, etatRapport, libelleNiveau, vueParSite } from "../lib/vueAgents";
+import {
+  COULEUR_EN_COURS,
+  RAPPORTS_MAX,
+  STATUTS_SITE,
+  dureeRapport,
+  etatNiveau,
+  etatRapport,
+  libelleNiveau,
+  vueParSite,
+} from "../lib/vueAgents";
 import { tracer } from "../lib/trace";
 
 /** '2026-10-24' -> 'samedi 24 octobre' */
@@ -30,76 +39,110 @@ function IconeEtat({ etat, taille = 18 }) {
   return <Icone size={taille} strokeWidth={2.25} style={{ color: couleurEtat(etat) }} className="shrink-0" aria-hidden="true" />;
 }
 
-function PastilleStatut({ etat, children }) {
+function PastilleStatut({ etat, couleur = couleurEtat(etat), children }) {
   return (
-    <span
-      className="shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium"
-      style={{ color: couleurEtat(etat), background: `${couleurEtat(etat)}22` }}
-    >
+    <span className="shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium" style={{ color: couleur, background: `${couleur}22` }}>
       {children}
     </span>
   );
 }
 
-/** Les derniers jours d'une tache, un carre par jour (gris : pas de rapport). */
+/** Les derniers jours d'une tache, un carre par jour (gris : pas de rapport, bleu : tourne). */
 function Frise({ jours }) {
   return (
     <span className="flex shrink-0 gap-0.5" aria-label="Derniers jours">
       {jours.map((j) => (
         <span
           key={j.date}
-          title={`${jourLisible(j.date)} : ${j.statut ? STATUTS_RAPPORT[j.statut]?.libelle : "pas de rapport"}`}
-          className="size-3 rounded-[3px]"
-          style={{ background: j.statut ? couleurEtat(etatRapport(j.statut)) : "var(--color-bord)" }}
+          title={`${jourLisible(j.date)} : ${j.enCours ? "en cours" : j.statut ? STATUTS_RAPPORT[j.statut]?.libelle : "pas de rapport"}`}
+          className={`size-3 rounded-[3px] ${j.enCours ? "animate-pulse" : ""}`}
+          style={{
+            background: j.enCours ? COULEUR_EN_COURS : j.statut ? couleurEtat(etatRapport(j.statut)) : "var(--color-bord)",
+          }}
         />
       ))}
     </span>
   );
 }
 
-function DetailRapport({ rapport }) {
+/** Un passage de la tache : replie, une ligne (jour, heure, duree, statut) ; ouvert, son detail. */
+function DetailRapport({ rapport, ouvert, onBasculer }) {
   const etat = STATUTS_RAPPORT[rapport.statut].etat;
   const heure = heureRapport(rapport.debut) ?? heureRapport(rapport.fin);
+  const duree = dureeRapport(rapport.debut, rapport.fin);
   const fichier = rapport.fichierSuivi ?? rapport.chemin;
+  const Chevron = ouvert ? ChevronDown : ChevronRight;
   return (
-    <li className="flex gap-3 rounded-lg border border-bord bg-surface-2/40 p-3">
-      <IconeEtat etat={etat} />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <p className="text-sm font-semibold capitalize text-texte">{jourLisible(rapport.date)}</p>
-          <p className="flex items-center gap-1 text-[11px] text-texte-doux tabular-nums">
-            <span style={{ color: couleurEtat(etat) }}>{STATUTS_RAPPORT[rapport.statut].libelle}</span>
-            {heure && ` · ${heure}`}
-            <BoutonCopier texte={() => texteRapport(rapport)} titre="Copier ce rapport" />
-          </p>
-        </div>
-        {/* Un resume qui repete mot pour mot un point n'apporte rien */}
-        {rapport.resume && !rapport.points.some((p) => p.texte === rapport.resume) && (
-          <p className="mt-1 text-xs text-texte-doux">{rapport.resume}</p>
-        )}
-        {rapport.points.length > 0 && (
-          <ul className="mt-2 flex flex-col gap-1">
-            {rapport.points.map((point, i) => (
-              <li key={i} className="flex items-start gap-2 text-xs text-texte">
-                <span className="mt-0.5">
-                  <IconeEtat etat={STATUTS_RAPPORT[point.niveau].etat} taille={13} />
-                </span>
-                <span>{point.texte}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+    <li className="rounded-lg border border-bord bg-surface-2/40">
+      <div className="flex items-center gap-2 px-3 py-2">
         <button
           type="button"
-          onClick={() => revealItemInDir(fichier).catch((e) => tracer("agents", `ouverture impossible: ${e}`))}
-          className="mt-2 flex items-center gap-1.5 text-[11px] text-texte-doux hover:text-texte"
-          title={fichier}
+          onClick={onBasculer}
+          aria-expanded={ouvert}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
         >
-          <FolderOpen size={12} />
-          {rapport.fichierSuivi ? "Voir le fichier de suivi" : "Voir le rapport"}
+          <Chevron size={14} className="shrink-0 text-texte-doux" />
+          <IconeEtat etat={etat} taille={16} />
+          <span className="truncate text-sm font-semibold capitalize text-texte">{jourLisible(rapport.date)}</span>
+          <span className="shrink-0 text-[11px] text-texte-doux tabular-nums">
+            {heure && `lancé à ${heure}`}
+            {duree && ` · ${duree}`}
+          </span>
         </button>
+        <span className="shrink-0 text-[11px]" style={{ color: couleurEtat(etat) }}>
+          {STATUTS_RAPPORT[rapport.statut].libelle}
+        </span>
+        <BoutonCopier texte={() => texteRapport(rapport)} titre="Copier ce rapport" />
       </div>
+      {ouvert && (
+        <div className="border-t border-bord px-3 pb-3 pl-9">
+          {/* Un resume qui repete mot pour mot un point n'apporte rien */}
+          {rapport.resume && !rapport.points.some((p) => p.texte === rapport.resume) && (
+            <p className="mt-2 text-xs text-texte-doux">{rapport.resume}</p>
+          )}
+          {rapport.points.length > 0 && (
+            <ul className="mt-2 flex flex-col gap-1">
+              {rapport.points.map((point, i) => (
+                <li key={i} className="flex items-start gap-2 text-xs text-texte">
+                  <span className="mt-0.5">
+                    <IconeEtat etat={STATUTS_RAPPORT[point.niveau].etat} taille={13} />
+                  </span>
+                  <span>{point.texte}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            type="button"
+            onClick={() => revealItemInDir(fichier).catch((e) => tracer("agents", `ouverture impossible: ${e}`))}
+            className="mt-2 flex items-center gap-1.5 text-[11px] text-texte-doux hover:text-texte"
+            title={fichier}
+          >
+            <FolderOpen size={12} />
+            {rapport.fichierSuivi ? "Voir le fichier de suivi" : "Voir le rapport"}
+          </button>
+        </div>
+      )}
     </li>
+  );
+}
+
+/** Les derniers passages : seul le plus recent est ouvert d'office. */
+function Historique({ rapports }) {
+  const [ouverts, setOuverts] = useState(() => new Set(rapports[0] ? [rapports[0].cle] : []));
+  const basculer = (cle) =>
+    setOuverts((avant) => {
+      const apres = new Set(avant);
+      if (apres.has(cle)) apres.delete(cle);
+      else apres.add(cle);
+      return apres;
+    });
+  return (
+    <ul className="flex flex-col gap-1.5">
+      {rapports.map((r) => (
+        <DetailRapport key={r.cle} rapport={r} ouvert={ouverts.has(r.cle)} onBasculer={() => basculer(r.cle)} />
+      ))}
+    </ul>
   );
 }
 
@@ -125,7 +168,10 @@ function CarteSiteAgents({ vue, onOuvrir }) {
       <div className="flex flex-wrap gap-x-3 gap-y-1">
         {vue.taches.map((t) => (
           <span key={t.id} className="flex items-center gap-1.5 text-[11px] text-texte-doux">
-            <span className="size-2 rounded-full" style={{ background: couleurEtat(etatNiveau(t.niveau)) }} />
+            <span
+              className={`size-2 rounded-full ${t.enCours ? "animate-pulse" : ""}`}
+              style={{ background: t.enCours ? COULEUR_EN_COURS : couleurEtat(etatNiveau(t.niveau)) }}
+            />
             {t.titre}
           </span>
         ))}
@@ -161,11 +207,10 @@ function DetailTache({ tache, controles }) {
       {tache.rapports.length === 0 ? (
         <p className="text-xs text-texte-doux">Aucun rapport sur les {JOURS_HISTORIQUE} derniers jours.</p>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {tache.rapports.map((r) => (
-            <DetailRapport key={r.cle} rapport={r} />
-          ))}
-        </ul>
+        <>
+          <p className="mb-1.5 text-[11px] text-texte-doux">Les {RAPPORTS_MAX} derniers passages au plus</p>
+          <Historique rapports={tache.rapports} />
+        </>
       )}
     </div>
   );
@@ -184,9 +229,9 @@ function LigneTache({ tache, ouverte, onBasculer, controles }) {
       >
         <Chevron size={16} className="shrink-0 text-texte-doux" />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">{tache.titre}</span>
-        <PastilleStatut etat={etat}>
+        <PastilleStatut etat={etat} couleur={tache.enCours ? COULEUR_EN_COURS : undefined}>
           {libelleNiveau(tache)}
-          {tache.rapportDuJour && ` · ${heureRapport(tache.rapportDuJour.debut) ?? ""}`}
+          {!tache.enCours && tache.rapportDuJour && ` · ${heureRapport(tache.rapportDuJour.debut) ?? ""}`}
         </PastilleStatut>
         <span className="hidden w-40 shrink-0 truncate text-[11px] text-texte-doux sm:block">{tache.planning ?? ""}</span>
         <Frise jours={tache.frise} />
@@ -288,8 +333,9 @@ export default function Agents({ sites = [], rafraichissement, attendus = [], co
         attendus,
         controles: controles?.controles ?? [],
         sites,
+        enCours: Object.values(controles?.enCours ?? {}).filter(Boolean),
       }),
-    [dossier.fichiers, attendus, controles?.controles, sites],
+    [dossier.fichiers, attendus, controles?.controles, controles?.enCours, sites],
   );
   const vue = vues.find((v) => v.cle === siteOuvert);
 

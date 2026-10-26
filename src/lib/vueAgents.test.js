@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { aFaire, frise, niveauTache, resumeSite, statutSite, vueParSite } from "./vueAgents";
+import { RAPPORTS_MAX, aFaire, dureeRapport, frise, libelleNiveau, niveauTache, resumeSite, statutSite, vueParSite } from "./vueAgents";
 
 const MAINTENANT = new Date(2026, 9, 26, 12, 0);
 const rapport = (site, date, agent, statut, extra = {}) => ({
@@ -183,5 +183,40 @@ describe("vue par site", () => {
 
   it("rien du tout : aucune carte", () => {
     expect(vueParSite({ aujourdhui: MAINTENANT })).toEqual([]);
+  });
+
+  it("une tache qui tourne : en cours, carre du jour en bleu, le niveau du rapport precedent reste", () => {
+    const [denivio] = vueParSite({ rapports, controles, sites, enCours: ["indexation-d", "correctifs-d"], aujourdhui: MAINTENANT });
+    const indexation = denivio.taches.find((t) => t.id === "indexation-d");
+    expect(indexation).toMatchObject({ enCours: true, niveau: "action" });
+    expect(libelleNiveau(indexation)).toBe("En cours");
+    expect(indexation.frise.at(-1)).toEqual({ date: "2026-10-26", statut: "echec", enCours: true });
+    expect(indexation.frise.at(-2).enCours).toBeUndefined();
+    // Sans rapport du jour, la tache qui tourne est en cours
+    expect(denivio.taches.find((t) => t.id === "correctifs-d").niveau).toBe("en_cours");
+  });
+
+  it(`garde au plus ${RAPPORTS_MAX} rapports, les plus recents`, () => {
+    const beaucoup = Array.from({ length: 10 }, (_, i) =>
+      rapport("denivio.fr", `2026-10-${String(17 + i).padStart(2, "0")}`, "indexation-d", "ok"),
+    );
+    const [denivio] = vueParSite({ rapports: beaucoup, controles, aujourdhui: MAINTENANT });
+    const dates = denivio.taches.find((t) => t.id === "indexation-d").rapports.map((r) => r.date);
+    expect(dates).toHaveLength(RAPPORTS_MAX);
+    expect(dates[0]).toBe("2026-10-26");
+    expect(dates.at(-1)).toBe("2026-10-20");
+  });
+});
+
+describe("duree d'un passage", () => {
+  it("secondes, minutes, heures", () => {
+    expect(dureeRapport("2026-10-26T09:00:00+01:00", "2026-10-26T09:00:45+01:00")).toBe("45 s");
+    expect(dureeRapport("2026-10-26T09:00:00+01:00", "2026-10-26T09:12:20+01:00")).toBe("12 min");
+    expect(dureeRapport("2026-10-26T09:00:00+01:00", "2026-10-26T10:05:00+01:00")).toBe("1 h 05");
+  });
+
+  it("rien sans debut ou fin lisibles", () => {
+    expect(dureeRapport(null, "2026-10-26T09:00:00+01:00")).toBeNull();
+    expect(dureeRapport("2026-10-26T09:00:00+01:00", undefined)).toBeNull();
   });
 });

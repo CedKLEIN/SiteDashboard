@@ -13,6 +13,23 @@ import { horaireLisible } from "./controles";
 /** Jours montres dans la frise d'une tache. */
 export const JOURS_FRISE = 7;
 
+/** Rapports gardes dans l'historique d'une tache, le plus recent d'abord. */
+export const RAPPORTS_MAX = 7;
+
+/** Une tache qui tourne en ce moment : bleu, distinct des etats et de l'accent. */
+export const COULEUR_EN_COURS = "#38bdf8";
+
+/** Duree d'un passage : '45 s', '12 min', '1 h 05' ; null sans debut ou fin lisibles. */
+export function dureeRapport(debut, fin) {
+  const ms = Date.parse(fin) - Date.parse(debut);
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  const secondes = Math.round(ms / 1000);
+  if (secondes < 60) return `${secondes} s`;
+  const minutes = Math.round(secondes / 60);
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")}`;
+}
+
 /** Statut d'un site, du pire au meilleur. */
 export const STATUTS_SITE = {
   action: { libelle: "Action requise", etat: "ko" },
@@ -27,9 +44,10 @@ const RANG = { aucun: 0, ok: 1, attention: 2, action: 3 };
  * Niveau du jour d'une tache : `action` (echec, bloquee, pas lancee),
  * `attention`, `ok`, `en_cours`, `prevu`, ou `aucun` (rien attendu ni recu).
  */
-export function niveauTache({ attendu, rapportDuJour }) {
+export function niveauTache({ attendu, rapportDuJour, enCours }) {
   const rapport = attendu?.rapport ?? rapportDuJour ?? null;
   if (rapport) return rapport.statut === "echec" ? "action" : rapport.statut;
+  if (enCours) return "en_cours";
   if (attendu?.situation === "bloque" || attendu?.situation === "non_lance") return "action";
   if (attendu?.situation === "en_cours") return "en_cours";
   if (attendu?.situation === "prevu") return "prevu";
@@ -39,6 +57,7 @@ export function niveauTache({ attendu, rapportDuJour }) {
 /** Libelle court du niveau d'une tache, pour sa pastille. */
 export function libelleNiveau(tache) {
   const { niveau, attendu } = tache;
+  if (tache.enCours) return "En cours";
   if (attendu?.situation === "bloque") return "Bloquée ?";
   if (attendu?.situation === "non_lance") return "Pas lancée";
   if (niveau === "action") return "Échec";
@@ -146,10 +165,14 @@ export function resumeSite(taches) {
  * (controles), les taches planifiees attendues aujourd'hui, et les agents vus
  * dans les rapports recents (un ancien agent garde son historique).
  *
+ * `enCours` : ids des taches lancees par l'appli qui tournent en ce moment.
+ * Une tache qui tourne garde son niveau du jour (le rapport precedent compte
+ * tant que le nouveau n'est pas ecrit) mais se montre en cours.
+ *
  * Renvoie [{ cle, nom, couleur, statut, resume, aFaire, taches }], les sites
  * qui demandent une action d'abord.
  */
-export function vueParSite({ rapports = [], attendus = [], controles = [], sites = [], aujourdhui = new Date() }) {
+export function vueParSite({ rapports = [], attendus = [], controles = [], sites = [], enCours = [], aujourdhui = new Date() }) {
   const jour = dateDepuis(0, aujourdhui);
   const parSite = new Map();
   const tacheDe = (nomSite, id) => {
@@ -179,7 +202,11 @@ export function vueParSite({ rapports = [], attendus = [], controles = [], sites
       const liste = [...taches.values()].map((t) => {
         const tries = [...t.rapports].sort((a, b) => `${b.date}${b.fin ?? b.debut ?? ""}`.localeCompare(`${a.date}${a.fin ?? a.debut ?? ""}`));
         const rapportDuJour = tries.find((r) => r.date === jour) ?? null;
-        const tache = { ...t, rapports: tries, rapportDuJour, frise: frise(tries, JOURS_FRISE, aujourdhui) };
+        const tourne = enCours.includes(t.id) || t.attendu?.situation === "en_cours";
+        const jours = frise(tries, JOURS_FRISE, aujourdhui);
+        // Le carre du jour passe en bleu tant que la tache tourne
+        if (tourne) jours[jours.length - 1] = { ...jours.at(-1), enCours: true };
+        const tache = { ...t, rapports: tries.slice(0, RAPPORTS_MAX), rapportDuJour, frise: jours, enCours: tourne };
         return { ...tache, niveau: niveauTache(tache) };
       });
       // Les taches qui vont le plus mal en tete, puis par titre
