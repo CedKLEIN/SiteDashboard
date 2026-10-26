@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { dateDepuis } from "../lib/rapportsAgents";
 
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args) => invoke(...args) }));
@@ -10,16 +11,37 @@ vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: (...args) =>
 const { default: Agents } = await import("./Agents");
 
 const RACINE = "C:\\Users\\moi\\.claude\\rapports-agents";
+const AUJOURDHUI = dateDepuis(0);
+const HIER = dateDepuis(1);
 
-function fichier(jour, agent, donnees) {
+function fichier(site, jour, agent, donnees) {
   return {
-    chemin: `${RACINE}\\denivio.fr\\${jour}\\${agent}.json`,
-    contenu: JSON.stringify({ site: "denivio.fr", date: jour, agent, ...donnees }),
+    chemin: `${RACINE}\\${site}\\${jour}\\${agent}.json`,
+    contenu: JSON.stringify({ site, date: jour, agent, ...donnees }),
     erreur: null,
   };
 }
 
-const SITES = [{ id: 1, nom: "Denivio", url: "https://denivio.fr", couleur: "#22c55e" }];
+const SITES = [
+  { id: 1, nom: "Denivio", url: "https://denivio.fr", couleur: "#22c55e" },
+  { id: 2, nom: "Rois & Empereurs", url: "https://roisempereurs.fr", couleur: "#6366f1" },
+];
+
+const FICHIERS = [
+  fichier("denivio.fr", AUJOURDHUI, "indexation", {
+    titre: "Indexation Google",
+    statut: "echec",
+    debut: `${AUJOURDHUI}T09:12:00+01:00`,
+    resume: "Extension Chrome déconnectée.",
+    points: [
+      { niveau: "echec", texte: "Reconnecter l'extension Claude in Chrome" },
+      { niveau: "attention", texte: "/catalogs/col-de-montgenevre répond 404" },
+    ],
+  }),
+  fichier("denivio.fr", HIER, "indexation", { titre: "Indexation Google", statut: "ok", resume: "8 demandes" }),
+  fichier("denivio.fr", AUJOURDHUI, "sante", { titre: "Santé de la prod", statut: "ok", resume: "RAS" }),
+  fichier("roisempereurs.fr", AUJOURDHUI, "sante-r", { titre: "Santé de la prod", statut: "ok", resume: "RAS" }),
+];
 
 afterEach(() => {
   cleanup();
@@ -27,86 +49,82 @@ afterEach(() => {
   writeText.mockClear();
 });
 
-describe("page Agents", () => {
-  it("affiche une ligne par jour avec son verdict, et les rapports au clic", async () => {
-    invoke.mockResolvedValue({
-      dossier: RACINE,
-      existe: true,
-      fichiers: [
-        fichier("2026-10-24", "sante", { titre: "Santé de la prod", statut: "ok", resume: "RAS" }),
-        fichier("2026-10-24", "seo", {
-          titre: "Indexation",
-          statut: "attention",
-          resume: "Quota Google atteint",
-          points: [{ niveau: "attention", texte: "7 avertissements Bing" }],
-        }),
-        fichier("2026-10-23", "sante", { titre: "Santé de la prod", statut: "echec" }),
-      ],
-    });
-
+describe("page Agents par site", () => {
+  it("une carte par site : le site qui demande une action d'abord, avec son resume", async () => {
+    invoke.mockResolvedValue({ dossier: RACINE, existe: true, fichiers: FICHIERS });
     render(<Agents sites={SITES} rafraichissement={0} />);
 
-    const lignes = await screen.findAllByRole("button", { expanded: false });
-    expect(lignes).toHaveLength(2);
-    // La plus recente d'abord, verdict porte par le titre (et l'icone)
-    expect(lignes[0].getAttribute("title")).toMatch(/^Partiel/);
-    expect(lignes[1].getAttribute("title")).toMatch(/^KO/);
-    expect(lignes[0].textContent).toContain("Denivio");
-    expect(lignes[0].textContent).toContain("2 rapport(s) · 1 OK · 1 à regarder");
+    const denivio = await screen.findByRole("button", { name: /Denivio/ });
+    const cartes = screen.getAllByRole("button", { name: /Denivio|Rois & Empereurs/ });
+    expect(cartes[0]).toBe(denivio);
+    expect(denivio.textContent).toContain("Action requise");
+    expect(denivio.textContent).toContain("Indexation Google : Extension Chrome déconnectée.");
+    expect(denivio.textContent).toContain("1 autre(s) OK.");
+    expect(cartes[1].textContent).toContain("Tout va bien");
+    // Le detail n'est pas montre avant le clic
+    expect(screen.queryByText("/catalogs/col-de-montgenevre répond 404")).toBeNull();
+  });
 
-    expect(screen.queryByText("Quota Google atteint")).toBeNull();
-    fireEvent.click(lignes[0]);
-    expect(screen.getByText("Quota Google atteint")).toBeTruthy();
-    expect(screen.getByText("7 avertissements Bing")).toBeTruthy();
-    expect(screen.getByText("Santé de la prod")).toBeTruthy();
+  it("un clic sur le site : ce qu'il y a a faire, puis ses taches ; un clic sur une tache : ses rapports", async () => {
+    invoke.mockResolvedValue({ dossier: RACINE, existe: true, fichiers: FICHIERS });
+    render(<Agents sites={SITES} rafraichissement={0} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Denivio/ }));
 
-    // Copier un rapport ne replie pas la ligne et met le texte complet au presse-papiers
-    // Sans heure de debut, les rapports suivent l'ordre des titres: Indexation d'abord
+    const aFaire = screen.getByText("À faire").closest("div").parentElement;
+    expect(within(aFaire).getByText("Reconnecter l'extension Claude in Chrome")).toBeTruthy();
+    expect(within(aFaire).getByText("/catalogs/col-de-montgenevre répond 404")).toBeTruthy();
+
+    const tache = screen.getByRole("button", { name: /Indexation Google/, expanded: false });
+    expect(tache.textContent).toContain("Échec");
+    fireEvent.click(tache);
+    // Les rapports de la tache, le plus recent d'abord
+    expect(screen.getByText("8 demandes")).toBeTruthy();
+    expect(screen.getByText("Extension Chrome déconnectée.")).toBeTruthy();
+
     fireEvent.click(screen.getAllByRole("button", { name: "Copier ce rapport" })[0]);
-    expect(writeText).toHaveBeenCalledWith(
-      expect.stringContaining("Indexation — denivio.fr — 2026-10-24 — À regarder\nQuota Google atteint\n- [À regarder] 7 avertissements Bing"),
-    );
-    expect(screen.getByText("Quota Google atteint")).toBeTruthy();
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Indexation Google — denivio.fr"));
+
+    // Retour aux cartes
+    fireEvent.click(screen.getByRole("button", { name: /Denivio/ }));
+    expect(screen.getByRole("button", { name: /Rois & Empereurs/ })).toBeTruthy();
+  });
+
+  it("une tache bloquee sans rapport est une action, avec son message", async () => {
+    invoke.mockResolvedValue({ dossier: RACINE, existe: true, fichiers: [] });
+    const attendus = [
+      {
+        id: "sante",
+        agent: "sante",
+        site: "denivio.fr",
+        titre: "Santé de la prod",
+        situation: "bloque",
+        message: "Lancé à 09:04, toujours sans rapport après 1 h",
+        rapport: null,
+      },
+    ];
+    render(<Agents sites={SITES} rafraichissement={0} attendus={attendus} />);
+    const carte = await screen.findByRole("button", { name: /Denivio/ });
+    expect(carte.textContent).toContain("Action requise");
+    fireEvent.click(carte);
+    expect(screen.getByText("Lancé à 09:04, toujours sans rapport après 1 h")).toBeTruthy();
+    expect(screen.getByText("Bloquée ?")).toBeTruthy();
+  });
+
+  it("les reglages des taches sont replies en bas", async () => {
+    invoke.mockResolvedValue({ dossier: RACINE, existe: true, fichiers: FICHIERS });
+    const controles = { controles: [], modeles: [], derniers: {}, resultats: {}, enCours: {}, erreurRegistre: null };
+    render(<Agents sites={SITES} rafraichissement={0} controles={controles} />);
+    const bouton = await screen.findByRole("button", { name: /Réglages des tâches/ });
+    expect(screen.queryByText("Tâches planifiées")).toBeNull();
+    fireEvent.click(bouton);
+    expect(screen.getByText("Tâches planifiées")).toBeTruthy();
   });
 
   it("demande les rapports depuis la date de debut d'historique", async () => {
     invoke.mockResolvedValue({ dossier: RACINE, existe: false, fichiers: [] });
     render(<Agents sites={SITES} rafraichissement={0} />);
-    expect(await screen.findByText("Aucun agent n'a encore depose de rapport.")).toBeTruthy();
-    expect(invoke).toHaveBeenCalledWith("lire_rapports_agents", {
-      depuis: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
-    });
-  });
-
-  it("liste les agents attendus aujourd'hui, avec ceux qui sont bloques", async () => {
-    invoke.mockResolvedValue({ dossier: RACINE, existe: true, fichiers: [] });
-    const attendus = [
-      {
-        id: "sante",
-        site: "denivio.fr",
-        titre: "Santé de la prod",
-        heure: "09:04",
-        situation: "bloque",
-        message: "Lancé à 09:04, toujours sans rapport après 1 h",
-        rapport: null,
-      },
-      {
-        id: "seo",
-        site: "denivio.fr",
-        titre: "Indexation",
-        heure: "09:05",
-        situation: "recu",
-        message: "RAS",
-        rapport: { statut: "ok" },
-      },
-    ];
-    render(<Agents sites={SITES} rafraichissement={0} attendus={attendus} />);
-
-    expect(await screen.findByText("Attendus aujourd'hui")).toBeTruthy();
-    expect(screen.getByText("Bloqué ?")).toBeTruthy();
-    expect(screen.getByText("Lancé à 09:04, toujours sans rapport après 1 h")).toBeTruthy();
-    expect(screen.getByText("Reçu · OK")).toBeTruthy();
-    expect(screen.getAllByText("Denivio")).toHaveLength(2);
+    expect(await screen.findByText("Aucun agent n'a encore déposé de rapport.")).toBeTruthy();
+    expect(invoke).toHaveBeenCalledWith("lire_rapports_agents", { depuis: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
   });
 
   it("previent quand les horaires des taches sont introuvables", async () => {

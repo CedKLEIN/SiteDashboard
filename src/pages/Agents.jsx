@@ -1,85 +1,82 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { ChevronDown, ChevronRight, CircleDashed, FolderOpen, RefreshCw } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, CircleDashed, FolderOpen, Play, RefreshCw, Settings2 } from "lucide-react";
 import { ICONES } from "../components/CarteSite";
 import ControlesAutomatiques from "../components/ControlesAutomatiques";
 import { Bouton, BoutonCopier, Carte, EtatVide } from "../components/ui";
-import { couleurEtat, iconeEtat, libelleEtat } from "../lib/statut";
+import { couleurEtat, iconeEtat } from "../lib/statut";
+import { file } from "../lib/controles";
 import {
   JOURS_HISTORIQUE,
   STATUTS_RAPPORT,
   dateDepuis,
-  domaine,
   heureRapport,
   lireRapport,
-  rattacherSite,
-  regrouperParJournee,
-  texteJournee,
   texteRapport,
 } from "../lib/rapportsAgents";
-import { SITUATIONS, libelleAttendu, texteAttendu } from "../lib/tachesPlanifiees";
+import { STATUTS_SITE, etatNiveau, etatRapport, libelleNiveau, vueParSite } from "../lib/vueAgents";
 import { tracer } from "../lib/trace";
 
-const LIBELLES_VERDICT = {
-  ok: "Tout s'est bien passé",
-  partiel: "Des points à regarder",
-  ko: "Trop d'agents ont échoué",
-};
-
-/** '2026-10-24' -> 'samedi 24 octobre 2026' */
+/** '2026-10-24' -> 'samedi 24 octobre' */
 function jourLisible(dateIso) {
   const [a, m, j] = dateIso.split("-").map(Number);
   if (!a || !m || !j) return dateIso;
-  return new Date(a, m - 1, j).toLocaleDateString("fr-FR", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
+  return new Date(a, m - 1, j).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" });
 }
 
 function IconeEtat({ etat, taille = 18 }) {
   const Icone = ICONES[iconeEtat(etat)] ?? CircleDashed;
+  return <Icone size={taille} strokeWidth={2.25} style={{ color: couleurEtat(etat) }} className="shrink-0" aria-hidden="true" />;
+}
+
+function PastilleStatut({ etat, children }) {
   return (
-    <Icone
-      size={taille}
-      strokeWidth={2.25}
-      style={{ color: couleurEtat(etat) }}
-      className="shrink-0"
-      aria-hidden="true"
-    />
+    <span
+      className="shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium"
+      style={{ color: couleurEtat(etat), background: `${couleurEtat(etat)}22` }}
+    >
+      {children}
+    </span>
   );
 }
 
-function resumeCompte({ ok, attention, echec }) {
-  const morceaux = [];
-  if (ok) morceaux.push(`${ok} OK`);
-  if (attention) morceaux.push(`${attention} à regarder`);
-  if (echec) morceaux.push(`${echec} en échec`);
-  return morceaux.join(" · ");
+/** Les derniers jours d'une tache, un carre par jour (gris : pas de rapport). */
+function Frise({ jours }) {
+  return (
+    <span className="flex shrink-0 gap-0.5" aria-label="Derniers jours">
+      {jours.map((j) => (
+        <span
+          key={j.date}
+          title={`${jourLisible(j.date)} : ${j.statut ? STATUTS_RAPPORT[j.statut]?.libelle : "pas de rapport"}`}
+          className="size-3 rounded-[3px]"
+          style={{ background: j.statut ? couleurEtat(etatRapport(j.statut)) : "var(--color-bord)" }}
+        />
+      ))}
+    </span>
+  );
 }
 
 function DetailRapport({ rapport }) {
   const etat = STATUTS_RAPPORT[rapport.statut].etat;
   const heure = heureRapport(rapport.debut) ?? heureRapport(rapport.fin);
   const fichier = rapport.fichierSuivi ?? rapport.chemin;
-
   return (
     <li className="flex gap-3 rounded-lg border border-bord bg-surface-2/40 p-3">
       <IconeEtat etat={etat} />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <p className="text-sm font-semibold text-texte">{rapport.titre}</p>
+          <p className="text-sm font-semibold capitalize text-texte">{jourLisible(rapport.date)}</p>
           <p className="flex items-center gap-1 text-[11px] text-texte-doux tabular-nums">
-            <span style={{ color: couleurEtat(etat) }}>
-              {STATUTS_RAPPORT[rapport.statut].libelle}
-            </span>
+            <span style={{ color: couleurEtat(etat) }}>{STATUTS_RAPPORT[rapport.statut].libelle}</span>
             {heure && ` · ${heure}`}
             <BoutonCopier texte={() => texteRapport(rapport)} titre="Copier ce rapport" />
           </p>
         </div>
-        {rapport.resume && <p className="mt-1 text-xs text-texte-doux">{rapport.resume}</p>}
+        {/* Un resume qui repete mot pour mot un point n'apporte rien */}
+        {rapport.resume && !rapport.points.some((p) => p.texte === rapport.resume) && (
+          <p className="mt-1 text-xs text-texte-doux">{rapport.resume}</p>
+        )}
         {rapport.points.length > 0 && (
           <ul className="mt-2 flex flex-col gap-1">
             {rapport.points.map((point, i) => (
@@ -94,9 +91,7 @@ function DetailRapport({ rapport }) {
         )}
         <button
           type="button"
-          onClick={() =>
-            revealItemInDir(fichier).catch((e) => tracer("agents", `ouverture impossible: ${e}`))
-          }
+          onClick={() => revealItemInDir(fichier).catch((e) => tracer("agents", `ouverture impossible: ${e}`))}
           className="mt-2 flex items-center gap-1.5 text-[11px] text-texte-doux hover:text-texte"
           title={fichier}
         >
@@ -108,128 +103,164 @@ function DetailRapport({ rapport }) {
   );
 }
 
-function LigneJournee({ ligne, site, ouverte, onBasculer }) {
+/** Niveau 1 : un site, son statut, son resume et une pastille par tache. */
+function CarteSiteAgents({ vue, onOuvrir }) {
+  const statut = STATUTS_SITE[vue.statut];
+  return (
+    <button
+      type="button"
+      onClick={onOuvrir}
+      className="relative flex flex-col gap-2 overflow-hidden rounded-xl border bg-surface p-4 pl-5 text-left transition hover:bg-surface-2"
+      style={{ borderColor: vue.statut === "action" ? couleurEtat("ko") : undefined }}
+    >
+      <span className="absolute inset-y-0 left-0 w-1.5" style={{ background: vue.couleur ?? "#3a4570" }} aria-hidden="true" />
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-2 text-base font-semibold">
+          <IconeEtat etat={statut.etat} taille={20} />
+          {vue.nom}
+        </span>
+        <PastilleStatut etat={statut.etat}>{statut.libelle}</PastilleStatut>
+      </div>
+      <p className="text-sm text-texte-doux">{vue.resume}</p>
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
+        {vue.taches.map((t) => (
+          <span key={t.id} className="flex items-center gap-1.5 text-[11px] text-texte-doux">
+            <span className="size-2 rounded-full" style={{ background: couleurEtat(etatNiveau(t.niveau)) }} />
+            {t.titre}
+          </span>
+        ))}
+      </div>
+    </button>
+  );
+}
+
+/** Niveau 3 : une tache ouverte, ses actions et ses rapports passes. */
+function DetailTache({ tache, controles }) {
+  const controle = tache.controle;
+  const voie = controle ? file(controle) : null;
+  const enCours = voie && controles?.enCours[voie] === controle.id;
+  const occupee = voie && Boolean(controles?.enCours[voie]);
+  return (
+    <div className="border-t border-bord p-3">
+      <div className="mb-3 flex flex-wrap items-center gap-3 text-xs text-texte-doux">
+        {tache.planning && <span>Horaire : {tache.planning}</span>}
+        {controle && (
+          <Bouton
+            variante="fantome"
+            className="flex items-center gap-1.5 px-2 py-1 text-xs"
+            disabled={occupee}
+            onClick={() => controles.lancer(controle.id)}
+            title={occupee && !enCours ? "Une autre tâche de ce type tourne" : "Lancer maintenant"}
+          >
+            {enCours ? <RefreshCw size={13} className="animate-spin" /> : <Play size={13} />}
+            {enCours ? "En cours..." : "Lancer maintenant"}
+          </Bouton>
+        )}
+        {tache.attendu?.message && !tache.attendu.rapport && <span>{tache.attendu.message}</span>}
+      </div>
+      {tache.rapports.length === 0 ? (
+        <p className="text-xs text-texte-doux">Aucun rapport sur les {JOURS_HISTORIQUE} derniers jours.</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {tache.rapports.map((r) => (
+            <DetailRapport key={r.cle} rapport={r} />
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function LigneTache({ tache, ouverte, onBasculer, controles }) {
   const Chevron = ouverte ? ChevronDown : ChevronRight;
+  const etat = etatNiveau(tache.niveau);
   return (
     <li className="overflow-hidden rounded-xl border border-bord bg-surface">
       <button
         type="button"
         onClick={onBasculer}
         aria-expanded={ouverte}
-        title={`${libelleEtat(ligne.verdict)} — ${LIBELLES_VERDICT[ligne.verdict] ?? ""}`}
-        className="relative flex w-full items-center gap-3 py-3 pr-3 pl-5 text-left transition hover:bg-surface-2"
+        className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-surface-2"
       >
-        {/* La couleur identifie le site, l'icone porte le verdict (voir CarteSite) */}
-        <span
-          className="absolute inset-y-0 left-0 w-1.5"
-          style={{ background: site?.couleur ?? "#3a4570" }}
-          aria-hidden="true"
-        />
-        <IconeEtat etat={ligne.verdict} taille={20} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-texte">
-            {site?.nom ?? ligne.site}
-            <span className="ml-2 font-normal text-texte-doux">{jourLisible(ligne.date)}</span>
-          </p>
-          <p className="truncate text-[11px] text-texte-doux">
-            {ligne.rapports.length} rapport(s) · {resumeCompte(ligne.compte)}
-          </p>
-        </div>
         <Chevron size={16} className="shrink-0 text-texte-doux" />
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">{tache.titre}</span>
+        <PastilleStatut etat={etat}>
+          {libelleNiveau(tache)}
+          {tache.rapportDuJour && ` · ${heureRapport(tache.rapportDuJour.debut) ?? ""}`}
+        </PastilleStatut>
+        <span className="hidden w-40 shrink-0 truncate text-[11px] text-texte-doux sm:block">{tache.planning ?? ""}</span>
+        <Frise jours={tache.frise} />
       </button>
-      {ouverte && (
-        <div className="border-t border-bord p-3">
-          <div className="mb-2 flex justify-end">
-            <span className="flex items-center gap-1 text-[11px] text-texte-doux">
-              Copier toute la journée
-              <BoutonCopier texte={() => texteJournee(ligne)} titre="Copier tous les rapports du jour" />
-            </span>
-          </div>
-          <ul className="flex flex-col gap-2">
-            {ligne.rapports.map((r) => (
-              <DetailRapport key={r.cle} rapport={r} />
+      {ouverte && <DetailTache tache={tache} controles={controles} />}
+    </li>
+  );
+}
+
+/** Niveau 2 : un site, ce qu'il y a a faire, puis ses taches. */
+function DetailSiteAgents({ vue, controles, onRetour }) {
+  const [ouvertes, setOuvertes] = useState(() => new Set());
+  const statut = STATUTS_SITE[vue.statut];
+  const basculer = (id) =>
+    setOuvertes((avant) => {
+      const apres = new Set(avant);
+      if (apres.has(id)) apres.delete(id);
+      else apres.add(id);
+      return apres;
+    });
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-3">
+        <button type="button" onClick={onRetour} className="flex items-center gap-2 text-lg font-semibold hover:text-accent">
+          <ArrowLeft size={18} />
+          {vue.nom}
+        </button>
+        <PastilleStatut etat={statut.etat}>{statut.libelle}</PastilleStatut>
+      </div>
+
+      {vue.aFaire.length > 0 ? (
+        <Carte titre="À faire">
+          <ol className="flex flex-col gap-1.5">
+            {vue.aFaire.map((a, i) => (
+              <li key={`${a.id}-${i}`} className="flex items-start gap-2 text-sm">
+                <span className="mt-0.5">
+                  <IconeEtat etat={a.niveau === "echec" ? "ko" : "partiel"} taille={14} />
+                </span>
+                <span title={a.texte !== a.court ? a.texte : undefined}>
+                  {a.court}
+                  <span className="ml-2 text-[11px] text-texte-doux">{a.tache}</span>
+                </span>
+              </li>
             ))}
-          </ul>
-        </div>
+          </ol>
+        </Carte>
+      ) : (
+        <Carte>
+          <p className="text-sm text-texte-doux">{vue.resume}</p>
+        </Carte>
       )}
-    </li>
-  );
-}
 
-/** Un agent attendu aujourd'hui: rapport recu, en cours, bloque, pas lance ou a venir. */
-function LigneAttendu({ attendu, site }) {
-  const { rapport, situation } = attendu;
-  const etat = rapport ? STATUTS_RAPPORT[rapport.statut].etat : SITUATIONS[situation].etat;
-  const libelle = libelleAttendu(attendu);
-  const enRetard = situation === "bloque" || situation === "non_lance";
-
-  return (
-    <li className="flex items-start gap-3 py-2">
-      <IconeEtat etat={etat} />
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-          <p className="text-sm font-semibold text-texte">
-            {attendu.titre}
-            <span className="ml-2 font-normal text-texte-doux">{site?.nom ?? attendu.site}</span>
-          </p>
-          <p className="flex items-center gap-1 text-[11px] tabular-nums" style={{ color: couleurEtat(etat) }}>
-            {libelle}
-            {attendu.heure && <span className="text-texte-doux"> · {attendu.heure}</span>}
-            <BoutonCopier
-              texte={() => (rapport ? texteRapport(rapport) : texteAttendu(attendu))}
-              titre="Copier"
-            />
-          </p>
-        </div>
-        <p className={`text-xs ${enRetard ? "text-texte" : "text-texte-doux"}`}>{attendu.message}</p>
-      </div>
-    </li>
-  );
-}
-
-function AttendusAujourdhui({ attendus, configTrouvee, sites }) {
-  if (!configTrouvee) {
-    return (
-      <Carte>
-        <p className="text-xs text-texte-doux">
-          Horaires des tâches planifiées introuvables : impossible de dire quels rapports
-          manquent aujourd'hui.
-        </p>
-      </Carte>
-    );
-  }
-  if (attendus.length === 0) return null;
-
-  return (
-    <Carte>
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">Attendus aujourd'hui</h2>
-        <BoutonCopier
-          texte={() => attendus.map(texteAttendu).join("\n")}
-          titre="Copier la liste des agents attendus"
-        />
-      </div>
-      <ul className="mt-1 flex flex-col divide-y divide-bord">
-        {attendus.map((a) => (
-          <LigneAttendu key={a.id} attendu={a} site={rattacherSite(a.site, sites)} />
+      <ul className="flex flex-col gap-2">
+        {vue.taches.map((t) => (
+          <LigneTache key={t.id} tache={t} ouverte={ouvertes.has(t.id)} onBasculer={() => basculer(t.id)} controles={controles} />
         ))}
       </ul>
-    </Carte>
+    </div>
   );
 }
 
-export default function Agents({
-  sites = [],
-  rafraichissement,
-  attendus = [],
-  configTrouvee = true,
-  controles = null,
-}) {
+/**
+ * Onglet Agents, par site : une carte par site (statut du jour et resume), un
+ * clic ouvre le site (ce qui est a faire, ses taches et leurs derniers jours),
+ * un clic sur une tache montre ses rapports. Les reglages des taches (horaires,
+ * ajout) sont replies en bas : on y va rarement.
+ */
+export default function Agents({ sites = [], rafraichissement, attendus = [], configTrouvee = true, controles = null }) {
   const [dossier, setDossier] = useState({ dossier: "", existe: true, fichiers: [] });
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState(null);
-  const [filtre, setFiltre] = useState(null);
-  const [ouvertes, setOuvertes] = useState(() => new Set());
+  const [siteOuvert, setSiteOuvert] = useState(null);
+  const [reglages, setReglages] = useState(false);
 
   const charger = useCallback(async () => {
     setChargement(true);
@@ -250,42 +281,24 @@ export default function Agents({
     charger();
   }, [charger, rafraichissement]);
 
-  const lignes = useMemo(
-    () => regrouperParJournee(dossier.fichiers.map(lireRapport)),
-    [dossier.fichiers],
+  const vues = useMemo(
+    () =>
+      vueParSite({
+        rapports: dossier.fichiers.map(lireRapport),
+        attendus,
+        controles: controles?.controles ?? [],
+        sites,
+      }),
+    [dossier.fichiers, attendus, controles?.controles, sites],
   );
-
-  // Les sites proposes au filtre sont ceux qui ont des rapports, pas tous les sites suivis
-  const sitesAvecRapports = useMemo(() => {
-    const vus = new Map();
-    for (const l of lignes) {
-      const cle = domaine(l.site) || l.site;
-      if (!vus.has(cle)) vus.set(cle, { cle, site: rattacherSite(l.site, sites), nom: l.site });
-    }
-    return [...vus.values()];
-  }, [lignes, sites]);
-
-  const lignesVisibles = filtre
-    ? lignes.filter((l) => (domaine(l.site) || l.site) === filtre)
-    : lignes;
-
-  function basculer(cle) {
-    setOuvertes((avant) => {
-      const apres = new Set(avant);
-      if (apres.has(cle)) apres.delete(cle);
-      else apres.add(cle);
-      return apres;
-    });
-  }
+  const vue = vues.find((v) => v.cle === siteOuvert);
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Agents</h1>
-          <p className="text-xs text-texte-doux">
-            Rapports des tâches planifiées, sur les {JOURS_HISTORIQUE} derniers jours
-          </p>
+          <p className="text-xs text-texte-doux">État du jour par site ; un clic pour le détail et l'historique</p>
         </div>
         <Bouton variante="fantome" onClick={charger} disabled={chargement}>
           <span className="flex items-center gap-1.5">
@@ -295,69 +308,56 @@ export default function Agents({
         </Bouton>
       </div>
 
-      <AttendusAujourdhui attendus={attendus} configTrouvee={configTrouvee} sites={sites} />
-
-      <ControlesAutomatiques controles={controles} />
-
-      {sitesAvecRapports.length > 1 && (
-        <div className="flex flex-wrap gap-1.5">
-          {[{ cle: null, nom: "Tous" }, ...sitesAvecRapports].map((s) => (
-            <button
-              key={s.cle ?? "tous"}
-              type="button"
-              onClick={() => setFiltre(s.cle)}
-              className={`flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs transition ${
-                filtre === s.cle
-                  ? "border-accent bg-accent/15 text-texte"
-                  : "border-bord text-texte-doux hover:border-accent"
-              }`}
-            >
-              {s.cle && (
-                <span
-                  className="size-2 rounded-full"
-                  style={{ background: s.site?.couleur ?? "#3a4570" }}
-                />
-              )}
-              {s.site?.nom ?? s.nom}
-            </button>
-          ))}
-        </div>
-      )}
-
       {erreur && (
         <Carte>
           <p className="text-sm text-depense">Lecture des rapports impossible : {erreur}</p>
         </Carte>
       )}
-
-      {!erreur && lignesVisibles.length === 0 && !chargement && (
+      {!configTrouvee && (
         <Carte>
-          <EtatVide>
-            {dossier.existe
-              ? "Aucun rapport sur la période."
-              : "Aucun agent n'a encore depose de rapport."}
-          </EtatVide>
+          <p className="text-xs text-texte-doux">
+            Horaires des tâches planifiées introuvables : impossible de dire quels rapports manquent aujourd'hui.
+          </p>
         </Carte>
       )}
 
-      {lignesVisibles.length > 0 && (
-        <ul className="flex flex-col gap-2">
-          {lignesVisibles.map((ligne) => (
-            <LigneJournee
-              key={ligne.cle}
-              ligne={ligne}
-              site={rattacherSite(ligne.site, sites)}
-              ouverte={ouvertes.has(ligne.cle)}
-              onBasculer={() => basculer(ligne.cle)}
-            />
-          ))}
-        </ul>
-      )}
+      {vue ? (
+        <DetailSiteAgents key={vue.cle} vue={vue} controles={controles} onRetour={() => setSiteOuvert(null)} />
+      ) : (
+        <>
+          {vues.length === 0 && !chargement && !erreur && (
+            <Carte>
+              <EtatVide>{dossier.existe ? "Aucun rapport sur la période." : "Aucun agent n'a encore déposé de rapport."}</EtatVide>
+            </Carte>
+          )}
+          <div className="grid gap-3 md:grid-cols-2">
+            {vues.map((v) => (
+              <CarteSiteAgents key={v.cle} vue={v} onOuvrir={() => setSiteOuvert(v.cle)} />
+            ))}
+          </div>
 
-      {dossier.dossier && (
-        <p className="text-[11px] break-all text-texte-doux">
-          Dossier des rapports&nbsp;: {dossier.dossier}
-        </p>
+          <div>
+            <button
+              type="button"
+              onClick={() => setReglages((r) => !r)}
+              aria-expanded={reglages}
+              className="flex items-center gap-2 text-sm text-texte-doux hover:text-texte"
+            >
+              <Settings2 size={15} />
+              Réglages des tâches (horaires, ajout, lancement)
+              {reglages ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </button>
+            {reglages && (
+              <div className="mt-3">
+                <ControlesAutomatiques controles={controles} />
+              </div>
+            )}
+          </div>
+
+          {dossier.dossier && (
+            <p className="text-[11px] break-all text-texte-doux">Dossier des rapports&nbsp;: {dossier.dossier}</p>
+          )}
+        </>
       )}
     </div>
   );
