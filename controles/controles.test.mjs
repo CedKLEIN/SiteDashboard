@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { CONSIGNE_TEST_CHROME, chromeConnecte, construireConsigne, messageChromeDeconnecte, preambule } from "./lib/agent.mjs";
 import { DOSSIER_MODELES, ajouterAgent, applicables, chargerTout, composer, identifiant, pourInterface, rendre, retirerAgent } from "./lib/registre.mjs";
-import { chromeDansListe, trouverChrome } from "./lib/chrome.mjs";
+import { chromeDansListe, cookiesClaudeEffaces, trouverChrome } from "./lib/chrome.mjs";
 
 describe("agents Claude", () => {
   it("previent la session qu'elle tourne seule, et lui donne Chrome si besoin", () => {
@@ -39,6 +39,24 @@ describe("test de connexion a Chrome avant un agent", () => {
     expect(CONSIGNE_TEST_CHROME).toContain("CHROME_CONNECTE");
     // Sans groupe d'onglets, l'outil repond quand meme : il en cree un
     expect(CONSIGNE_TEST_CHROME).toContain("createIfEmpty: true");
+  });
+
+  it("repere un Chrome qui efface les cookies de claude.ai a la fermeture", () => {
+    const prefs = (defaut, exceptions = {}) => ({
+      profile: { default_content_setting_values: { cookies: defaut }, content_settings: { exceptions: { cookies: exceptions } } },
+    });
+    expect(cookiesClaudeEffaces(prefs(4))).toBe(true);
+    expect(cookiesClaudeEffaces(prefs(undefined))).toBe(false);
+    // Une exception qui garde claude.ai suffit
+    expect(cookiesClaudeEffaces(prefs(4, { "[*.]claude.ai,*": { setting: 1 } }))).toBe(false);
+    expect(cookiesClaudeEffaces(prefs(1, { "https://claude.ai:443,*": { setting: 4 } }))).toBe(true);
+    expect(cookiesClaudeEffaces(prefs(4, { "[*.]notclaude.ai,*": { setting: 1 } }))).toBe(true);
+    expect(cookiesClaudeEffaces(undefined)).toBe(false);
+  });
+
+  it("donne la cause quand Chrome efface les cookies a la fermeture", () => {
+    expect(messageChromeDeconnecte("moi@exemple.fr", { cookiesEffaces: true })).toContain("chrome://settings/content/siteData");
+    expect(messageChromeDeconnecte("moi@exemple.fr")).not.toContain("chrome://settings");
   });
 
   it("dit quoi faire, avec le compte de Claude Code, et annonce le nouvel essai", () => {

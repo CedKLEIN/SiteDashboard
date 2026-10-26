@@ -14,7 +14,7 @@ import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fermerChrome, preparerChrome } from "./chrome.mjs";
+import { fermerChrome, lireCookiesClaudeEffaces, preparerChrome } from "./chrome.mjs";
 import { trouverClaude } from "./claude.mjs";
 import { RACINE_RAPPORTS, cheminRapport, ecrireRapport, isoLocal, jourLocal } from "./commun.mjs";
 import { DOSSIER_MODELES, rendre } from "./registre.mjs";
@@ -148,8 +148,13 @@ export function chromeConnecte(sortie) {
 }
 
 /** Message pour l'utilisateur quand l'extension ne repond pas : quoi faire, concretement. */
-export function messageChromeDeconnecte(compte) {
-  return `Extension Claude in Chrome non connectée : rien n'a été fait. Dans Chrome, clique sur l'icône Claude (menu des extensions) et connecte-toi${compte ? ` avec le compte ${compte}` : ""}, celui de Claude Code. SiteDashboard réessaie tout seul toutes les 30 minutes ; « Lancer maintenant » relance tout de suite.`;
+export function messageChromeDeconnecte(compte, { cookiesEffaces = false } = {}) {
+  const connexion = `Dans Chrome, clique sur l'icône Claude (menu des extensions) et connecte-toi${compte ? ` avec le compte ${compte}` : ""}, celui de Claude Code.`;
+  // Cause connue : Chrome efface les cookies a la fermeture, la connexion ne survit pas a un redemarrage
+  const cause = cookiesEffaces
+    ? " Cause : Chrome efface les cookies quand on le ferme, donc l'extension perd sa connexion à chaque redémarrage. Ouvre chrome://settings/content/siteData, et sous « Sites autorisés à toujours enregistrer des données sur votre appareil », ajoute [*.]claude.ai (et [*.]google.com, [*.]bing.com pour Search Console et Bing), puis reconnecte l'extension."
+    : "";
+  return `Extension Claude in Chrome non connectée : rien n'a été fait.${cause} ${connexion} SiteDashboard réessaie tout seul toutes les 30 minutes ; « Lancer maintenant » relance tout de suite.`;
 }
 
 /** Compte de Claude Code (ce que l'extension doit utiliser), ou null. */
@@ -218,7 +223,7 @@ export async function lancerAgent(controle, { essai = false } = {}) {
     const test = await testerChrome({ claude, cwd: controle.projet, journal });
     if (!test.connecte) {
       if (chrome.ouvertParNous) await fermerChrome();
-      const message = messageChromeDeconnecte(compteClaudeCode());
+      const message = messageChromeDeconnecte(compteClaudeCode(), { cookiesEffaces: lireCookiesClaudeEffaces() });
       appendFileSync(journal, `\n[SiteDashboard] ${message}\n`);
       return { id: controle.id, statut: "echec", rapport: rapportEchec(controle, debut, message), claude: "session", reessai: true, erreur: message };
     }

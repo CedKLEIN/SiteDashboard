@@ -5,7 +5,7 @@
  * habituel, puis le referme apres l'agent. Un Chrome deja ouvert n'est pas touche.
  */
 import { execFile, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 /** Temps laisse a l'extension pour se connecter apres l'ouverture. */
@@ -47,6 +47,39 @@ export async function preparerChrome({ attente = ATTENTE_EXTENSION_MS } = {}) {
   spawn(chrome, ["--start-minimized"], { detached: true, stdio: "ignore", windowsHide: false }).unref();
   await new Promise((r) => setTimeout(r, attente));
   return { ouvertParNous: true, message: `Chrome ouvert par SiteDashboard (${chrome})` };
+}
+
+/**
+ * Preferences d'un profil Chrome -> les cookies de claude.ai partent-ils a la
+ * fermeture ? (reglage « Effacer les cookies et les données des sites quand
+ * vous fermez toutes les fenêtres », valeur 4, sans exception qui garde
+ * claude.ai). Dans ce cas l'extension perd sa session a chaque redemarrage de
+ * Chrome : « session_expired », et plus aucun agent ne l'atteint.
+ */
+export function cookiesClaudeEffaces(preferences) {
+  const exceptions = Object.entries(preferences?.profile?.content_settings?.exceptions?.cookies ?? {}).filter(([motif]) =>
+    /(^|[./\]])claude\.ai/.test(motif),
+  );
+  if (exceptions.some(([, v]) => v?.setting === 1)) return false;
+  if (exceptions.some(([, v]) => v?.setting === 4)) return true;
+  return preferences?.profile?.default_content_setting_values?.cookies === 4;
+}
+
+/** Lit le reglage dans le dernier profil utilise ; false si illisible. */
+export function lireCookiesClaudeEffaces(env = process.env) {
+  if (!env.LOCALAPPDATA) return false;
+  const donnees = path.join(env.LOCALAPPDATA, "Google", "Chrome", "User Data");
+  try {
+    let profil = "Default";
+    try {
+      profil = JSON.parse(readFileSync(path.join(donnees, "Local State"), "utf8")).profile?.last_used || profil;
+    } catch {
+      // Local State illisible : le profil par defaut
+    }
+    return cookiesClaudeEffaces(JSON.parse(readFileSync(path.join(donnees, profil, "Preferences"), "utf8")));
+  } catch {
+    return false;
+  }
 }
 
 /** Ferme Chrome proprement (sans /F : il enregistre sa session comme a la main). */
