@@ -80,6 +80,8 @@ export async function installerApercu() {
   // en memoire est reconstruite, la sauvegarde elle-meme n'est pas touchee.
   db.run("REINDEX");
 
+  // Cles des connecteurs : en memoire seulement, le temps de la session d'apercu
+  const secrets = new Map();
   mockIPC((commande, args = {}) => {
     switch (commande) {
       case "plugin:sql|load":
@@ -115,8 +117,10 @@ export async function installerApercu() {
       case "etat_barre":
         return null;
       case "secrets_connecteurs":
-        return {};
+        return Object.fromEntries(secrets);
       case "enregistrer_secret_connecteur":
+        if (args.secret == null) secrets.delete(args.id);
+        else secrets.set(args.id, args.secret);
         return null;
       case "appel_api":
         throw new Error("apercu : pas d'appel aux API des connecteurs");

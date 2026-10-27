@@ -1,4 +1,4 @@
-//! Connecteurs (Stripe, Anthropic, OpenAI, OVH) : un appel HTTP generique pour
+//! Connecteurs (Stripe, Anthropic, OpenAI) : un appel HTTP generique pour
 //! leurs API, et leurs cles, rangees hors de la base.
 //!
 //! Toute la logique (pagination, conversion, import) vit en JS, testable sans

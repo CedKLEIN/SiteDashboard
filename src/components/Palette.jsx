@@ -70,7 +70,7 @@ export default function Palette({ ouvert, onFermer, sites = [], onAction }) {
       { cle: "aller:finances", libelle: "Finances › Transactions", Icone: Wallet, motsCles: "depenses revenus" },
       { cle: "aller:abonnements", libelle: "Finances › Abonnements", Icone: Repeat },
       { cle: "aller:agents", libelle: "Réglages › Agents", Icone: Bot, motsCles: "taches planifiees" },
-      { cle: "aller:connecteurs", libelle: "Réglages › Connecteurs", Icone: Plug, motsCles: "stripe anthropic openai ovh import api" },
+      { cle: "aller:connecteurs", libelle: "Réglages › Connecteurs", Icone: Plug, motsCles: "stripe anthropic openai import api" },
       { cle: "aller:reglages", libelle: "Réglages", Icone: Settings, motsCles: "preferences mise a jour sauvegardes notifications" },
     ]);
     const lesSites = filtrer(sites.map((s) => ({ cle: `site:${s.id}`, libelle: s.nom, site: s, motsCles: s.url })));

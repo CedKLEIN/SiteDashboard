@@ -17,6 +17,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { Monogramme } from "./ui";
+import ListeATraiter from "./ListeATraiter";
 import { couleurEtat, etatSite } from "../lib/statut";
 
 const NAV = [
@@ -25,6 +26,74 @@ const NAV = [
   { cle: "finances", libelle: "Finances", Icone: Wallet },
   { cle: "reglages", libelle: "Réglages", Icone: Settings },
 ];
+
+/**
+ * La cloche : ouvre la liste « A traiter » sur place, quel que soit l'ecran.
+ * Avant, elle menait a la vue d'ensemble — et ne faisait rien quand on y etait.
+ */
+function PanneauATraiter({ liste, nombre, onOuvrirCible, onToutVoir }) {
+  const [ouvert, setOuvert] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!ouvert) return undefined;
+    const dehors = (e) => !ref.current?.contains(e.target) && setOuvert(false);
+    const echap = (e) => e.key === "Escape" && setOuvert(false);
+    document.addEventListener("mousedown", dehors);
+    window.addEventListener("keydown", echap);
+    return () => {
+      document.removeEventListener("mousedown", dehors);
+      window.removeEventListener("keydown", echap);
+    };
+  }, [ouvert]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOuvert((o) => !o)}
+        aria-expanded={ouvert}
+        className={`relative grid size-9 place-items-center rounded-lg ring-1 ring-bord transition hover:bg-surface-2 hover:text-texte ${ouvert ? "bg-surface-2 text-texte" : "text-texte-doux"}`}
+        title={nombre > 0 ? `${nombre} point(s) à traiter` : "Rien à traiter"}
+        aria-label="À traiter"
+      >
+        <Bell size={16} />
+        {nombre > 0 && (
+          <span className="absolute -top-1 -right-1 grid min-w-4 place-items-center rounded-full bg-alerte px-1 text-[10px] font-bold text-black">{nombre}</span>
+        )}
+      </button>
+      {ouvert && (
+        <div
+          role="dialog"
+          aria-label="À traiter"
+          className="absolute top-full right-0 z-30 mt-2 w-[380px] rounded-2xl bg-surface p-4 shadow-2xl ring-1 ring-bord"
+          style={{ animation: "apparaitre 120ms ease-out" }}
+        >
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-[13px] font-semibold">À traiter</h2>
+            <button
+              type="button"
+              onClick={() => {
+                setOuvert(false);
+                onToutVoir();
+              }}
+              className="text-xs font-medium text-texte-doux hover:text-texte"
+            >
+              Vue d&apos;ensemble
+            </button>
+          </div>
+          <ListeATraiter
+            liste={liste}
+            className="max-h-96"
+            onOuvrirCible={(cible) => {
+              setOuvert(false);
+              onOuvrirCible(cible);
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** Bouton « + Nouveau » et son menu : ce qu'on saisit le plus, a un clic de partout. */
 function BoutonNouveau({ onNouveau }) {
@@ -87,6 +156,8 @@ export default function Coquille({
   titre,
   sites = [],
   aTraiter = 0,
+  listeATraiter = [],
+  onOuvrirCible,
   miseAJour = null,
   verificationEnCours = false,
   intervalleS,
@@ -211,16 +282,12 @@ export default function Coquille({
             Rechercher, aller à…
             <span className="ml-auto rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-medium text-texte-doux">Ctrl K</span>
           </button>
-          <button
-            type="button"
-            onClick={() => onNaviguer("accueil")}
-            className="relative grid size-9 place-items-center rounded-lg text-texte-doux ring-1 ring-bord transition hover:bg-surface-2 hover:text-texte"
-            title={aTraiter > 0 ? `${aTraiter} point(s) à traiter` : "Rien à traiter"}
-            aria-label="À traiter"
-          >
-            <Bell size={16} />
-            {aTraiter > 0 && <span className="absolute top-2 right-2 size-1.5 rounded-full bg-alerte" />}
-          </button>
+          <PanneauATraiter
+            liste={listeATraiter}
+            nombre={aTraiter}
+            onOuvrirCible={onOuvrirCible}
+            onToutVoir={() => onNaviguer("accueil")}
+          />
           <BoutonNouveau onNouveau={onNouveau} />
         </header>
         {bandeau}

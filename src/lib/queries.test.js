@@ -1029,6 +1029,21 @@ describe("disponibilite au-dela de 30 jours", () => {
     expect([total, ok]).toEqual([5, 4]);
     expect(lignes).toHaveLength(2);
   });
+
+  it("lit encore dans l'historique un jour termine pas encore resume", async () => {
+    const [denivio] = await creerDeuxSites();
+    const [accueil] = await checksActifs();
+    const inserer = etat.base.prepare(
+      `INSERT INTO verifications (check_id, verifie_le, ok, latence_ms)
+       VALUES (?, datetime('now', 'localtime', ?), ?, 100)`,
+    );
+    inserer.run(accueil.id, "-3 days", 1);
+    await consoliderJours();
+    // Hier : ecrit apres le dernier resume, avant l'entretien de la nuit
+    inserer.run(accueil.id, "-1 days", 0);
+    const lignes = await disponibiliteParTranche({ heures: 7 * 24, parJour: true, siteId: denivio });
+    expect(lignes.reduce((t, l) => t + l.total, 0)).toBe(2);
+  });
 });
 
 describe("suppression annulable", () => {

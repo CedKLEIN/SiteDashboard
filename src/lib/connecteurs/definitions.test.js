@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { cumulParMois, dateDuMois, definition, signatureOvh } from "./definitions";
+import { cumulParMois, dateDuMois, definition } from "./definitions";
 
 /** Faux reseau : renvoie les pages dans l'ordre, et garde les requetes recues. */
 function reseau(pages) {
@@ -78,23 +78,5 @@ describe("Stripe", () => {
       ["depense", "stripe-frais-2026-10", 150],
     ]);
     expect(requetes[1].url).toContain("starting_after=txn_2");
-  });
-});
-
-describe("OVH", () => {
-  it("signe ses requetes comme le demande l'API", async () => {
-    const entetes = await signatureOvh({ cleApplication: "ak", secretApplication: "as", cleConsommateur: "ck" }, "GET", "https://eu.api.ovh.com/1.0/me/bill", 1700000000);
-    const signature = entetes.find(([nom]) => nom === "X-Ovh-Signature")[1];
-    // SHA1("as+ck+GET+https://eu.api.ovh.com/1.0/me/bill++1700000000")
-    expect(signature).toMatch(/^\$1\$[0-9a-f]{40}$/);
-    const { createHash } = await import("node:crypto");
-    expect(signature).toBe(`$1$${createHash("sha1").update("as+ck+GET+https://eu.api.ovh.com/1.0/me/bill++1700000000").digest("hex")}`);
-  });
-
-  it("une depense par facture", async () => {
-    const maintenant = Math.floor(Date.now() / 1000);
-    const { appel } = reseau([maintenant, ["FR1"], { billId: "FR1", date: "2026-10-02T10:00:00+02:00", priceWithTax: { value: 11.99, currencyCode: "EUR" } }]);
-    const lignes = await definition("ovh").synchroniser({ secret: { cleApplication: "a", secretApplication: "b", cleConsommateur: "c" }, depuis: "2026-01-01", appel });
-    expect(lignes).toMatchObject([{ ref: "ovh-FR1", date: "2026-10-02", montantCents: 1199, devise: "EUR", categorie: "hebergement" }]);
   });
 });

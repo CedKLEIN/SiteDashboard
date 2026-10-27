@@ -100,7 +100,7 @@ function TiroirConnecteur({ def, config, sites, onFermer, onEnregistre }) {
 }
 
 /**
- * Reglages › Connecteurs : Stripe, Anthropic, OpenAI, OVH importent revenus et
+ * Reglages › Connecteurs : Stripe, Anthropic et OpenAI importent revenus et
  * depenses tout seuls, toutes les 6 heures, sans doublon.
  */
 export default function Connecteurs({ rafraichissement, onModification }) {

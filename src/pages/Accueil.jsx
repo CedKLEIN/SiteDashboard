@@ -12,19 +12,16 @@ import {
 import {
   ArrowDownRight,
   ArrowUpRight,
-  Bot,
   ChevronRight,
   CircleCheck,
   CircleX,
   Globe,
-  Lock,
-  PartyPopper,
-  Plug,
   Repeat,
   TriangleAlert,
   Wallet,
 } from "lucide-react";
 import { BarresDispo, Carte, EtatVide, Kpi, Monogramme, Segments } from "../components/ui";
+import ListeATraiter from "../components/ListeATraiter";
 import { chargerBilan, ecart } from "../lib/bilan";
 import { disponibiliteParTranche, echeancesProches, ecrirePreference, lirePreference } from "../lib/queries";
 import { formatMontant } from "../lib/format";
@@ -44,12 +41,6 @@ export const PERIODES_COURTES = [
   { cle: "toujours", libelle: "Tout" },
 ];
 
-const ICONES_A_TRAITER = { check: CircleX, certificat: Lock, domaine: Globe, agent: Bot, abonnement: Repeat, connecteur: Plug };
-const TONS = {
-  ko: "bg-ko/12 text-ko",
-  alerte: "bg-alerte/12 text-alerte",
-  info: "bg-info/12 text-info",
-};
 
 /** Courbe d'un indicateur : un point par mois, seulement s'il y en a au moins deux. */
 function points(serie, cle) {
@@ -242,34 +233,7 @@ export default function Accueil({ rafraichissement, sites, aTraiter, onOuvrirCib
           titre="À traiter"
           action={aTraiter.length > 0 && <span className="rounded-full bg-surface-3 px-2 py-0.5 text-[11px] text-texte-doux">{aTraiter.length}</span>}
         >
-          {aTraiter.length === 0 ? (
-            <EtatVide Icone={PartyPopper}>Rien à traiter : tout est au vert.</EtatVide>
-          ) : (
-            <ul className="-mx-2 flex max-h-80 flex-col overflow-y-auto">
-              {aTraiter.map((t) => {
-                const Icone = ICONES_A_TRAITER[t.icone] ?? CircleX;
-                return (
-                  <li key={t.cle}>
-                    <button
-                      type="button"
-                      onClick={() => onOuvrirCible(t.cible)}
-                      title={t.texte ?? t.detail}
-                      className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left transition hover:bg-surface-2"
-                    >
-                      <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${TONS[t.ton]}`}>
-                        <Icone size={16} />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium">{t.titre}</span>
-                        <span className="block truncate text-xs text-texte-doux">{t.detail}</span>
-                      </span>
-                      <ChevronRight size={15} className="shrink-0 text-pale" />
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <ListeATraiter liste={aTraiter} onOuvrirCible={onOuvrirCible} className="max-h-80" />
         </Carte>
       </div>
 

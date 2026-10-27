@@ -162,57 +162,10 @@ async function synchroniserOpenAI({ secret, depuis, appel, aujourdhui }) {
   return cumulParMois(jours, { prefixe: "openai", libelle: "API OpenAI", devise: "USD", aujourdhui, fournisseur: "OpenAI", categorie: "api" });
 }
 
-/* --------------------------------------------------------------------- OVH */
-
-const OVH = "https://eu.api.ovh.com/1.0";
-
-async function sha1Hex(texte) {
-  const octets = await globalThis.crypto.subtle.digest("SHA-1", new TextEncoder().encode(texte));
-  return [...new Uint8Array(octets)].map((o) => o.toString(16).padStart(2, "0")).join("");
-}
-
-/** En-tetes signes de l'API OVH : $1$ + SHA1(AS+CK+METHODE+URL+CORPS+HORODATAGE). */
-export async function signatureOvh({ cleApplication, secretApplication, cleConsommateur }, methode, url, horodatage, corps = "") {
-  const signature = `$1$${await sha1Hex([secretApplication, cleConsommateur, methode, url, corps, horodatage].join("+"))}`;
-  return [
-    ["X-Ovh-Application", cleApplication],
-    ["X-Ovh-Consumer", cleConsommateur],
-    ["X-Ovh-Timestamp", String(horodatage)],
-    ["X-Ovh-Signature", signature],
-  ];
-}
-
-async function synchroniserOvh({ secret, depuis, appel }) {
-  // L'horloge d'OVH fait foi : un ecart avec la machine invaliderait la signature
-  const temps = verifier(await appel({ methode: "GET", url: `${OVH}/auth/time`, entetes: [] }), "OVH");
-  const decalage = Number(temps) - Math.floor(Date.now() / 1000);
-  const signe = async (url) =>
-    verifier(
-      await appel({ methode: "GET", url, entetes: await signatureOvh(secret, "GET", url, Math.floor(Date.now() / 1000) + decalage) }),
-      "OVH",
-    );
-
-  const ids = await signe(`${OVH}/me/bill?date.from=${depuis}`);
-  const lignes = [];
-  for (const id of ids ?? []) {
-    const facture = await signe(`${OVH}/me/bill/${encodeURIComponent(id)}`);
-    const prix = facture.priceWithTax ?? facture.priceWithoutTax;
-    if (!prix?.value) continue;
-    lignes.push({
-      sens: "depense",
-      ref: `ovh-${facture.billId ?? id}`,
-      date: String(facture.date).slice(0, 10),
-      montantCents: Math.round(prix.value * 100),
-      devise: prix.currencyCode ?? "EUR",
-      libelle: `Facture OVH ${facture.billId ?? id}`,
-      fournisseur: "OVH",
-      categorie: "hebergement",
-    });
-  }
-  return lignes;
-}
-
 /* ------------------------------------------------------------- catalogue */
+
+// Pas de connecteur Ionos : l'API de facturation d'Ionos ne couvre que les contrats
+// IONOS Cloud, pas l'hebergement web. Son prix fixe est suivi comme un abonnement.
 
 export const CONNECTEURS = [
   {
@@ -238,18 +191,6 @@ export const CONNECTEURS = [
     couleur: "#10a37f",
     champs: [{ cle: "cle", libelle: "Clé Admin (sk-admin-…)", aide: "platform.openai.com › Settings › Organization › Admin keys." }],
     synchroniser: synchroniserOpenAI,
-  },
-  {
-    type: "ovh",
-    nom: "OVHcloud",
-    description: "Factures OVH (hébergement, domaines) en dépenses, une par facture.",
-    couleur: "#123f6d",
-    champs: [
-      { cle: "cleApplication", libelle: "Application key" },
-      { cle: "secretApplication", libelle: "Application secret" },
-      { cle: "cleConsommateur", libelle: "Consumer key", aide: "Créées sur https://eu.api.ovh.com/createToken/ avec le droit GET sur /me/bill et /me/bill/*." },
-    ],
-    synchroniser: synchroniserOvh,
   },
 ];
 

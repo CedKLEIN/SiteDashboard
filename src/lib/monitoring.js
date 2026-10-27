@@ -9,6 +9,7 @@ import {
 import { alerterBaseAbimee } from "./notifications";
 import { sauvegarderSiBesoin } from "./sauvegarde";
 import { tracer } from "./trace";
+import { aujourdhuiIso } from "./format";
 import { evaluerCertificat } from "./statut";
 import { evaluerDomaine, evaluerRedirection, evaluerReponse } from "./assertions";
 
@@ -35,7 +36,9 @@ export const JOURS_HISTORIQUE_VERIFICATIONS = 30;
  * le plus long. Un echec est trace sans bloquer le cycle.
  */
 async function entretienQuotidien(maintenant) {
-  const jour = maintenant.toISOString().slice(0, 10);
+  // Jour LOCAL : en UTC, l'entretien passait a 1 h ou 2 h du matin, et la veille
+  // restait non resumee jusque-la
+  const jour = aujourdhuiIso(maintenant);
   if (jour === jourDernierEntretien) return;
   jourDernierEntretien = jour;
   try {

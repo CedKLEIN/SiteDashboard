@@ -140,7 +140,7 @@ Deux règles non négociables, qui évitent 90 % des bugs de ce genre d'appli :
 | Table | Rôle |
 |---|---|
 | `sites` | les sites suivis (nom, URL, couleur, actif) |
-| `fournisseurs` | OVH, Stripe, Anthropic… avec une catégorie |
+| `fournisseurs` | Ionos, Stripe, Anthropic… avec une catégorie |
 | `depenses` | une ligne = une dépense, rattachée à un fournisseur et à un ou plusieurs sites |
 | `revenus` | idem côté recettes, pour calculer la marge par site |
 | `abonnements` | coûts récurrents (partageables aussi), avec leur date de premier paiement |
@@ -565,7 +565,6 @@ savent déjà :
 | Stripe | paiements et remboursements en **revenus** (un par transaction), frais Stripe en dépense mensuelle | clé restreinte en lecture sur « Balance » |
 | Anthropic | coût de l'API Claude, **une dépense par mois** mise à jour (USD, convertie) | clé Admin `sk-ant-admin…` |
 | OpenAI | coût de l'API, une dépense par mois mise à jour (USD, convertie) | clé Admin |
-| OVHcloud | **une dépense par facture** | application key, secret et consumer key (GET `/me/bill*`) |
 
 Chaque écriture porte la référence du service (`ref_externe`) et le connecteur comme
 `source` : relancer une synchronisation n'importe rien deux fois, et le cumul du mois en
@@ -579,7 +578,9 @@ Rust (`appel_api`, HTTPS uniquement) ; toute la logique (pagination, cumul, impo
 JS, testée sans réseau ([`src/lib/connecteurs/`](src/lib/connecteurs/)).
 
 Les abonnements Claude Max et ChatGPT Plus ne passent pas par ces API : ils restent des
-abonnements saisis à la main.
+abonnements saisis à la main. Même chose pour l'hébergement Ionos : l'API de facturation
+d'Ionos ne couvre que les contrats IONOS Cloud, pas l'hébergement web, dont le prix fixe se
+suit très bien comme abonnement.
 
 ## Rapports des agents
 

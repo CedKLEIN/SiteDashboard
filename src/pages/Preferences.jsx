@@ -72,6 +72,14 @@ function EcranMiseAJour({ onFermer }) {
 /** Version installee, commits plus recents du depot, et lancement de l'installeur. */
 function MiseAJour({ etat, verifier }) {
   const [lancee, setLancee] = useState(false);
+  // Retour visible du bouton « Verifier » : sans changement, rien ne bougeait a l'ecran
+  const [verification, setVerification] = useState(null);
+
+  async function verifierMaintenant() {
+    setVerification("en_cours");
+    await verifier();
+    setVerification(new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }));
+  }
   const [erreur, setErreur] = useState(null);
   const resume = resumeMiseAJour(etat);
 
@@ -89,12 +97,15 @@ function MiseAJour({ etat, verifier }) {
     <Carte
       titre="Mise à jour"
       action={
-        <Bouton variante="fantome" className="px-2 py-1 text-xs" onClick={verifier}>
-          <span className="flex items-center gap-1.5">
-            <RefreshCw size={12} />
-            Vérifier
-          </span>
-        </Bouton>
+        <span className="flex items-center gap-2">
+          {verification && verification !== "en_cours" && <span className="text-[11px] text-pale">vérifié à {verification}</span>}
+          <Bouton variante="fantome" className="px-2 py-1 text-xs" onClick={verifierMaintenant} disabled={verification === "en_cours"}>
+            <span className="flex items-center gap-1.5">
+              <RefreshCw size={12} className={verification === "en_cours" ? "animate-spin" : ""} />
+              Vérifier
+            </span>
+          </Bouton>
+        </span>
       }
     >
       <p className="text-xs text-texte-doux">

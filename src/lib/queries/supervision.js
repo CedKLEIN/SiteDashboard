@@ -263,8 +263,10 @@ export function purgerVerifications(jours = 30) {
  * barres de disponibilite. Les checks `valeur` sont exclus, comme partout.
  * `tranche` vaut 'YYYY-MM-DD HH' a l'heure, 'YYYY-MM-DD' au jour.
  *
- * Au jour, les jours termines viennent du resume `disponibilite_jours`, qui
- * survit a la purge ; seul le jour en cours se lit dans `verifications`.
+ * Au jour, les jours deja resumes viennent de `disponibilite_jours`, qui
+ * survit a la purge ; les suivants (aujourd'hui, et hier tant que l'entretien
+ * de la nuit n'est pas passe) se lisent dans `verifications`. La frontiere est
+ * le dernier jour resume : rien n'est compte deux fois, rien ne manque.
  */
 export function disponibiliteParTranche({ heures = 24, parJour = false, siteId = null } = {}) {
   if (parJour) {
@@ -274,14 +276,16 @@ export function disponibiliteParTranche({ heures = 24, parJour = false, siteId =
          FROM disponibilite_jours d
          JOIN checks c ON c.id = d.check_id
          WHERE c.type <> 'valeur' AND c.actif = 1
-           AND d.jour >= date('now', 'localtime', $1) AND d.jour < date('now', 'localtime')
+           AND d.jour >= date('now', 'localtime', $1)
+           AND d.jour <= (SELECT COALESCE(MAX(jour), '') FROM disponibilite_jours)
            AND ($2 IS NULL OR c.site_id = $2)
          UNION ALL
          SELECT c.site_id, substr(v.verifie_le, 1, 10), 1, CASE WHEN v.ok = 1 THEN 1 ELSE 0 END
          FROM verifications v
          JOIN checks c ON c.id = v.check_id
          WHERE c.type <> 'valeur' AND c.actif = 1
-           AND v.verifie_le >= date('now', 'localtime')
+           AND v.verifie_le >= date('now', 'localtime', $1)
+           AND substr(v.verifie_le, 1, 10) > (SELECT COALESCE(MAX(jour), '') FROM disponibilite_jours)
            AND ($2 IS NULL OR c.site_id = $2)
        )
        GROUP BY site_id, tranche`,

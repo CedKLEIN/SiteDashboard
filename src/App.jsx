@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ChevronRight, TriangleAlert } from "lucide-react";
 import Coquille, { TitrePage } from "./components/Coquille";
 import Palette from "./components/Palette";
+import { useToasts } from "./components/Toasts";
 import TiroirTransaction from "./components/TiroirTransaction";
 import TiroirAbonnement from "./components/TiroirAbonnement";
 import TiroirSite from "./components/TiroirSite";
@@ -105,14 +106,26 @@ export default function App() {
       tracer("supervision", resultat.ignore ? "cycle ignore: le précédent tourne encore" : `cycle termine: ${resultat.checks} check(s)`);
       // Un cycle ignore (le precedent tourne encore) n'a rien ecrit a relire
       if (!resultat.ignore) signalerModification();
+      return resultat;
     } catch (erreur) {
       // La supervision ne doit jamais faire tomber l'UI, mais un echec silencieux
       // serait pire : on trace avant d'avaler.
       tracer("supervision", `echec du cycle: ${erreur?.stack ?? erreur}`);
+      return { erreur: String(erreur?.message ?? erreur) };
     } finally {
       setVerificationEnCours(false);
     }
   }, [signalerModification]);
+
+  // « Verifier » demande a la main : un message dit que c'est fait. Sans lui, une
+  // verification rapide ne laissait aucune trace et le bouton semblait mort.
+  const { afficher } = useToasts();
+  const verifierMaintenant = useCallback(async () => {
+    const resultat = await verifier();
+    if (resultat?.erreur) afficher({ message: `Vérification impossible : ${resultat.erreur}`, ton: "ko" });
+    else if (resultat?.ignore) afficher({ message: "Une vérification est déjà en cours." });
+    else afficher({ message: `Vérification terminée : ${resultat?.checks ?? 0} check(s) rejoué(s).`, duree: 3000 });
+  }, [verifier, afficher]);
 
   useEffect(() => {
     invoke("chemin_base")
@@ -217,11 +230,11 @@ export default function App() {
 
   // « Verifier maintenant » depuis le menu de l'icone
   useEffect(() => {
-    const arret = listen("barre:verifier", () => verifier());
+    const arret = listen("barre:verifier", () => verifierMaintenant());
     return () => {
       arret.then((f) => f()).catch(() => {});
     };
-  }, [verifier]);
+  }, [verifierMaintenant]);
 
   const naviguer = useCallback((page, options = {}) => {
     setVue({ page, onglet: options.onglet ?? ONGLETS_DEFAUT[page] ?? null, siteId: options.siteId ?? null });
@@ -254,7 +267,7 @@ export default function App() {
   function actionPalette(item) {
     const [genre, valeur] = item.cle.split(":");
     if (genre === "nouveau") nouveau(valeur);
-    else if (genre === "verifier") verifier();
+    else if (genre === "verifier") verifierMaintenant();
     else if (genre === "theme") theme.changer(theme.effectif === "clair" ? "sombre" : "clair");
     else if (genre === "site") ouvrirSite(Number(valeur));
     else if (genre === "transaction") setTiroir({ type: "transaction", edition: item.transaction });
@@ -294,7 +307,7 @@ export default function App() {
           onglet={vue.onglet}
           onChangerOnglet={changerOnglet}
           onRetour={() => naviguer("sites")}
-          onVerifierMaintenant={verifier}
+          onVerifierMaintenant={verifierMaintenant}
           verificationEnCours={verificationEnCours}
           rafraichissement={revision}
           vueAgents={vuesAgents.find((v) => v.siteId === site.id) ?? null}
@@ -390,6 +403,8 @@ export default function App() {
         titre={titre}
         sites={etats}
         aTraiter={nbAlertes}
+        listeATraiter={aTraiter}
+        onOuvrirCible={ouvrirCible}
         miseAJour={resumeMiseAJour(miseAJour.etat)}
         verificationEnCours={verificationEnCours}
         intervalleS={intervalleS}
