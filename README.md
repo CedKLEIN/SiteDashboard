@@ -116,6 +116,8 @@ Le bouton **Mettre à jour** ouvre une console qui lance `npm.cmd run installer`
 se ferme puis se rouvre quelques minutes plus tard. Le commit compilé est gravé dans l'appli
 par `src-tauri/build.rs` et comparé au `HEAD` du dépôt au démarrage puis toutes les 15 min.
 Rien n'est téléchargé : c'est le code local, commité, qui est recompilé.
+`npm run app:build` réinstalle d'abord les dépendances npm si `package-lock.json` a changé
+(`scripts/dependances.mjs`, par `npm ci`, qui ne modifie jamais le lock).
 
 L'appli s'installe dans `%LOCALAPPDATA%\SiteDashboard` (entrée « SiteDashboard » du menu
 Démarrer) ; ses données restent dans `%APPDATA%\com.cedklein.sitedashboard`, que

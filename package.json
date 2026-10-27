@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "app": "tauri dev",
-    "app:build": "tauri build",
+    "app:build": "node scripts/dependances.mjs && tauri build",
     "installer": "node scripts/installer.mjs",
     "apercu": "node scripts/preparer-apercu.mjs && vite",
     "captures": "node scripts/captures.mjs",
