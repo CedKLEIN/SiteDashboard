@@ -105,6 +105,20 @@ export function echeanceAJour(echeance, periodicite, aujourdhui, fin = null) {
 }
 
 /**
+ * Prochain prelevement d'un abonnement : l'echeance saisie si elle existe,
+ * sinon deduite de la date de premier paiement et de la periodicite. Sans ce
+ * repli, un abonnement saisi sans "prochaine echeance" n'apparaissait jamais
+ * dans les echeances a venir. Rien a partir de la date de fin (exclusive).
+ */
+export function echeanceSuivante(abonnement, aujourdhui) {
+  const { prochaine_echeance, debut, periodicite, fin } = abonnement;
+  if (prochaine_echeance) return echeanceAJour(prochaine_echeance, periodicite, aujourdhui, fin);
+  const date = prochaineEcheance(debut, periodicite, aujourdhui);
+  if (!date || (fin && date >= fin)) return null;
+  return date;
+}
+
+/**
  * Echeances effectivement dues par un abonnement jusqu'a une date.
  *
  * La date de fin est EXCLUSIVE: "arrete a partir du 1er avril" signifie que le

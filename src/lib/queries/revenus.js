@@ -56,11 +56,49 @@ export async function ajouterRevenu({
     [date, montantCents, devise, taux, montantRef, libelle, source, refExterne],
   );
 
+  await ecrireParts(res.lastInsertId, parts);
+  return res;
+}
+
+async function ecrireParts(revenuId, parts) {
   for (const { siteId, partCents } of parts) {
     await execute(
       "INSERT INTO revenu_sites (revenu_id, site_id, part_cents) VALUES ($1, $2, $3)",
-      [res.lastInsertId, siteId, partCents],
+      [revenuId, siteId, partCents],
     );
   }
-  return res;
+}
+
+/** Sites d'un revenu et leur part, pour rouvrir le formulaire en edition. */
+export function partsRevenu(id) {
+  return select("SELECT site_id, part_cents FROM revenu_sites WHERE revenu_id = $1", [id]);
+}
+
+/** Corrige un revenu ; les parts sont recalculees sur le nouveau montant (en euros). */
+export async function majRevenu(
+  id,
+  { siteIds = [], partsCents = null, date, montantCents, devise = "EUR", taux = 1, montantEurCents = null, libelle = "" },
+) {
+  const montantRef = montantEurCents ?? montantCents;
+  await verifierSitesExistants(siteIds);
+  const parts = partsPourSites(montantRef, siteIds, partsCents);
+
+  await execute(
+    `UPDATE revenus
+        SET date = $1, montant_cents = $2, devise = $3, taux = $4, montant_eur_cents = $5, libelle = $6
+      WHERE id = $7`,
+    [date, montantCents, devise, taux, montantRef, libelle, id],
+  );
+  await execute("DELETE FROM revenu_sites WHERE revenu_id = $1", [id]);
+  await ecrireParts(id, parts);
+}
+
+export function supprimerRevenu(id) {
+  return execute("DELETE FROM revenus WHERE id = $1", [id]);
+}
+
+/** Nombre total de revenus : l'historique est pagine. */
+export async function compterRevenus() {
+  const [ligne] = await select("SELECT COUNT(*) AS n FROM revenus");
+  return ligne?.n ?? 0;
 }

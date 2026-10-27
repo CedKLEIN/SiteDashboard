@@ -237,3 +237,15 @@ export function LogoClaude({ utilise = true, taille = 14, titre, className = "" 
     </span>
   );
 }
+
+/** Pied d'un historique pagine : « Afficher plus » tant qu'il reste des lignes. */
+export function AfficherPlus({ affichees, total, onPlus }) {
+  if (affichees >= total) return null;
+  return (
+    <div className="mt-3 flex justify-center">
+      <Bouton variante="fantome" className="text-xs" onClick={onPlus}>
+        Afficher plus ({total - affichees} restantes)
+      </Bouton>
+    </div>
+  );
+}

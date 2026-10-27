@@ -122,6 +122,12 @@ pub fn run() {
             sql: include_str!("../migrations/013_domaine.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 14,
+            description: "depenses en devise etrangere: taux et montant converti",
+            sql: include_str!("../migrations/014_depenses_devises.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

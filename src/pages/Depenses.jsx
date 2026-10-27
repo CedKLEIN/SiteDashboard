@@ -1,65 +1,80 @@
 import { useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
-import { Bouton, Carte, Champ, EtatVide, Selecteur } from "../components/ui";
+import { Pencil, Trash2, X } from "lucide-react";
+import { AfficherPlus, Bouton, Carte, Champ, EtatVide, Selecteur } from "../components/ui";
 import RepartitionSites, { partsCentsDepuisSaisie } from "../components/RepartitionSites";
 import {
   ajouterDepense,
+  compterDepenses,
   listerDepenses,
   listerFournisseurs,
   listerSites,
+  majDepense,
+  partsDepense,
   supprimerDepense,
   trouverOuCreerFournisseur,
 } from "../lib/queries";
 import { aujourdhuiIso, dateFr, formatMontant, parseMontant } from "../lib/format";
+import { CATEGORIES, libelleCategorie } from "../lib/categories";
+import { DEVISES, DEVISE_REFERENCE, mentionConversion } from "../lib/devises";
+import { convertirVersReference, partsEnReference } from "../lib/conversion";
 
-export const CATEGORIES = [
-  "hebergement",
-  "domaine",
-  "api",
-  "saas",
-  "marketing",
-  "autre",
-];
+/** Lignes chargees a la fois dans l'historique. */
+const PAGE = 100;
 
-const FORMULAIRE_VIDE = {
-  siteIds: [],
-  parts: null,
-  fournisseur: "",
-  date: aujourdhuiIso(),
-  montant: "",
-  libelle: "",
-  categorie: "hebergement",
-};
+// Une fonction et non une constante : l'appli reste ouverte des jours, la date
+// du jour doit etre celle du moment ou le formulaire est vide, pas du lancement.
+function formulaireVide(siteIds = []) {
+  return {
+    siteIds,
+    parts: null,
+    fournisseur: "",
+    date: aujourdhuiIso(),
+    montant: "",
+    devise: DEVISE_REFERENCE,
+    libelle: "",
+    categorie: "hebergement",
+  };
+}
 
 export default function Depenses({ onModification }) {
   const [sites, setSites] = useState([]);
   const [fournisseurs, setFournisseurs] = useState([]);
   const [depenses, setDepenses] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [limite, setLimite] = useState(PAGE);
   const [filtreSite, setFiltreSite] = useState("");
-  const [formulaire, setFormulaire] = useState(FORMULAIRE_VIDE);
+  const [formulaire, setFormulaire] = useState(formulaireVide);
+  const [enEdition, setEnEdition] = useState(null);
   const [erreur, setErreur] = useState("");
 
   async function recharger() {
-    const [s, f, d] = await Promise.all([
-      listerSites(),
-      listerFournisseurs(),
-      listerDepenses({ siteId: filtreSite ? Number(filtreSite) : null }),
-    ]);
-    setSites(s);
-    setFournisseurs(f);
-    setDepenses(d);
-    // Un site supprime entre-temps laisserait un identifiant invisible dans la
-    // selection: on ne peut pas deselectionner une pastille qui n'existe plus.
-    setFormulaire((f) => ({
-      ...f,
-      siteIds: f.siteIds.filter((id) => s.some((site) => site.id === id)),
-    }));
+    const siteId = filtreSite ? Number(filtreSite) : null;
+    try {
+      const [s, f, d, n] = await Promise.all([
+        listerSites(),
+        listerFournisseurs(),
+        listerDepenses({ siteId, limite }),
+        compterDepenses({ siteId }),
+      ]);
+      setSites(s);
+      setFournisseurs(f);
+      setDepenses(d);
+      setTotal(n);
+      // Un site supprime entre-temps laisserait un identifiant invisible dans la
+      // selection: on ne peut pas deselectionner une pastille qui n'existe plus.
+      setFormulaire((f) => ({
+        ...f,
+        siteIds: f.siteIds.filter((id) => s.some((site) => site.id === id)),
+      }));
+    } catch (e) {
+      setErreur(String(e?.message ?? e));
+    }
   }
 
   useEffect(() => {
     recharger();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filtreSite]);
+  }, [filtreSite, limite]);
 
   function maj(champ, valeur) {
     setFormulaire((f) => ({ ...f, [champ]: valeur }));
@@ -79,6 +94,35 @@ export default function Depenses({ onModification }) {
 
   const montantSaisiCents = parseMontant(formulaire.montant);
 
+  async function editer(depense) {
+    setErreur("");
+    try {
+      const parts = await partsDepense(depense.id);
+      setEnEdition(depense.id);
+      setFormulaire({
+        siteIds: parts.map((p) => p.site_id),
+        // Parts egales a la reouverture : les parts enregistrees sont en euros,
+        // les reproposer sur un montant en dollars serait trompeur.
+        parts: null,
+        fournisseur: depense.fournisseur_nom ?? "",
+        date: depense.date,
+        montant: (depense.montant_cents / 100).toFixed(2),
+        devise: depense.devise ?? DEVISE_REFERENCE,
+        libelle: depense.libelle ?? "",
+        categorie: depense.categorie ?? "autre",
+      });
+      globalThis.scrollTo?.({ top: 0, behavior: "smooth" });
+    } catch (e) {
+      setErreur(String(e?.message ?? e));
+    }
+  }
+
+  function annulerEdition() {
+    setEnEdition(null);
+    setFormulaire(formulaireVide());
+    setErreur("");
+  }
+
   async function enregistrer(evenement) {
     evenement.preventDefault();
     setErreur("");
@@ -93,36 +137,59 @@ export default function Depenses({ onModification }) {
       return;
     }
 
-    const fournisseurId = await trouverOuCreerFournisseur(
-      formulaire.fournisseur,
-      formulaire.categorie,
-    );
-
     try {
-      await ajouterDepense({
+      const { taux, montantEurCents } = await convertirVersReference({
+        montantCents,
+        devise: formulaire.devise,
+        date: formulaire.date,
+      });
+      const fournisseurId = await trouverOuCreerFournisseur(
+        formulaire.fournisseur,
+        formulaire.categorie,
+      );
+      const donnees = {
         siteIds: formulaire.siteIds,
-        partsCents: partsCentsDepuisSaisie(formulaire.siteIds, formulaire.parts),
+        partsCents: partsEnReference(
+          partsCentsDepuisSaisie(formulaire.siteIds, formulaire.parts),
+          montantCents,
+          montantEurCents,
+        ),
         fournisseurId,
         date: formulaire.date,
         montantCents,
+        devise: formulaire.devise,
+        taux,
+        montantEurCents,
         libelle: formulaire.libelle,
         categorie: formulaire.categorie,
-      });
+      };
+      if (enEdition) await majDepense(enEdition, donnees);
+      else await ajouterDepense(donnees);
     } catch (e) {
       // Typiquement: la somme des parts saisies ne fait pas le montant total
-      setErreur(String(e.message ?? e));
+      setErreur(String(e?.message ?? e));
       return;
     }
 
-    setFormulaire({ ...FORMULAIRE_VIDE, siteIds: formulaire.siteIds });
+    setEnEdition(null);
+    setFormulaire(formulaireVide(formulaire.siteIds));
     await recharger();
     onModification?.();
   }
 
-  async function retirer(id) {
-    await supprimerDepense(id);
-    await recharger();
-    onModification?.();
+  async function retirer(depense) {
+    const confirme = window.confirm(
+      `Supprimer la dépense « ${depense.libelle || depense.fournisseur_nom || dateFr(depense.date)} » (${formatMontant(depense.montant_cents, depense.devise)}) ?`,
+    );
+    if (!confirme) return;
+    try {
+      await supprimerDepense(depense.id);
+      if (enEdition === depense.id) annulerEdition();
+      await recharger();
+      onModification?.();
+    } catch (e) {
+      setErreur(String(e?.message ?? e));
+    }
   }
 
   return (
@@ -131,12 +198,24 @@ export default function Depenses({ onModification }) {
 
       {sites.length === 0 ? (
         <Carte>
-          <EtatVide>
-            Commence par creer un site dans l&apos;onglet « Sites ».
-          </EtatVide>
+          <EtatVide>Commence par créer un site dans l&apos;onglet « Sites ».</EtatVide>
         </Carte>
       ) : (
-        <Carte titre="Nouvelle dépense">
+        <Carte
+          titre={enEdition ? "Modifier la dépense" : "Nouvelle dépense"}
+          action={
+            enEdition && (
+              <Bouton
+                variante="fantome"
+                className="flex items-center gap-1 px-2 py-1 text-xs"
+                onClick={annulerEdition}
+              >
+                <X size={13} />
+                Annuler
+              </Bouton>
+            )
+          }
+        >
           <form onSubmit={enregistrer} className="flex flex-wrap items-end gap-3">
             <RepartitionSites
               sites={sites}
@@ -168,8 +247,8 @@ export default function Depenses({ onModification }) {
               className="w-36"
             >
               {CATEGORIES.map((c) => (
-                <option key={c} value={c}>
-                  {c}
+                <option key={c.cle} value={c.cle}>
+                  {c.libelle}
                 </option>
               ))}
             </Selecteur>
@@ -183,13 +262,26 @@ export default function Depenses({ onModification }) {
             />
 
             <Champ
-              label="Montant (€)"
+              label="Montant"
               inputMode="decimal"
               placeholder="12,50"
               value={formulaire.montant}
               onChange={(e) => maj("montant", e.target.value)}
               className="w-28"
             />
+
+            <Selecteur
+              label="Devise"
+              value={formulaire.devise}
+              onChange={(e) => maj("devise", e.target.value)}
+              className="w-24"
+            >
+              {DEVISES.map((d) => (
+                <option key={d.code} value={d.code}>
+                  {d.code}
+                </option>
+              ))}
+            </Selecteur>
 
             <Champ
               label="Libellé"
@@ -199,14 +291,14 @@ export default function Depenses({ onModification }) {
               className="min-w-48 flex-1"
             />
 
-            <Bouton type="submit">Ajouter</Bouton>
+            <Bouton type="submit">{enEdition ? "Enregistrer" : "Ajouter"}</Bouton>
           </form>
           {erreur && <p className="mt-2 text-xs text-depense">{erreur}</p>}
         </Carte>
       )}
 
       <Carte
-        titre={`Historique (${depenses.length})`}
+        titre={`Historique (${total})`}
         action={
           <Selecteur
             label=""
@@ -225,55 +317,74 @@ export default function Depenses({ onModification }) {
         {depenses.length === 0 ? (
           <EtatVide>Aucune dépense enregistrée.</EtatVide>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-bord text-left text-xs uppercase text-texte-doux">
-                <th className="py-2 font-medium">Date</th>
-                <th className="py-2 font-medium">Sites</th>
-                <th className="py-2 font-medium">Fournisseur</th>
-                <th className="py-2 font-medium">Catégorie</th>
-                <th className="py-2 font-medium">Libellé</th>
-                <th className="py-2 text-right font-medium">Montant</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {depenses.map((d) => (
-                <tr key={d.id} className="border-b border-bord/50 last:border-0">
-                  <td className="py-2 tabular-nums text-texte-doux">{dateFr(d.date)}</td>
-                  <td className="py-2">
-                    {d.sites_noms ?? <span className="text-texte-doux">non rattachee</span>}
-                    {d.nb_sites > 1 && (
-                      <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-texte-doux">
-                        partagée
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2">{d.fournisseur_nom ?? "—"}</td>
-                  <td className="py-2 text-texte-doux">{d.categorie}</td>
-                  <td className="py-2 text-texte-doux">{d.libelle}</td>
-                  <td className="py-2 text-right tabular-nums">
-                    {formatMontant(d.montant_cents, d.devise)}
-                    {d.part_cents != null && d.nb_sites > 1 && (
-                      <span className="block text-[11px] text-texte-doux">
-                        dont {formatMontant(d.part_cents, d.devise)} pour ce site
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2 pl-2 text-right">
-                    <Bouton
-                      variante="danger"
-                      className="px-1.5 py-1"
-                      title="Supprimer"
-                      onClick={() => retirer(d.id)}
-                    >
-                      <Trash2 size={14} />
-                    </Bouton>
-                  </td>
+          <>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-bord text-left text-xs uppercase text-texte-doux">
+                  <th className="py-2 font-medium">Date</th>
+                  <th className="py-2 font-medium">Sites</th>
+                  <th className="py-2 font-medium">Fournisseur</th>
+                  <th className="py-2 font-medium">Catégorie</th>
+                  <th className="py-2 font-medium">Libellé</th>
+                  <th className="py-2 text-right font-medium">Montant</th>
+                  <th />
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {depenses.map((d) => (
+                  <tr
+                    key={d.id}
+                    className={`border-b border-bord/50 last:border-0 ${enEdition === d.id ? "bg-accent/10" : ""}`}
+                  >
+                    <td className="py-2 tabular-nums text-texte-doux">{dateFr(d.date)}</td>
+                    <td className="py-2">
+                      {d.sites_noms ?? <span className="text-texte-doux">non rattachée</span>}
+                      {d.nb_sites > 1 && (
+                        <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-texte-doux">
+                          partagée
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2">{d.fournisseur_nom ?? "—"}</td>
+                    <td className="py-2 text-texte-doux">{libelleCategorie(d.categorie)}</td>
+                    <td className="py-2 text-texte-doux">{d.libelle}</td>
+                    <td className="py-2 text-right tabular-nums">
+                      {formatMontant(d.montant_eur_cents ?? d.montant_cents)}
+                      {mentionConversion(d) && (
+                        <span className="block text-[11px] text-texte-doux">{mentionConversion(d)}</span>
+                      )}
+                      {d.part_cents != null && d.nb_sites > 1 && (
+                        <span className="block text-[11px] text-texte-doux">
+                          dont {formatMontant(d.part_cents)} pour ce site
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 pl-2 text-right whitespace-nowrap">
+                      <Bouton
+                        variante="fantome"
+                        className="mr-1 px-1.5 py-1"
+                        title="Modifier"
+                        aria-label="Modifier"
+                        onClick={() => editer(d)}
+                      >
+                        <Pencil size={14} />
+                      </Bouton>
+                      <Bouton
+                        variante="danger"
+                        className="px-1.5 py-1"
+                        title="Supprimer"
+                        aria-label="Supprimer"
+                        onClick={() => retirer(d)}
+                      >
+                        <Trash2 size={14} />
+                      </Bouton>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <AfficherPlus affichees={depenses.length} total={total} onPlus={() => setLimite((l) => l + PAGE)} />
+          </>
         )}
       </Carte>
     </div>

@@ -7,6 +7,7 @@ import {
   echeanceAJour,
   echeancesPassees,
   prochaineEcheance,
+  echeanceSuivante,
   tarifApplicable,
   totalPaye,
 } from "./abonnements";
@@ -330,5 +331,21 @@ describe("arret d'un abonnement", () => {
     const arrete = { debut: "2025-01-01", periodicite: "mensuel", fin: "2025-04-01" };
     // jan 10 + fev 10 + mars 15 = 35,00 EUR
     expect(totalPaye(arrete, avecHausse, "2026-09-12")).toBe(3500);
+  });
+});
+
+describe("echeanceSuivante", () => {
+  it("deduit l'echeance du premier paiement quand aucune n'est saisie", () => {
+    expect(echeanceSuivante({ debut: "2025-03-05", periodicite: "mensuel" }, "2026-10-25")).toBe("2026-11-05");
+  });
+
+  it("prefere l'echeance saisie, avancee si elle est passee", () => {
+    const abonnement = { debut: "2025-03-05", periodicite: "mensuel", prochaine_echeance: "2026-09-29" };
+    expect(echeanceSuivante(abonnement, "2026-10-25")).toBe("2026-10-29");
+  });
+
+  it("ne renvoie rien a partir de la date d'arret", () => {
+    const abonnement = { debut: "2025-03-05", periodicite: "mensuel", fin: "2026-11-01" };
+    expect(echeanceSuivante(abonnement, "2026-10-25")).toBeNull();
   });
 });

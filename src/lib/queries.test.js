@@ -81,6 +81,12 @@ const {
   purgerVerifications,
   supprimerCheck,
   supprimerSite,
+  majDepense,
+  majRevenu,
+  supprimerRevenu,
+  compterDepenses,
+  compterRevenus,
+  seriesParMois,
 } = await import("./queries");
 
 const DOSSIER_MIGRATIONS = path.resolve(__dirname, "../../src-tauri/migrations");
@@ -913,5 +919,85 @@ describe("arreter et reprendre un abonnement", () => {
 
     await arreterAbonnement(abo.id, "2026-03-01");
     expect(await echeancesProches(45)).toHaveLength(0);
+  });
+});
+
+describe("echeances deduites du premier paiement", () => {
+  it("annoncent un abonnement saisi sans prochaine echeance", async () => {
+    const [denivio, history] = await creerDeuxSites();
+    await ajouterAbonnement({ siteIds: [denivio], libelle: "VPS", montantCents: 1199, debut: "2025-03-05" });
+    await ajouterAbonnement({ siteIds: [history], libelle: "Hebergement", montantCents: 1100, debut: "2025-03-20" });
+
+    const echeances = await echeancesProches(45, "2026-10-25");
+    expect(echeances.map((e) => [e.libelle, e.prochaine_echeance])).toEqual([
+      ["Hebergement", "2026-11-20"],
+      ["VPS", "2026-11-05"],
+    ].sort((a, b) => a[1].localeCompare(b[1])));
+  });
+
+  it("se filtrent sur un site, partages compris", async () => {
+    const [denivio, history] = await creerDeuxSites();
+    await ajouterAbonnement({ siteIds: [denivio], libelle: "Domaine", montantCents: 1100, debut: "2025-11-01", periodicite: "annuel" });
+    await ajouterAbonnement({ siteIds: [denivio, history], libelle: "VPS", montantCents: 1200, debut: "2025-01-10" });
+    await ajouterAbonnement({ siteIds: [], libelle: "Claude", montantCents: 9000, debut: "2025-01-15" });
+
+    const libelles = async (siteId) =>
+      (await echeancesProches(45, "2026-10-25", siteId)).map((e) => e.libelle).sort();
+    expect(await libelles(null)).toEqual(["Claude", "Domaine", "VPS"]);
+    expect(await libelles(history)).toEqual(["VPS"]);
+  });
+});
+
+describe("depenses en dollars", () => {
+  it("comptent en euros dans les graphes et les parts par site", async () => {
+    const [denivio, history] = await creerDeuxSites();
+    await ajouterDepense({
+      siteIds: [denivio, history],
+      date: "2026-10-01",
+      montantCents: 2000,
+      devise: "USD",
+      taux: 0.9,
+      montantEurCents: 1800,
+    });
+
+    const [ligne] = await seriesParMois("2026-10-01", "2026-10-31");
+    expect(ligne.depense_cents).toBe(1800);
+    const parSite = await depensesParSite("2026-10-01", "2026-10-31");
+    expect(parSite.reduce((t, s) => t + s.total_cents, 0)).toBe(1800);
+  });
+});
+
+describe("corrections et suppressions", () => {
+  it("corrigent une depense et recalculent ses parts", async () => {
+    const [denivio, history] = await creerDeuxSites();
+    const res = await ajouterDepense({ siteIds: [denivio], date: "2026-10-01", montantCents: 1000 });
+    await majDepense(res.lastInsertId, {
+      siteIds: [denivio, history],
+      date: "2026-10-02",
+      montantCents: 1101,
+      libelle: "corrigee",
+    });
+
+    const [depense] = await listerDepenses();
+    expect(depense).toMatchObject({ date: "2026-10-02", montant_cents: 1101, libelle: "corrigee", nb_sites: 2 });
+    const parts = etat.base
+      .prepare("SELECT part_cents FROM depense_sites WHERE depense_id = ? ORDER BY part_cents DESC")
+      .all(res.lastInsertId)
+      .map((p) => p.part_cents);
+    expect(parts).toEqual([551, 550]);
+    expect(await compterDepenses()).toBe(1);
+    expect(await compterDepenses({ siteId: history })).toBe(1);
+  });
+
+  it("corrigent puis suppriment un revenu", async () => {
+    const [denivio] = await creerDeuxSites();
+    const res = await ajouterRevenu({ siteIds: [denivio], date: "2026-10-01", montantCents: 5000 });
+    await majRevenu(res.lastInsertId, { siteIds: [denivio], date: "2026-10-03", montantCents: 4000 });
+    const [revenu] = await listerRevenus();
+    expect(revenu).toMatchObject({ date: "2026-10-03", montant_cents: 4000, montant_eur_cents: 4000 });
+
+    await supprimerRevenu(res.lastInsertId);
+    expect(await compterRevenus()).toBe(0);
+    expect(etat.base.prepare("SELECT COUNT(*) AS n FROM revenu_sites").get().n).toBe(0);
   });
 });

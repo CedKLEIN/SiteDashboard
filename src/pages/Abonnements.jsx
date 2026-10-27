@@ -19,34 +19,46 @@ import {
   trouverOuCreerFournisseur,
 } from "../lib/queries";
 import { choisirImageLocale } from "../lib/icones";
-import { coutMensuelEquivalent, echeanceAJour, totalPaye } from "../lib/abonnements";
+import { coutMensuelEquivalent, echeanceSuivante, totalPaye } from "../lib/abonnements";
 import { aujourdhuiIso, dateFr, formatMontant, parseMontant } from "../lib/format";
 
-const FORMULAIRE_VIDE = {
-  siteIds: [],
-  parts: null,
-  fournisseur: "",
-  fournisseurUrl: "",
-  libelle: "",
-  montant: "",
-  periodicite: "mensuel",
-  debut: aujourdhuiIso(),
-  fin: "",
-  prochaineEcheance: "",
-};
+// Une fonction et non une constante : l'appli reste ouverte des jours, la date
+// du jour doit etre celle du moment ou le formulaire est vide, pas du lancement.
+function formulaireVide() {
+  return {
+    siteIds: [],
+    parts: null,
+    fournisseur: "",
+    fournisseurUrl: "",
+    libelle: "",
+    montant: "",
+    periodicite: "mensuel",
+    debut: aujourdhuiIso(),
+    fin: "",
+    prochaineEcheance: "",
+  };
+}
 
 export default function Abonnements({ onModification }) {
   const [sites, setSites] = useState([]);
   const [fournisseurs, setFournisseurs] = useState([]);
   const [abonnements, setAbonnements] = useState([]);
   const [tarifs, setTarifs] = useState([]);
-  const [formulaire, setFormulaire] = useState(FORMULAIRE_VIDE);
+  const [formulaire, setFormulaire] = useState(formulaireVide);
   const [erreur, setErreur] = useState("");
   const [historiqueOuvert, setHistoriqueOuvert] = useState(null);
   const [enEdition, setEnEdition] = useState(null);
   const [arretEnCours, setArretEnCours] = useState(null);
 
   async function recharger() {
+    try {
+      await chargerTout();
+    } catch (e) {
+      setErreur(String(e?.message ?? e));
+    }
+  }
+
+  async function chargerTout() {
     const [s, f, a, t] = await Promise.all([
       listerSites(),
       listerFournisseurs(),
@@ -90,7 +102,13 @@ export default function Abonnements({ onModification }) {
 
   async function editer(abonnement) {
     setErreur("");
-    const parts = await partsAbonnement(abonnement.id);
+    let parts;
+    try {
+      parts = await partsAbonnement(abonnement.id);
+    } catch (e) {
+      setErreur(String(e?.message ?? e));
+      return;
+    }
     setEnEdition(abonnement.id);
     setFormulaire({
       siteIds: parts.map((p) => p.site_id),
@@ -111,7 +129,7 @@ export default function Abonnements({ onModification }) {
 
   function annulerEdition() {
     setEnEdition(null);
-    setFormulaire(FORMULAIRE_VIDE);
+    setFormulaire(formulaireVide());
     setErreur("");
   }
 
@@ -133,13 +151,14 @@ export default function Abonnements({ onModification }) {
       return;
     }
 
-    const fournisseurId = await trouverOuCreerFournisseur(
-      formulaire.fournisseur,
-      "saas",
-      formulaire.fournisseurUrl.trim() || null,
-    );
-
+    let fournisseurId;
     try {
+      fournisseurId = await trouverOuCreerFournisseur(
+        formulaire.fournisseur,
+        "saas",
+        formulaire.fournisseurUrl.trim() || null,
+      );
+
       if (enEdition) {
         // Le montant ne se modifie pas ici: il vit dans l'historique des tarifs,
         // ou une correction garde la trace de ce qui a reellement ete paye.
@@ -154,7 +173,7 @@ export default function Abonnements({ onModification }) {
           partsCents: partsCentsDepuisSaisie(formulaire.siteIds, formulaire.parts),
         });
         setEnEdition(null);
-        setFormulaire(FORMULAIRE_VIDE);
+        setFormulaire(formulaireVide());
         await recharger();
         onModification?.();
         return;
@@ -177,22 +196,27 @@ export default function Abonnements({ onModification }) {
 
     // L'icone est rattachee au fournisseur: deux abonnements du meme
     // fournisseur la partagent, inutile de la retelecharger.
+    // Une icone manquante n'empeche rien : l'abonnement est deja enregistre.
     const url = formulaire.fournisseurUrl.trim();
     if (fournisseurId && url) {
       const deja = fournisseurs.find((f) => f.id === fournisseurId)?.favicon;
       if (!deja) {
         const favicon = await invoke("recuperer_favicon", { url }).catch(() => null);
-        if (favicon) await majFaviconFournisseur(fournisseurId, favicon);
+        if (favicon) await majFaviconFournisseur(fournisseurId, favicon).catch(() => {});
       }
     }
 
-    setFormulaire(FORMULAIRE_VIDE);
+    setFormulaire(formulaireVide());
     await recharger();
     onModification?.();
   }
 
   async function iconeFournisseur(abonnement) {
     setErreur("");
+    if (!abonnement.fournisseur_id) {
+      setErreur(`« ${abonnement.libelle} » n'a pas de fournisseur : renseigne-le d'abord (crayon).`);
+      return;
+    }
 
     const favicon = abonnement.fournisseur_url
       ? await invoke("recuperer_favicon", { url: abonnement.fournisseur_url }).catch(() => null)
@@ -214,23 +238,45 @@ export default function Abonnements({ onModification }) {
   async function confirmerArret(abonnementId) {
     setErreur("");
     if (!arretEnCours?.date) {
-      setErreur("Indique la date d'arret.");
+      setErreur("Indique la date d'arrêt.");
       return;
     }
-    await arreterAbonnement(abonnementId, arretEnCours.date);
+    try {
+      await arreterAbonnement(abonnementId, arretEnCours.date);
+    } catch (e) {
+      setErreur(String(e?.message ?? e));
+      return;
+    }
     setArretEnCours(null);
     await recharger();
     onModification?.();
   }
 
   async function reprendre(abonnement) {
-    await reprendreAbonnement(abonnement.id);
+    try {
+      await reprendreAbonnement(abonnement.id);
+    } catch (e) {
+      setErreur(String(e?.message ?? e));
+      return;
+    }
     await recharger();
     onModification?.();
   }
 
-  async function retirer(id) {
-    await supprimerAbonnement(id);
+  async function retirer(abonnement) {
+    // Supprimer efface aussi tout l'historique de tarifs, donc le « total paye » :
+    // pour un abonnement resilie, « Arreter » garde la trace de ce qui a ete paye.
+    const confirme = window.confirm(
+      `Supprimer « ${abonnement.libelle} » et tout son historique de paiements ?\n\nPour un abonnement résilié, préfère « Arrêter » : les paiements passés restent comptés.`,
+    );
+    if (!confirme) return;
+    try {
+      await supprimerAbonnement(abonnement.id);
+    } catch (e) {
+      setErreur(String(e?.message ?? e));
+      return;
+    }
+    if (enEdition === abonnement.id) annulerEdition();
     await recharger();
     onModification?.();
   }
@@ -353,7 +399,7 @@ export default function Abonnements({ onModification }) {
           />
 
           <Champ
-            label="Prochaine échéance"
+            label="Prochaine échéance (si autre)"
             type="date"
             value={formulaire.prochaineEcheance}
             onChange={(e) => maj("prochaineEcheance", e.target.value)}
@@ -410,7 +456,12 @@ export default function Abonnements({ onModification }) {
                               aria-hidden="true"
                             />
                           ) : (
-                            <span className="size-5 shrink-0 rounded bg-surface-2" aria-hidden="true" />
+                            <span
+                              className="flex size-5 shrink-0 items-center justify-center rounded bg-accent/20 text-[10px] font-semibold text-accent"
+                              aria-hidden="true"
+                            >
+                              {(a.fournisseur_nom ?? a.libelle).charAt(0).toUpperCase()}
+                            </span>
                           )}
                           <span className="min-w-0">
                             <span className="flex items-center gap-2 font-medium text-texte">
@@ -439,7 +490,7 @@ export default function Abonnements({ onModification }) {
                           : `depuis le ${dateFr(a.debut) ?? "?"}`}
                       </td>
                       <td className="py-2 pr-4 tabular-nums whitespace-nowrap">
-                        {dateFr(echeanceAJour(a.prochaine_echeance, a.periodicite, aujourdhui, a.fin)) ?? (
+                        {dateFr(echeanceSuivante(a, aujourdhui)) ?? (
                           <span className="text-texte-doux">—</span>
                         )}
                       </td>
@@ -510,7 +561,7 @@ export default function Abonnements({ onModification }) {
                           variante="danger"
                           className="px-1.5 py-1"
                           title="Supprimer"
-                          onClick={() => retirer(a.id)}
+                          onClick={() => retirer(a)}
                         >
                           <Trash2 size={14} />
                         </Bouton>

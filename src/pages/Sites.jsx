@@ -46,9 +46,11 @@ export default function Sites({ onModification }) {
     let cree;
     try {
       cree = await creerSite({ ...formulaire, nom: formulaire.nom.trim() });
-    } catch {
-      // Le seul cas realiste ici est la violation de la contrainte UNIQUE sur le nom
-      setErreur("Un site porte déjà ce nom.");
+    } catch (e) {
+      // Cas le plus courant : la contrainte UNIQUE sur le nom. Les autres erreurs
+      // sont rapportees telles quelles plutot que maquillees en doublon.
+      const message = String(e?.message ?? e);
+      setErreur(/unique/i.test(message) ? "Un site porte déjà ce nom." : message);
       return;
     }
 
@@ -78,7 +80,7 @@ export default function Sites({ onModification }) {
   async function recupererIcone(site) {
     setErreur("");
     if (!site.url) {
-      setErreur(`${site.nom} n'a pas d'URL : importe une image a la place.`);
+      setErreur(`${site.nom} n'a pas d'URL : importe une image à la place.`);
       return;
     }
 
@@ -86,12 +88,14 @@ export default function Sites({ onModification }) {
     try {
       const favicon = await invoke("recuperer_favicon", { url: site.url });
       if (!favicon) {
-        setErreur(`Aucune icône trouvée pour ${site.nom} : importe une image a la place.`);
+        setErreur(`Aucune icône trouvée pour ${site.nom} : importe une image à la place.`);
         return;
       }
       await majFaviconSite(site.id, favicon);
       await recharger();
       onModification?.();
+    } catch (e) {
+      setErreur(`Icône de ${site.nom} introuvable (${e?.message ?? e}) : importe une image à la place.`);
     } finally {
       setEnCours(null);
     }
@@ -112,7 +116,13 @@ export default function Sites({ onModification }) {
   }
 
   async function basculerActif(site) {
-    await majSite(site.id, { ...site, actif: !site.actif });
+    setErreur("");
+    try {
+      await majSite(site.id, { ...site, actif: !site.actif });
+    } catch (e) {
+      setErreur(String(e?.message ?? e));
+      return;
+    }
     await recharger();
     onModification?.();
   }
@@ -122,7 +132,12 @@ export default function Sites({ onModification }) {
       `Supprimer « ${site.nom} » ? Ses dépenses et revenus seront supprimés aussi.`,
     );
     if (!confirme) return;
-    await supprimerSite(site.id);
+    try {
+      await supprimerSite(site.id);
+    } catch (e) {
+      setErreur(String(e?.message ?? e));
+      return;
+    }
     await recharger();
     onModification?.();
   }

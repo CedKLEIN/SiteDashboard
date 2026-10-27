@@ -1,4 +1,4 @@
-import { echeanceAJour } from "../abonnements";
+import { echeanceSuivante } from "../abonnements";
 import { select } from "../db";
 import { aujourdhuiIso } from "../format";
 import { SITES_DE_L_ABONNEMENT, TARIF_COURANT } from "./communs";
@@ -30,7 +30,8 @@ export function seriesParMois(depuis, jusqua, siteId = null) {
 
   return select(
     `SELECT mois, SUM(depense) AS depense_cents, SUM(revenu) AS revenu_cents FROM (
-       SELECT substr(date, 1, 7) AS mois, montant_cents AS depense, 0 AS revenu
+       SELECT substr(date, 1, 7) AS mois,
+              COALESCE(montant_eur_cents, montant_cents) AS depense, 0 AS revenu
          FROM depenses WHERE date >= $1 AND date <= $2
        UNION ALL
        SELECT substr(date, 1, 7) AS mois, 0 AS depense,
@@ -60,7 +61,8 @@ export function totauxParMois(nbMois = 12) {
   const depuis = `-${nbMois - 1} months`;
   return select(
     `SELECT mois, SUM(depense) AS depense_cents, SUM(revenu) AS revenu_cents FROM (
-       SELECT substr(date, 1, 7) AS mois, montant_cents AS depense, 0 AS revenu FROM depenses
+       SELECT substr(date, 1, 7) AS mois,
+              COALESCE(montant_eur_cents, montant_cents) AS depense, 0 AS revenu FROM depenses
        UNION ALL
        SELECT substr(date, 1, 7) AS mois, 0 AS depense,
               COALESCE(montant_eur_cents, montant_cents) AS revenu FROM revenus
@@ -97,7 +99,8 @@ export function depensesParSite(depuis, jusqua) {
 /** Totaux bruts sur une periode. */
 export async function totauxPeriode(depuis, jusqua) {
   const [dep] = await select(
-    "SELECT COALESCE(SUM(montant_cents), 0) AS total FROM depenses WHERE date >= $1 AND date <= $2",
+    `SELECT COALESCE(SUM(COALESCE(montant_eur_cents, montant_cents)), 0) AS total
+     FROM depenses WHERE date >= $1 AND date <= $2`,
     [depuis, jusqua],
   );
   const [rev] = await select(
@@ -131,21 +134,22 @@ export async function coutFixeDuSite(siteId) {
  * etant avancee au prochain renouvellement si elle est passee (voir
  * `echeanceAJour`). Le filtre se fait donc ici et non en SQL.
  */
-export async function echeancesProches(jours = 45, aujourdhui = aujourdhuiIso()) {
+export async function echeancesProches(jours = 45, aujourdhui = aujourdhuiIso(), siteId = null) {
+  // Filtre par site : seuls les abonnements que ce site porte, meme partages
   const abonnements = await select(
     `SELECT a.*, f.nom AS fournisseur_nom, ${TARIF_COURANT}, ${SITES_DE_L_ABONNEMENT}
      FROM abonnements a
      LEFT JOIN fournisseurs f ON f.id = a.fournisseur_id
-     WHERE a.actif = 1 AND a.prochaine_echeance IS NOT NULL`,
+     WHERE a.actif = 1
+       AND ($1 IS NULL OR EXISTS (
+         SELECT 1 FROM abonnement_sites x WHERE x.abonnement_id = a.id AND x.site_id = $1))`,
+    [siteId],
   );
   const [a, m, j] = aujourdhui.split("-").map(Number);
   const limite = aujourdhuiIso(new Date(a, m - 1, j + jours));
 
   return abonnements
-    .map((ab) => ({
-      ...ab,
-      prochaine_echeance: echeanceAJour(ab.prochaine_echeance, ab.periodicite, aujourdhui, ab.fin),
-    }))
+    .map((ab) => ({ ...ab, prochaine_echeance: echeanceSuivante(ab, aujourdhui) }))
     .filter((ab) => ab.prochaine_echeance && ab.prochaine_echeance <= limite)
     .sort((x, y) => x.prochaine_echeance.localeCompare(y.prochaine_echeance));
 }

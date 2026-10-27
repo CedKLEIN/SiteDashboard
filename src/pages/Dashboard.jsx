@@ -14,6 +14,7 @@ import {
 import { Carte, EtatVide, Kpi, Pastille } from "../components/ui";
 import CarteSite from "../components/CarteSite";
 import {
+  coutFixeDuSite,
   depensesParSite,
   echeancesProches,
   etatsDesSites,
@@ -44,6 +45,13 @@ const COULEURS = {
   grille: "#2a3358",
   axe: "#98a2c4",
 };
+
+/** Valeurs des graphes (en euros) au format francais : « 830,05 € ». */
+const formatInfobulle = (v, nom) => [formatMontant(Math.round(Number(v) * 100)), nom];
+
+/** Graduations sans decimales, avec separateur de milliers : « 3 000 € ». */
+const FORMAT_AXE = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
+const formatAxe = (v) => `${FORMAT_AXE.format(v)} €`;
 
 const STYLE_INFOBULLE = {
   background: "#141a2e",
@@ -129,15 +137,18 @@ export default function Dashboard({ rafraichissement, onOuvrirSite, vuesAgents =
       // Inutile d'afficher les mois a venir d'une annee en cours
       const finReelle = fin > aujourdhui ? aujourdhui : fin;
 
-      const [series, parSite, abonnements, tarifs, parts, echeances, etats] = await Promise.all([
-        seriesParMois(debutReel, finReelle, siteFiltre),
-        depensesParSite(debutReel, finReelle),
-        listerAbonnements(),
-        listerTarifs(),
-        listerPartsAbonnements(),
-        echeancesProches(45),
-        etatsDesSites(),
-      ]);
+      const [series, parSite, abonnements, tarifs, parts, echeances, etats, recurrentDuSite] =
+        await Promise.all([
+          seriesParMois(debutReel, finReelle, siteFiltre),
+          depensesParSite(debutReel, finReelle),
+          listerAbonnements(),
+          listerTarifs(),
+          listerPartsAbonnements(),
+          // Filtre sur un site : ses echeances et sa part du recurrent seulement
+          echeancesProches(45, aujourdhui, siteFiltre),
+          etatsDesSites(),
+          siteFiltre ? coutFixeDuSite(siteFiltre) : null,
+        ]);
 
       if (!annule) {
         setDonnees({
@@ -148,6 +159,7 @@ export default function Dashboard({ rafraichissement, onOuvrirSite, vuesAgents =
           parts,
           echeances,
           etats,
+          recurrentDuSite,
           debut: debutReel,
           fin: finReelle,
           aujourdhui,
@@ -163,8 +175,19 @@ export default function Dashboard({ rafraichissement, onOuvrirSite, vuesAgents =
 
   if (!donnees) return <EtatVide>Chargement...</EtatVide>;
 
-  const { series, parSite, abonnements, tarifs, parts, echeances, etats, debut, fin, aujourdhui } =
-    donnees;
+  const {
+    series,
+    parSite,
+    abonnements,
+    tarifs,
+    parts,
+    echeances,
+    etats,
+    recurrentDuSite,
+    debut,
+    fin,
+    aujourdhui,
+  } = donnees;
 
   // Les abonnements ne vivent pas dans la table depenses: sans cet apport, un an
   // de VPS paye n'apparaitrait nulle part dans les graphes.
@@ -184,9 +207,12 @@ export default function Dashboard({ rafraichissement, onOuvrirSite, vuesAgents =
 
   const margeCents = totalRevenusCents - totalDepensesCents;
 
-  const recurrentCents = abonnements
-    .filter((a) => a.actif)
-    .reduce((total, a) => total + coutMensuelEquivalent(a), 0);
+  // Filtre sur un site : sa part des abonnements, pas le recurrent global
+  const abonnementsActifs = abonnements.filter(
+    (a) => a.actif && (!siteFiltre || parts.some((p) => p.abonnement_id === a.id && p.site_id === siteFiltre)),
+  );
+  const recurrentCents =
+    recurrentDuSite ?? abonnementsActifs.reduce((total, a) => total + coutMensuelEquivalent(a), 0);
 
   // Meme apport cote repartition par site, sinon un site dont le seul cout est
   // un abonnement partage n'apparaitrait pas du tout.
@@ -258,7 +284,7 @@ export default function Dashboard({ rafraichissement, onOuvrirSite, vuesAgents =
         <Kpi
           libelle="Récurrent / mois"
           valeur={formatMontant(recurrentCents)}
-          detail={`${abonnements.filter((a) => a.actif).length} abonnement(s) actif(s)`}
+          detail={`${abonnementsActifs.length} abonnement(s) actif(s)`}
         />
       </div>
 
@@ -284,11 +310,11 @@ export default function Dashboard({ rafraichissement, onOuvrirSite, vuesAgents =
                     tickLine={false}
                     axisLine={false}
                     width={64}
-                    tickFormatter={(v) => `${v} €`}
+                    tickFormatter={formatAxe}
                   />
                   <Tooltip
                     contentStyle={STYLE_INFOBULLE}
-                    formatter={(v, nom) => [`${v.toFixed(2)} €`, nom]}
+                    formatter={formatInfobulle}
                   />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Line
@@ -315,6 +341,9 @@ export default function Dashboard({ rafraichissement, onOuvrirSite, vuesAgents =
       </Carte>
 
       <Carte titre="Mois par mois">
+        {serie.length === 0 ? (
+          <EtatVide>Aucune écriture sur cette période.</EtatVide>
+        ) : (
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={serie} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
@@ -332,11 +361,11 @@ export default function Dashboard({ rafraichissement, onOuvrirSite, vuesAgents =
                 tickLine={false}
                 axisLine={false}
                 width={64}
-                tickFormatter={(v) => `${v} €`}
+                tickFormatter={formatAxe}
               />
               <Tooltip
                 contentStyle={STYLE_INFOBULLE}
-                formatter={(v, nom) => [`${v.toFixed(2)} €`, nom]}
+                formatter={formatInfobulle}
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               <Bar
@@ -356,6 +385,7 @@ export default function Dashboard({ rafraichissement, onOuvrirSite, vuesAgents =
             </BarChart>
           </ResponsiveContainer>
         </div>
+        )}
       </Carte>
 
       <div className="grid gap-4 lg:grid-cols-2">

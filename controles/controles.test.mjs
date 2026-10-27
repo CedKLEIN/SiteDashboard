@@ -399,7 +399,9 @@ describe("registre : modeles appliques aux sites", () => {
         { id: "bing-a", modele: "bing", site: "a" },
       ],
     });
-    expect(sante).toMatchObject({ site: "a.fr", titre: "Santé", cron: "45 7 * * *", fichierSuivi: "C:\\p\\a\\sante-a.md", type: "script" });
+    // Separateur du systeme : le test passe aussi hors de Windows
+    const fichierSuivi = path.join("C:\\p\\a", "sante-a.md");
+    expect(sante).toMatchObject({ site: "a.fr", titre: "Santé", cron: "45 7 * * *", fichierSuivi, type: "script" });
     expect(sante.erreur).toBeUndefined();
     expect(idees).toMatchObject({ cron: "0 10 * * 6", chrome: true, dureeMaxMin: 90, parametres: { corriger: true }, soumissionBingAuto: true });
   });

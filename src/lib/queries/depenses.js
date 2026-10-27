@@ -43,6 +43,8 @@ export async function ajouterDepense({
   date,
   montantCents,
   devise = "EUR",
+  taux = 1,
+  montantEurCents = null,
   libelle = "",
   categorie = "autre",
   source = "manuel",
@@ -50,25 +52,80 @@ export async function ajouterDepense({
 }) {
   // Tout est valide AVANT d'inserer la depense: une somme incoherente ou un
   // site disparu laisserait sinon une ligne orpheline, rattachee a aucun site.
+  // Les parts sont en euros, comme pour les revenus.
+  const montantRef = montantEurCents ?? montantCents;
   await verifierSitesExistants(siteIds);
-  const parts = partsPourSites(montantCents, siteIds, partsCents);
+  const parts = partsPourSites(montantRef, siteIds, partsCents);
 
   const res = await execute(
     `INSERT INTO depenses
-       (fournisseur_id, date, montant_cents, devise, libelle, categorie, source, ref_externe)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [fournisseurId, date, montantCents, devise, libelle, categorie, source, refExterne],
+       (fournisseur_id, date, montant_cents, devise, taux, montant_eur_cents, libelle, categorie,
+        source, ref_externe)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [fournisseurId, date, montantCents, devise, taux, montantRef, libelle, categorie, source, refExterne],
   );
 
+  await ecrireParts(res.lastInsertId, parts);
+  return res;
+}
+
+async function ecrireParts(depenseId, parts) {
   for (const { siteId, partCents } of parts) {
     await execute(
       "INSERT INTO depense_sites (depense_id, site_id, part_cents) VALUES ($1, $2, $3)",
-      [res.lastInsertId, siteId, partCents],
+      [depenseId, siteId, partCents],
     );
   }
-  return res;
+}
+
+/** Sites d'une depense et leur part, pour rouvrir le formulaire en edition. */
+export function partsDepense(id) {
+  return select("SELECT site_id, part_cents FROM depense_sites WHERE depense_id = $1", [id]);
+}
+
+/**
+ * Corrige une depense. Les parts sont recalculees sur le nouveau montant et
+ * reecrites en entier : les garder sur l'ancien montant casserait l'invariant
+ * "somme des parts = montant".
+ */
+export async function majDepense(
+  id,
+  {
+    siteIds = [],
+    partsCents = null,
+    fournisseurId,
+    date,
+    montantCents,
+    devise = "EUR",
+    taux = 1,
+    montantEurCents = null,
+    libelle = "",
+    categorie = "autre",
+  },
+) {
+  const montantRef = montantEurCents ?? montantCents;
+  await verifierSitesExistants(siteIds);
+  const parts = partsPourSites(montantRef, siteIds, partsCents);
+
+  await execute(
+    `UPDATE depenses
+        SET fournisseur_id = $1, date = $2, montant_cents = $3, devise = $4, taux = $5,
+            montant_eur_cents = $6, libelle = $7, categorie = $8
+      WHERE id = $9`,
+    [fournisseurId, date, montantCents, devise, taux, montantRef, libelle, categorie, id],
+  );
+  await execute("DELETE FROM depense_sites WHERE depense_id = $1", [id]);
+  await ecrireParts(id, parts);
 }
 
 export function supprimerDepense(id) {
   return execute("DELETE FROM depenses WHERE id = $1", [id]);
+}
+
+/** Nombre total de depenses (d'un site au besoin) : l'historique est pagine. */
+export async function compterDepenses({ siteId = null } = {}) {
+  const [ligne] = siteId
+    ? await select("SELECT COUNT(*) AS n FROM depense_sites WHERE site_id = $1", [siteId])
+    : await select("SELECT COUNT(*) AS n FROM depenses");
+  return ligne?.n ?? 0;
 }
