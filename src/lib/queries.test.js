@@ -87,6 +87,10 @@ const {
   compterDepenses,
   compterRevenus,
   seriesParMois,
+  consoliderJours,
+  disponibiliteParTranche,
+  supprimerAnnulable,
+  restaurer,
 } = await import("./queries");
 
 const DOSSIER_MIGRATIONS = path.resolve(__dirname, "../../src-tauri/migrations");
@@ -999,5 +1003,74 @@ describe("corrections et suppressions", () => {
     await supprimerRevenu(res.lastInsertId);
     expect(await compterRevenus()).toBe(0);
     expect(etat.base.prepare("SELECT COUNT(*) AS n FROM revenu_sites").get().n).toBe(0);
+  });
+});
+
+describe("disponibilite au-dela de 30 jours", () => {
+  it("resume les jours termines avant la purge, et les relit au jour", async () => {
+    const [denivio] = await creerDeuxSites();
+    const [accueil] = await checksActifs();
+    const inserer = etat.base.prepare(
+      `INSERT INTO verifications (check_id, verifie_le, ok, latence_ms)
+       VALUES (?, datetime('now', 'localtime', ?), ?, 100)`,
+    );
+    // Il y a 40 jours : 3 succes, 1 echec ; aujourd'hui : 1 succes
+    for (const ok of [1, 1, 1, 0]) inserer.run(accueil.id, "-40 days", ok);
+    inserer.run(accueil.id, "-1 minutes", 1);
+
+    await consoliderJours();
+    await purgerVerifications(30);
+    // Deux consolidations de suite ne doublent rien
+    await consoliderJours();
+
+    const lignes = await disponibiliteParTranche({ heures: 90 * 24, parJour: true, siteId: denivio });
+    const total = lignes.reduce((t, l) => t + l.total, 0);
+    const ok = lignes.reduce((t, l) => t + l.ok, 0);
+    expect([total, ok]).toEqual([5, 4]);
+    expect(lignes).toHaveLength(2);
+  });
+});
+
+describe("suppression annulable", () => {
+  it("remet un abonnement supprime avec son id, ses parts et ses tarifs", async () => {
+    const [denivio, history] = await creerDeuxSites();
+    const res = await ajouterAbonnement({ siteIds: [denivio, history], libelle: "VPS", montantCents: 1200, debut: "2025-01-10" });
+    const compter = () =>
+      ["abonnements", "abonnement_sites", "abonnement_tarifs"].map((t) => etat.base.prepare(`SELECT COUNT(*) AS n FROM ${t}`).get().n);
+    expect(compter()).toEqual([1, 2, 1]);
+
+    const photo = await supprimerAnnulable("abonnements", res.lastInsertId);
+    expect(compter()).toEqual([0, 0, 0]);
+
+    await restaurer(photo);
+    expect(compter()).toEqual([1, 2, 1]);
+    const [relu] = await listerAbonnements();
+    expect(relu).toMatchObject({ id: res.lastInsertId, libelle: "VPS", montant_cents: 1200 });
+  });
+});
+
+describe("import par un connecteur", () => {
+  it("importe une fois, met a jour le cumul du mois, garde les sites choisis depuis", async () => {
+    const [denivio, history] = await creerDeuxSites();
+    const pages = (montant) => [{ data: [{ starting_at: "2026-10-01T00:00:00Z", results: [{ amount: String(montant) }] }], has_more: false }];
+    let reponses = pages(1000);
+    const appel = async () => ({ statut: 200, json: reponses.shift() });
+    const convertir = async () => ({ taux: 0.9 });
+    const config = { id: "c1", type: "anthropic", siteIds: [denivio] };
+    const { synchroniserConnecteur: synchro } = await import("./connecteurs/moteur");
+
+    expect(await synchro({ config, secret: { cle: "k" }, appel, convertir, aujourdhui: "2026-10-27" })).toEqual({ nouvelles: 1, misesAJour: 0, inchangees: 0 });
+    reponses = pages(1000);
+    expect(await synchro({ config, secret: { cle: "k" }, appel, convertir, aujourdhui: "2026-10-27" })).toEqual({ nouvelles: 0, misesAJour: 0, inchangees: 1 });
+
+    // Rattachee a la main a un autre site, puis le cumul du mois grossit
+    const [depense] = await listerDepenses();
+    await majDepense(depense.id, { siteIds: [history], date: depense.date, montantCents: 1000, devise: "USD", taux: 0.9, montantEurCents: 900, libelle: depense.libelle, fournisseurId: depense.fournisseur_id, categorie: "api" });
+    reponses = pages(2500);
+    expect(await synchro({ config, secret: { cle: "k" }, appel, convertir, aujourdhui: "2026-10-28" })).toEqual({ nouvelles: 0, misesAJour: 1, inchangees: 0 });
+
+    const [relue] = await listerDepenses();
+    expect(relue).toMatchObject({ montant_cents: 2500, montant_eur_cents: 2250, devise: "USD", source: "anthropic", ref_externe: "anthropic-2026-10", sites_noms: "HistorySite", fournisseur_nom: "Anthropic" });
+    expect(await compterDepenses()).toBe(1);
   });
 });

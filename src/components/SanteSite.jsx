@@ -33,6 +33,7 @@ const FENETRES = [
   { cle: "24h", libelle: "24 h", heures: 24, n: 24, parJour: false },
   { cle: "7j", libelle: "7 j", heures: 168, n: 168, parJour: false },
   { cle: "30j", libelle: "30 j", heures: 720, n: 30, parJour: true },
+  { cle: "90j", libelle: "90 j", heures: 2160, n: 90, parJour: true },
 ];
 
 /** Ce que vise un check, en court : le chemin sur le site, ou le domaine pour TLS et DNS. */

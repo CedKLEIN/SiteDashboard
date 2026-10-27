@@ -10,8 +10,10 @@ import {
   listerTarifs,
   majFaviconFournisseur,
   reprendreAbonnement,
-  supprimerAbonnement,
+  restaurer,
+  supprimerAnnulable,
 } from "../lib/queries";
+import { useSuppressionAnnulable } from "../components/Toasts";
 import { choisirImageLocale } from "../lib/icones";
 import { coutMensuelEquivalent, echeanceSuivante, totalPaye } from "../lib/abonnements";
 import { aujourdhuiIso, dateFr, formatMontant } from "../lib/format";
@@ -103,6 +105,7 @@ export default function Abonnements({ rafraichissement, onModifier, onModificati
   const [historiqueOuvert, setHistoriqueOuvert] = useState(null);
   const [arret, setArret] = useState(null);
   const [erreur, setErreur] = useState("");
+  const supprimerAvecAnnulation = useSuppressionAnnulable(onModification);
 
   async function recharger() {
     try {
@@ -146,12 +149,9 @@ export default function Abonnements({ rafraichissement, onModifier, onModificati
     });
   }
 
+  // Sans confirmation : tarifs et parts compris, tout revient avec « Annuler »
   function supprimer(abonnement) {
-    // Supprimer efface aussi l'historique de tarifs, donc le « total paye »
-    const confirme = window.confirm(
-      `Supprimer « ${abonnement.libelle} » et tout son historique de paiements ?\n\nPour un abonnement résilié, préfère « Arrêter » : les paiements passés restent comptés.`,
-    );
-    if (confirme) agir(() => supprimerAbonnement(abonnement.id));
+    supprimerAvecAnnulation(`Abonnement « ${abonnement.libelle} » supprimé`, () => supprimerAnnulable("abonnements", abonnement.id), restaurer);
   }
 
   const aujourdhui = aujourdhuiIso();

@@ -5,6 +5,7 @@
  * Fonction pure : les donnees arrivent deja lues.
  */
 import { formatMontant } from "./format";
+import { etatSite } from "./statut";
 
 /** '2026-10-27 14:08:00' -> minutes ecoulees jusqu'a `maintenant`. */
 function minutesDepuis(horodatage, maintenant) {
@@ -51,8 +52,21 @@ function detailEchec(check, maintenant) {
   return duree ? `${cause} · depuis ${duree}` : cause;
 }
 
-export function construireATraiter({ echecs = [], vuesAgents = [], echeances = [], aujourdhui, maintenant = new Date() }) {
+export function construireATraiter({ echecs = [], vuesAgents = [], echeances = [], connecteurs = [], aujourdhui, maintenant = new Date() }) {
   const liste = [];
+
+  // Un connecteur en echec : ses depenses ou revenus ne se mettent plus a jour
+  for (const c of connecteurs) {
+    if (!c.actif || c.dernierResultat?.ok !== false) continue;
+    liste.push({
+      cle: `connecteur-${c.id}`,
+      ton: "alerte",
+      icone: "connecteur",
+      titre: `Connecteur ${c.nom ?? c.type} en échec`,
+      detail: c.dernierResultat.message,
+      cible: { page: "reglages", onglet: "connecteurs" },
+    });
+  }
 
   for (const c of echecs) {
     const expiration = c.type === "tls" || c.type === "domaine";
@@ -100,4 +114,19 @@ export function construireATraiter({ echecs = [], vuesAgents = [], echeances = [
 /** Ce qui compte dans la pastille du menu : pas les simples informations. */
 export function nbATraiter(liste) {
   return liste.filter((x) => x.ton !== "info").length;
+}
+
+/**
+ * Etat global pour l'icone de la barre des taches : `ko` si un site est
+ * tombe, `alerte` s'il reste quelque chose a traiter, `ok` sinon ; et une
+ * infobulle qui le dit en clair (Windows la coupe vers 120 caracteres).
+ */
+export function etatBarre(sites, liste) {
+  const etats = sites.map(etatSite);
+  const aFaire = liste.filter((x) => x.ton !== "info");
+  const etat = etats.includes("ko") ? "ko" : etats.includes("partiel") || aFaire.length > 0 ? "alerte" : sites.length ? "ok" : "";
+  if (aFaire.length === 0) return { etat, infobulle: "SiteDashboard — tout est au vert" };
+  const premier = aFaire[0].titre;
+  const reste = aFaire.length > 1 ? ` (+${aFaire.length - 1})` : "";
+  return { etat, infobulle: `SiteDashboard — ${aFaire.length} à traiter : ${premier}${reste}` };
 }

@@ -1,9 +1,11 @@
 //! SiteDashboard : point d'entree Tauri. Les commandes vivent dans un module par theme.
 
 mod agents;
+mod barre;
 mod certificat;
 mod controles;
 mod checks;
+mod connecteurs;
 mod devises;
 mod domaine;
 mod icones;
@@ -128,6 +130,12 @@ pub fn run() {
             sql: include_str!("../migrations/014_depenses_devises.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 15,
+            description: "disponibilite resumee par jour, gardee au-dela de la purge",
+            sql: include_str!("../migrations/015_disponibilite_jours.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -148,6 +156,19 @@ pub fn run() {
                 .add_migrations(DB_URL, migrations)
                 .build(),
         )
+        // Icone dans la barre des taches : l'appli continue de surveiller fenetre fermee
+        .setup(|app| {
+            barre::installer(app.handle())?;
+            Ok(())
+        })
+        // Fermer la fenetre la cache : la supervision et les taches continuent.
+        // On quitte par le menu de l'icone (« Quitter »).
+        .on_window_event(|fenetre, evenement| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = evenement {
+                api.prevent_close();
+                let _ = fenetre.hide();
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             chemin_base,
             checks::executer_check,
@@ -171,6 +192,10 @@ pub fn run() {
             controles::lancer_controle,
             controles::registre_agents,
             notifications::notifications_windows,
+            barre::etat_barre,
+            connecteurs::appel_api,
+            connecteurs::secrets_connecteurs,
+            connecteurs::enregistrer_secret_connecteur,
             tracer
         ])
         .run(tauri::generate_context!())

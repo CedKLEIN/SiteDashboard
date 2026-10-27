@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { construireATraiter, dureeCourte, nbATraiter, quandEcheance } from "./aTraiter";
+import { construireATraiter, dureeCourte, etatBarre, nbATraiter, quandEcheance } from "./aTraiter";
 
 const maintenant = new Date(2026, 9, 27, 14, 20);
 
@@ -28,10 +28,33 @@ describe("a traiter", () => {
     expect(nbATraiter(liste)).toBe(3);
   });
 
+  it("signale un connecteur actif en echec", () => {
+    const liste = construireATraiter({
+      aujourdhui: "2026-10-27",
+      connecteurs: [
+        { id: "stripe", type: "stripe", nom: "Stripe", actif: true, dernierResultat: { ok: false, message: "Stripe refuse la clé" } },
+        { id: "openai", type: "openai", actif: false, dernierResultat: { ok: false, message: "x" } },
+      ],
+    });
+    expect(liste.map((x) => [x.ton, x.titre, x.detail])).toEqual([["alerte", "Connecteur Stripe en échec", "Stripe refuse la clé"]]);
+  });
+
   it("dit quand tombe un prelevement et depuis quand dure un echec", () => {
     expect(quandEcheance("2026-10-27", "2026-10-27")).toBe("aujourd'hui");
     expect(quandEcheance("2026-11-10", "2026-10-27")).toBe("dans 14 j");
     expect(dureeCourte(190)).toBe("3 h");
     expect(dureeCourte(3000)).toBe("2 j");
+  });
+});
+
+describe("icone de la barre des taches", () => {
+  const ok = { nb_checks: 2, nb_resultats: 2, nb_ok: 2 };
+  it("prend le pire etat et le dit dans l'infobulle", () => {
+    expect(etatBarre([ok], [])).toEqual({ etat: "ok", infobulle: "SiteDashboard — tout est au vert" });
+    expect(etatBarre([ok, { nb_checks: 2, nb_resultats: 2, nb_ok: 0 }], [{ ton: "ko", titre: "A · API" }, { ton: "info", titre: "VPS" }])).toEqual({
+      etat: "ko",
+      infobulle: "SiteDashboard — 1 à traiter : A · API",
+    });
+    expect(etatBarre([ok], [{ ton: "alerte", titre: "SEO" }, { ton: "alerte", titre: "TLS" }]).etat).toBe("alerte");
   });
 });

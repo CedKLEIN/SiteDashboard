@@ -11,3 +11,5 @@ export * from "./queries/revenus";
 export * from "./queries/abonnements";
 export * from "./queries/agregats";
 export * from "./queries/supervision";
+export * from "./queries/corbeille";
+export * from "./queries/connecteurs";

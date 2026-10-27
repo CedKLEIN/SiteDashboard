@@ -4,6 +4,7 @@ import {
   enregistrerValeur,
   enregistrerVerification,
   purgerVerifications,
+  consoliderJours,
 } from "./queries";
 import { alerterBaseAbimee } from "./notifications";
 import { sauvegarderSiBesoin } from "./sauvegarde";
@@ -52,6 +53,8 @@ async function entretienQuotidien(maintenant) {
     tracer("sauvegarde", `sauvegarde impossible: ${erreur}`);
   }
   try {
+    // Le resume par jour d'abord : la purge efface ce qu'il n'aurait pas encore lu
+    await consoliderJours();
     await purgerVerifications(JOURS_HISTORIQUE_VERIFICATIONS);
   } catch (erreur) {
     tracer("supervision", `purge impossible: ${erreur}`);

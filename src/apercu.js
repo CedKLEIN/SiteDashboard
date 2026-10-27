@@ -112,6 +112,18 @@ export async function installerApercu() {
         return { code: 0, resume: { id: args.id, statut: "ok", claude: "non" }, erreurs: "" };
       case "notifications_windows":
         return true;
+      case "etat_barre":
+        return null;
+      case "secrets_connecteurs":
+        return {};
+      case "enregistrer_secret_connecteur":
+        return null;
+      case "appel_api":
+        throw new Error("apercu : pas d'appel aux API des connecteurs");
+      case "plugin:event|listen":
+        return 1;
+      case "plugin:event|unlisten":
+        return null;
       case "plugin:notification|is_permission_granted":
         return false;
       case "plugin:notification|request_permission":

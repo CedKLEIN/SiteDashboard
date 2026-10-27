@@ -8,9 +8,10 @@ import {
   compterRevenus,
   listerDepenses,
   listerRevenus,
-  supprimerDepense,
-  supprimerRevenu,
+  restaurer,
+  supprimerAnnulable,
 } from "../lib/queries";
+import { useSuppressionAnnulable } from "../components/Toasts";
 import { bornesPeriode } from "../lib/periodes";
 import { chargerBilan } from "../lib/bilan";
 import { aujourdhuiIso, dateFr, formatMontant } from "../lib/format";
@@ -67,6 +68,7 @@ export default function Transactions({ rafraichissement, sites = [], siteIdFixe 
   const [donnees, setDonnees] = useState(null);
   const [erreur, setErreur] = useState("");
   const [copie, setCopie] = useState(false);
+  const supprimerAvecAnnulation = useSuppressionAnnulable(onModification);
 
   const siteId = siteIdFixe ?? (siteChoisi ? Number(siteChoisi) : null);
 
@@ -121,16 +123,15 @@ export default function Transactions({ rafraichissement, sites = [], siteIdFixe 
     return [...parMois.values()];
   }, [lignes, siteId]);
 
-  async function supprimer(ligne) {
-    const montant = formatMontant(montantLigne(ligne, null));
+  // Sans confirmation : la suppression s'annule depuis le message qui la suit
+  function supprimer(ligne) {
+    const revenu = ligne.sens === "revenu";
     const nom = ligne.libelle || ligne.fournisseur_nom || dateFr(ligne.date);
-    if (!window.confirm(`Supprimer ${ligne.sens === "revenu" ? "le revenu" : "la dépense"} « ${nom} » (${montant}) ?`)) return;
-    try {
-      await (ligne.sens === "revenu" ? supprimerRevenu(ligne.id) : supprimerDepense(ligne.id));
-      onModification?.();
-    } catch (e) {
-      setErreur(String(e?.message ?? e));
-    }
+    supprimerAvecAnnulation(
+      `${revenu ? "Revenu" : "Dépense"} « ${nom} » supprimé${revenu ? "" : "e"}`,
+      () => supprimerAnnulable(revenu ? "revenus" : "depenses", ligne.id),
+      restaurer,
+    );
   }
 
   async function copierCsv() {

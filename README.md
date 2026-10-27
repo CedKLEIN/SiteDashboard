@@ -248,7 +248,11 @@ liste aussi chaque site avec son état, pour l'ouvrir en un clic.
 - **`Ctrl+K`** ouvre la palette : actions, sites, transactions (recherche sans accents) et
   navigation, au clavier.
 - Les actions secondaires d'une ligne passent dans un menu **⋯** ; un clic sur la ligne la
-  modifie. Toute suppression demande confirmation.
+  modifie. Supprimer une dépense, un revenu ou un abonnement ne demande plus de
+  confirmation : un message **« Annuler »** la rattrape pendant 6 secondes, avec ses parts
+  par site et ses tarifs, sous le même identifiant
+  ([`src/lib/queries/corbeille.js`](src/lib/queries/corbeille.js)). Un site, lui, se
+  confirme toujours : il emporte checks, historique et écritures.
 - **Thème** clair, sombre ou celui de Windows (Réglages › Apparence, ou l'icône en bas de la
   barre latérale).
 
@@ -281,11 +285,27 @@ un composant : accumuler pendant le rendu donnerait des totaux différents à ch
 
 ### Fiche d'un site
 
-Onglets **Santé** (disponibilité sur 24 h, 7 j ou 30 j — l'historique est purgé à 30 jours —,
+Onglets **Santé** (disponibilité sur 24 h, 7 j, 30 j ou 90 j,
 latence médiane et 95e centile par demi-heure, checks, catalogue, informations suivies),
 **Finances** (ses transactions, pour **sa part** : une dépense partagée ne compte qu'à
 hauteur de ce qui lui revient), **Agents** et **Réglages** (nom, URL, couleur, icône, suivi,
 suppression).
+
+### Disponibilité au-delà de 30 jours
+
+`verifications` (une ligne par check et par minute) est purgée à 30 jours. Avant chaque
+purge, les jours terminés sont résumés dans `disponibilite_jours` (migration 015 : total,
+succès et latence moyenne par check et par jour), gardé 400 jours. Les barres au jour lisent
+ce résumé pour les jours passés et `verifications` pour aujourd'hui seulement : rien n'est
+compté deux fois.
+
+### Icône dans la barre des tâches
+
+L'appli surveille en fond : **fermer la fenêtre la cache**, et l'icône de la zone de
+notification garde l'état sous les yeux — le logo porte une pastille verte, orange ou rouge,
+et l'infobulle dit ce qu'il y a à traiter. Clic : rouvrir. Clic droit : rouvrir, vérifier
+maintenant, **quitter** ([`src-tauri/src/barre.rs`](src-tauri/src/barre.rs)).
+L'installeur ferme donc l'appli de force (`taskkill /F`).
 
 ### Finances
 
@@ -533,6 +553,32 @@ Le schéma vit dans [`src-tauri/migrations/001_init.sql`](src-tauri/migrations/0
 joué au démarrage par le plugin SQL. Pour le faire évoluer : ajouter un fichier
 `00N_*.sql` et une entrée `Migration` dans [`src-tauri/src/lib.rs`](src-tauri/src/lib.rs).
 
+## Connecteurs
+
+Réglages › Connecteurs importe tout seul, **toutes les 6 heures**, ce que les services
+savent déjà :
+
+| Connecteur | Importe | Clé |
+|---|---|---|
+| Stripe | paiements et remboursements en **revenus** (un par transaction), frais Stripe en dépense mensuelle | clé restreinte en lecture sur « Balance » |
+| Anthropic | coût de l'API Claude, **une dépense par mois** mise à jour (USD, convertie) | clé Admin `sk-ant-admin…` |
+| OpenAI | coût de l'API, une dépense par mois mise à jour (USD, convertie) | clé Admin |
+| OVHcloud | **une dépense par facture** | application key, secret et consumer key (GET `/me/bill*`) |
+
+Chaque écriture porte la référence du service (`ref_externe`) et le connecteur comme
+`source` : relancer une synchronisation n'importe rien deux fois, et le cumul du mois en
+cours est **mis à jour**, pas dupliqué. Une écriture rattachée à la main à d'autres sites
+garde ces sites. La première synchronisation remonte un an ; les suivantes, 40 jours. Un
+connecteur en échec (clé refusée…) remonte dans « À traiter ».
+
+Les **clés** ne vont jamais dans la base (donc jamais dans ses sauvegardes) :
+`%USERPROFILE%\.sitedashboard\connecteurs.json`, comme la clé Bing. Les appels passent par
+Rust (`appel_api`, HTTPS uniquement) ; toute la logique (pagination, cumul, import) est en
+JS, testée sans réseau ([`src/lib/connecteurs/`](src/lib/connecteurs/)).
+
+Les abonnements Claude Max et ChatGPT Plus ne passent pas par ces API : ils restent des
+abonnements saisis à la main.
+
 ## Rapports des agents
 
 Les statuts des agents (indexation, santé de la prod, tri Sentry, audit hebdomadaire…) sont
@@ -592,7 +638,7 @@ de chaque tâche pour le voir manquer.
 
 ## Réglages
 
-Réglages › Général : mise à jour, apparence (thème), supervision, démarrage avec Windows,
+Réglages › Général (Connecteurs et Agents ont leur onglet) : mise à jour, apparence (thème), supervision, démarrage avec Windows,
 notifications, données et sauvegardes.
 
 La fréquence de vérification se règle entre 30 secondes et 1 heure, dans une liste fermée

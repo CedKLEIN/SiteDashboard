@@ -262,19 +262,66 @@ export function purgerVerifications(jours = 30) {
  * Verifications regroupees par tranche (heure ou jour) et par site, pour les
  * barres de disponibilite. Les checks `valeur` sont exclus, comme partout.
  * `tranche` vaut 'YYYY-MM-DD HH' a l'heure, 'YYYY-MM-DD' au jour.
+ *
+ * Au jour, les jours termines viennent du resume `disponibilite_jours`, qui
+ * survit a la purge ; seul le jour en cours se lit dans `verifications`.
  */
 export function disponibiliteParTranche({ heures = 24, parJour = false, siteId = null } = {}) {
+  if (parJour) {
+    return select(
+      `SELECT site_id, tranche, SUM(total) AS total, SUM(ok) AS ok FROM (
+         SELECT c.site_id, d.jour AS tranche, d.total, d.ok
+         FROM disponibilite_jours d
+         JOIN checks c ON c.id = d.check_id
+         WHERE c.type <> 'valeur' AND c.actif = 1
+           AND d.jour >= date('now', 'localtime', $1) AND d.jour < date('now', 'localtime')
+           AND ($2 IS NULL OR c.site_id = $2)
+         UNION ALL
+         SELECT c.site_id, substr(v.verifie_le, 1, 10), 1, CASE WHEN v.ok = 1 THEN 1 ELSE 0 END
+         FROM verifications v
+         JOIN checks c ON c.id = v.check_id
+         WHERE c.type <> 'valeur' AND c.actif = 1
+           AND v.verifie_le >= date('now', 'localtime')
+           AND ($2 IS NULL OR c.site_id = $2)
+       )
+       GROUP BY site_id, tranche`,
+      [`-${Math.ceil(heures / 24)} days`, siteId],
+    );
+  }
   return select(
-    `SELECT c.site_id, substr(v.verifie_le, 1, $1) AS tranche,
+    `SELECT c.site_id, substr(v.verifie_le, 1, 13) AS tranche,
             COUNT(*) AS total, SUM(CASE WHEN v.ok = 1 THEN 1 ELSE 0 END) AS ok
      FROM verifications v
      JOIN checks c ON c.id = v.check_id
      WHERE c.type <> 'valeur' AND c.actif = 1
-       AND v.verifie_le >= datetime('now', 'localtime', $2)
-       AND ($3 IS NULL OR c.site_id = $3)
+       AND v.verifie_le >= datetime('now', 'localtime', $1)
+       AND ($2 IS NULL OR c.site_id = $2)
      GROUP BY c.site_id, tranche`,
-    [parJour ? 10 : 13, `-${heures} hours`, siteId],
+    [`-${heures} hours`, siteId],
   );
+}
+
+/** Jours de resume gardes : un an et un peu plus. */
+export const JOURS_RESUME_DISPONIBILITE = 400;
+
+/**
+ * Resume les jours termines dans `disponibilite_jours`, AVANT que la purge ne
+ * les efface de `verifications`. Le dernier jour deja resume est recalcule
+ * (sans effet s'il etait complet) ; les plus vieux resumes sont oublies.
+ */
+export async function consoliderJours() {
+  await execute(
+    `INSERT OR REPLACE INTO disponibilite_jours (check_id, jour, total, ok, latence_moyenne_ms)
+     SELECT check_id, substr(verifie_le, 1, 10), COUNT(*),
+            SUM(CASE WHEN ok = 1 THEN 1 ELSE 0 END), CAST(AVG(latence_ms) AS INTEGER)
+     FROM verifications
+     WHERE verifie_le >= COALESCE((SELECT MAX(jour) FROM disponibilite_jours), '')
+       AND substr(verifie_le, 1, 10) < date('now', 'localtime')
+     GROUP BY check_id, substr(verifie_le, 1, 10)`,
+  );
+  await execute("DELETE FROM disponibilite_jours WHERE jour < date('now', 'localtime', $1)", [
+    `-${JOURS_RESUME_DISPONIBILITE} days`,
+  ]);
 }
 
 /**

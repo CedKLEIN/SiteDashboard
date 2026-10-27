@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { FournisseurToasts } from "./components/Toasts";
 import { installerTraceGlobale } from "./lib/trace";
 import "./index.css";
 
@@ -9,7 +10,9 @@ installerTraceGlobale();
 function demarrer() {
   ReactDOM.createRoot(document.getElementById("root")).render(
     <React.StrictMode>
-      <App />
+      <FournisseurToasts>
+        <App />
+      </FournisseurToasts>
     </React.StrictMode>,
   );
 }

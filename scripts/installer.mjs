@@ -54,7 +54,8 @@ if (!existsSync(installeur)) {
 
 etape("Fermeture de l'appli si elle tourne");
 try {
-  execFileSync("taskkill", ["/IM", EXE], { stdio: "ignore" });
+  // /F : fermer la fenetre ne quitte plus l'appli (elle reste dans la barre des taches)
+  execFileSync("taskkill", ["/F", "/IM", EXE], { stdio: "ignore" });
   // L'installeur echoue si l'exe est encore verrouille : on laisse 2 s au
   // processus pour se fermer (`timeout` refuse de tourner sans console).
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 2000);

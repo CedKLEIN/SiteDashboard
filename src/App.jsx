@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { ChevronRight, TriangleAlert } from "lucide-react";
 import Coquille, { TitrePage } from "./components/Coquille";
 import Palette from "./components/Palette";
@@ -13,6 +14,8 @@ import Transactions from "./pages/Transactions";
 import Abonnements from "./pages/Abonnements";
 import Preferences, { INTERVALLE_DEFAUT_S } from "./pages/Preferences";
 import Agents from "./pages/Agents";
+import Connecteurs from "./pages/Connecteurs";
+import { lireConnecteurs, synchroniserSiBesoin } from "./lib/connecteurs/moteur";
 import { lancerCycle } from "./lib/monitoring";
 import { vueParSite } from "./lib/vueAgents";
 import { useAgentsAttendus } from "./lib/useAgentsAttendus";
@@ -20,7 +23,7 @@ import { useControles } from "./lib/useControles";
 import { useNotifications } from "./lib/useNotifications";
 import { resumeMiseAJour, useMiseAJour } from "./lib/miseAJour";
 import { checksEnEchec, echeancesProches, ecrirePreference, etatsDesSites, lirePreference, listerSites } from "./lib/queries";
-import { construireATraiter, nbATraiter } from "./lib/aTraiter";
+import { construireATraiter, etatBarre, nbATraiter } from "./lib/aTraiter";
 import { aujourdhuiIso } from "./lib/format";
 import { tracer } from "./lib/trace";
 
@@ -85,6 +88,7 @@ export default function App() {
   const [etats, setEtats] = useState([]);
   const [echecs, setEchecs] = useState([]);
   const [echeances, setEcheances] = useState([]);
+  const [connecteurs, setConnecteurs] = useState([]);
   const [cheminBase, setCheminBase] = useState("");
   const [verificationEnCours, setVerificationEnCours] = useState(false);
   const [intervalleS, setIntervalleS] = useState(INTERVALLE_DEFAUT_S);
@@ -120,13 +124,14 @@ export default function App() {
   // barre laterale et « A traiter » en dependent sur tous les ecrans.
   useEffect(() => {
     let annule = false;
-    Promise.all([listerSites(), etatsDesSites(), checksEnEchec(), echeancesProches(7)])
-      .then(([s, e, k, ec]) => {
+    Promise.all([listerSites(), etatsDesSites(), checksEnEchec(), echeancesProches(7), lireConnecteurs()])
+      .then(([s, e, k, ec, co]) => {
         if (annule) return;
         setSites(s);
         setEtats(e);
         setEchecs(k);
         setEcheances(ec);
+        setConnecteurs(co);
       })
       .catch((e) => tracer("app", `lecture impossible: ${e}`));
     return () => {
@@ -156,6 +161,22 @@ export default function App() {
     return () => clearInterval(minuterie);
   }, [verifier, intervalleS]);
 
+  // Connecteurs (Stripe, Anthropic...) : au lancement, puis chacun toutes les 6 h ;
+  // on regarde toutes les 10 minutes lesquels sont dus.
+  useEffect(() => {
+    let annule = false;
+    const passer = () =>
+      synchroniserSiBesoin()
+        .then((change) => change && !annule && signalerModification())
+        .catch((e) => tracer("connecteurs", `synchronisation impossible: ${e}`));
+    passer();
+    const minuterie = setInterval(passer, 10 * 60_000);
+    return () => {
+      annule = true;
+      clearInterval(minuterie);
+    };
+  }, [signalerModification]);
+
   // Le planning des taches bat a la minute, quel que soit l'intervalle de
   // supervision : avec des cycles de 30 min, une tache de 9 h partait a 9 h 08
   const [battement, setBattement] = useState(0);
@@ -184,9 +205,23 @@ export default function App() {
   );
 
   const aTraiter = useMemo(
-    () => construireATraiter({ echecs, vuesAgents, echeances, aujourdhui: aujourdhuiIso() }),
-    [echecs, vuesAgents, echeances],
+    () => construireATraiter({ echecs, vuesAgents, echeances, connecteurs, aujourdhui: aujourdhuiIso() }),
+    [echecs, vuesAgents, echeances, connecteurs],
   );
+
+  // Pastille et infobulle de l'icone dans la barre des taches
+  useEffect(() => {
+    const { etat, infobulle } = etatBarre(etats, aTraiter);
+    invoke("etat_barre", { etat, infobulle }).catch(() => {});
+  }, [etats, aTraiter]);
+
+  // « Verifier maintenant » depuis le menu de l'icone
+  useEffect(() => {
+    const arret = listen("barre:verifier", () => verifier());
+    return () => {
+      arret.then((f) => f()).catch(() => {});
+    };
+  }, [verifier]);
 
   const naviguer = useCallback((page, options = {}) => {
     setVue({ page, onglet: options.onglet ?? ONGLETS_DEFAUT[page] ?? null, siteId: options.siteId ?? null });
@@ -224,7 +259,7 @@ export default function App() {
     else if (genre === "site") ouvrirSite(Number(valeur));
     else if (genre === "transaction") setTiroir({ type: "transaction", edition: item.transaction });
     else if (valeur === "abonnements") naviguer("finances", { onglet: "abonnements" });
-    else if (valeur === "agents") naviguer("reglages", { onglet: "agents" });
+    else if (valeur === "agents" || valeur === "connecteurs") naviguer("reglages", { onglet: valeur });
     else naviguer(valeur);
   }
 
@@ -305,13 +340,16 @@ export default function App() {
             onChanger={changerOnglet}
             options={[
               { cle: "general", libelle: "Général" },
+              { cle: "connecteurs", libelle: "Connecteurs" },
               { cle: "agents", libelle: "Agents" },
             ]}
           />
         </TitrePage>
       );
       contenu =
-        vue.onglet === "agents" ? (
+        vue.onglet === "connecteurs" ? (
+          <Connecteurs rafraichissement={revision} onModification={signalerModification} />
+        ) : vue.onglet === "agents" ? (
           <Agents sites={sites} configTrouvee={agents.configTrouvee} dossierRapports={agents.dossier} controles={controles} />
         ) : (
           <Preferences

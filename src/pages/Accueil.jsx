@@ -19,6 +19,7 @@ import {
   Globe,
   Lock,
   PartyPopper,
+  Plug,
   Repeat,
   TriangleAlert,
   Wallet,
@@ -43,7 +44,7 @@ export const PERIODES_COURTES = [
   { cle: "toujours", libelle: "Tout" },
 ];
 
-const ICONES_A_TRAITER = { check: CircleX, certificat: Lock, domaine: Globe, agent: Bot, abonnement: Repeat };
+const ICONES_A_TRAITER = { check: CircleX, certificat: Lock, domaine: Globe, agent: Bot, abonnement: Repeat, connecteur: Plug };
 const TONS = {
   ko: "bg-ko/12 text-ko",
   alerte: "bg-alerte/12 text-alerte",
