@@ -153,3 +153,22 @@ export async function echeancesProches(jours = 45, aujourdhui = aujourdhuiIso(),
     .filter((ab) => ab.prochaine_echeance && ab.prochaine_echeance <= limite)
     .sort((x, y) => x.prochaine_echeance.localeCompare(y.prochaine_echeance));
 }
+
+/**
+ * Revenus agreges par site sur une periode : les PARTS, comme pour les
+ * depenses, sinon un revenu partage compterait en entier pour chaque site.
+ */
+export function revenusParSite(depuis, jusqua) {
+  return select(
+    `SELECT s.id, COALESCE(SUM(p.part_cents), 0) AS total_cents
+     FROM sites s
+     LEFT JOIN (
+       SELECT rs.site_id, rs.part_cents
+       FROM revenu_sites rs
+       JOIN revenus r ON r.id = rs.revenu_id
+       WHERE r.date >= $1 AND r.date <= $2
+     ) p ON p.site_id = s.id
+     GROUP BY s.id`,
+    [depuis, jusqua],
+  );
+}

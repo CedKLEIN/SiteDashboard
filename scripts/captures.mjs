@@ -17,16 +17,13 @@ const HAUTEUR = Number(process.env.HAUTEUR ?? 900);
 mkdirSync(SORTIE, { recursive: true });
 
 const ONGLETS = [
-  ["dashboard", "Tableau de bord"],
-  ["depenses", "Dépenses"],
-  ["revenus", "Revenus"],
-  ["abonnements", "Abonnements"],
+  ["accueil", "Vue d'ensemble"],
   ["sites", "Sites"],
-  ["agents", "Agents"],
-  ["preferences", "Préférences"],
+  ["finances", "Finances"],
+  ["reglages", "Réglages"],
 ];
 
-const navigateur = await chromium.launch();
+const navigateur = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
 const page = await navigateur.newPage({ viewport: { width: LARGEUR, height: HAUTEUR } });
 const erreurs = [];
 page.on("pageerror", (e) => erreurs.push(e.message));
@@ -38,7 +35,7 @@ async function capturer(nom) {
   // La zone <main> defile a l'interieur d'une page a hauteur d'ecran : on agrandit
   // la fenetre a la hauteur de son contenu pour tout voir, puis on revient.
   const hauteur = await page.evaluate(() => document.querySelector("main")?.scrollHeight ?? 0);
-  await page.setViewportSize({ width: LARGEUR, height: Math.max(HAUTEUR, hauteur) });
+  await page.setViewportSize({ width: LARGEUR, height: Math.max(HAUTEUR, hauteur + 64) });
   await page.waitForTimeout(600);
   const fichier = path.join(SORTIE, `${PREFIXE}-${nom}.png`);
   await page.screenshot({ path: fichier });
@@ -46,24 +43,31 @@ async function capturer(nom) {
   console.log(fichier);
 }
 
+const onglet = (nom) => page.getByRole("tab", { name: nom, exact: true }).click();
+
 await page.goto(URL, { waitUntil: "networkidle" });
 for (const [nom, libelle] of ONGLETS) {
   await page.locator("nav").getByRole("button", { name: libelle, exact: false }).first().click();
-  if (nom === "agents") {
-    // Deplie la journee la plus recente pour montrer le detail des rapports
-    await page.waitForTimeout(800);
-    await page.locator("main button[aria-expanded]").first().click().catch(() => {});
-  }
   await capturer(nom);
 }
+await page.locator("nav").getByRole("button", { name: "Finances" }).click();
+await onglet("Abonnements");
+await capturer("abonnements");
+await page.locator("nav").getByRole("button", { name: "Réglages" }).click();
+await onglet("Agents");
+await capturer("agents");
 
-// Fiche d'un site : depuis le tableau de bord, clic sur la premiere carte de site
-await page.locator("nav").getByRole("button", { name: "Tableau de bord" }).click();
+// Fiche du premier site, onglet par onglet : premiere carte de la page Sites
+await page.locator("nav").getByRole("button", { name: "Sites", exact: true }).click();
 await page.waitForTimeout(800);
-const carte = page.locator("main button[title*=' — ']").first();
-if (await carte.count()) {
-  await carte.click();
-  await capturer("detail-site");
+const premier = page.locator("main button").first();
+if (await premier.count()) {
+  await premier.click();
+  await capturer("site-sante");
+  for (const [nom, libelle] of [["site-finances", "Finances"], ["site-agents", "Agents"], ["site-reglages", "Réglages"]]) {
+    await onglet(libelle);
+    await capturer(nom);
+  }
 }
 
 await navigateur.close();

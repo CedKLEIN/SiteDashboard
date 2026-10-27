@@ -1,14 +1,34 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { ChevronDown, ChevronRight, CircleDashed, FolderOpen, Play, RefreshCw, Trash2 } from "lucide-react";
-import { ICONES } from "./CarteSite";
+import {
+  ChevronDown,
+  ChevronRight,
+  CircleAlert,
+  CircleCheck,
+  CircleDashed,
+  CircleOff,
+  CircleX,
+  FolderOpen,
+  Play,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { Bouton, BoutonCopier, EtatVide, LogoClaude } from "./ui";
-import { couleurEtat, iconeEtat } from "../lib/statut";
+import { couleurEtat, iconeEtat, teinte } from "../lib/statut";
 import { file } from "../lib/controles";
 import { JOURS_HISTORIQUE, STATUTS_RAPPORT, USAGES_CLAUDE, heureRapport, texteRapport, usageClaude } from "../lib/rapportsAgents";
 import { COULEUR_EN_COURS, dureeRapport, etatNiveau, etatRapport, libelleNiveau } from "../lib/vueAgents";
 import { tracer } from "../lib/trace";
+
+/** Une forme d'icone par etat : l'etat ne repose jamais sur la seule couleur. */
+export const ICONES = {
+  ok: CircleCheck,
+  alerte: CircleAlert,
+  ko: CircleX,
+  inconnu: CircleDashed,
+  aucun: CircleOff,
+};
 
 /** '2026-10-24' -> 'samedi 24 octobre' */
 function jourLisible(dateIso) {
@@ -24,7 +44,7 @@ export function IconeEtat({ etat, taille = 18 }) {
 
 export function PastilleStatut({ etat, couleur = couleurEtat(etat), children }) {
   return (
-    <span className="shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium" style={{ color: couleur, background: `${couleur}22` }}>
+    <span className="shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium" style={{ color: couleur, background: teinte(couleur) }}>
       {children}
     </span>
   );
@@ -156,7 +176,7 @@ function EffacerHistorique({ tache, onEfface }) {
       tracer("agents", `historique de ${tache.id} non efface: ${e}`);
     }
   }
-  if (erreur) return <span className="text-depense">Effacement impossible : {erreur}</span>;
+  if (erreur) return <span className="text-ko">Effacement impossible : {erreur}</span>;
   return confirmation ? (
     <span className="flex items-center gap-1">
       <Bouton variante="danger" className="px-2 py-1 text-xs" onClick={effacer}>
@@ -248,7 +268,7 @@ function LigneTache({ tache, ouverte, onBasculer, controles, onEfface }) {
 export default function AgentsDuSite({ vue, controles, onEfface }) {
   const [ouvertes, setOuvertes] = useState(() => new Set());
   if (!vue || vue.taches.length === 0) {
-    return <EtatVide>Aucune tâche pour ce site : ajoute-en une dans l&apos;onglet Agents.</EtatVide>;
+    return <EtatVide>Aucune tâche pour ce site : ajoute-en une dans Réglages › Agents.</EtatVide>;
   }
   const basculer = (id) =>
     setOuvertes((avant) => {

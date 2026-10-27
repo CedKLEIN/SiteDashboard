@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { Download, FolderOpen, HardDriveDownload, RefreshCw } from "lucide-react";
+import { Download, FolderOpen, HardDriveDownload, Monitor, Moon, RefreshCw, Sun } from "lucide-react";
 import { avancementMiseAJour, commitCourt, lancerMiseAJour, lireJournalMiseAJour, resumeMiseAJour } from "../lib/miseAJour";
-import { Bouton, BoutonCopier, Carte, Interrupteur, Selecteur } from "../components/ui";
+import { Bouton, BoutonCopier, Carte, Interrupteur, Segments, Selecteur } from "../components/ui";
 import { ecrirePreference, lirePreference } from "../lib/queries";
 import {
   JOURS_ENTRE_SAUVEGARDES,
@@ -48,7 +48,7 @@ function EcranMiseAJour({ onFermer }) {
       <div className="flex w-full max-w-lg flex-col items-center gap-4 text-center">
         {avancement.echec ? (
           <>
-            <p className="text-base font-semibold text-depense">La mise à jour a échoué</p>
+            <p className="text-base font-semibold text-ko">La mise à jour a échoué</p>
             <pre className="max-h-64 w-full overflow-auto rounded-lg bg-surface p-3 text-left font-mono text-[11px] whitespace-pre-wrap text-texte-doux">
               {avancement.fin}
             </pre>
@@ -135,7 +135,7 @@ function MiseAJour({ etat, verifier }) {
           </span>
         </Bouton>
       </div>
-      {erreur && <p className="mt-2 text-xs text-depense">{erreur}</p>}
+      {erreur && <p className="mt-2 text-xs text-ko">{erreur}</p>}
       {lancee && <EcranMiseAJour onFermer={() => setLancee(false)} />}
     </Carte>
   );
@@ -178,7 +178,7 @@ function Demarrage() {
         La supervision, les contrôles et les agents ne tournent que pendant que l&apos;application
         est ouverte : la lancer avec Windows évite de rater un passage.
       </p>
-      {erreur && <p className="mt-2 text-xs text-depense">{erreur}</p>}
+      {erreur && <p className="mt-2 text-xs text-ko">{erreur}</p>}
     </Carte>
   );
 }
@@ -227,15 +227,15 @@ function Notifications() {
         <Bouton variante="fantome" onClick={tester}>
           Envoyer une notification de test
         </Bouton>
-        {essai === "envoyee" && <span className="text-xs text-revenu">Envoyée</span>}
+        {essai === "envoyee" && <span className="text-xs text-ok">Envoyée</span>}
         {essai === "coupees" && (
-          <span className="text-xs text-depense">
+          <span className="text-xs text-ko">
             Non envoyée : les notifications sont coupées pour toutes les applis dans Paramètres &gt;
             Système &gt; Notifications
           </span>
         )}
         {essai === "refusee" && (
-          <span className="text-xs text-depense">
+          <span className="text-xs text-ko">
             Refusée par Windows : vérifie Paramètres &gt; Système &gt; Notifications
           </span>
         )}
@@ -337,7 +337,7 @@ function Sauvegardes() {
         )}
       </div>
       {message && (
-        <p className={`mt-2 text-xs break-all ${message.ok ? "text-revenu" : "text-depense"}`}>
+        <p className={`mt-2 text-xs break-all ${message.ok ? "text-ok" : "text-ko"}`}>
           {message.texte}
         </p>
       )}
@@ -360,7 +360,13 @@ const INTERVALLES = [
   { valeur: 3600, libelle: "1 heure" },
 ];
 
-export default function Preferences({ onModification, cheminBase, miseAJour }) {
+const THEMES = [
+  { cle: "systeme", libelle: "Système", Icone: Monitor },
+  { cle: "sombre", libelle: "Sombre", Icone: Moon },
+  { cle: "clair", libelle: "Clair", Icone: Sun },
+];
+
+export default function Preferences({ onModification, cheminBase, miseAJour, theme = "systeme", onChangerTheme }) {
   const [intervalle, setIntervalle] = useState(String(INTERVALLE_DEFAUT_S));
   const [enregistre, setEnregistre] = useState(false);
 
@@ -386,10 +392,16 @@ export default function Preferences({ onModification, cheminBase, miseAJour }) {
   const parHeure = Math.round(3600 / Number(intervalle));
 
   return (
-    <div className="flex flex-col gap-5">
-      <h1 className="text-lg font-semibold">Préférences</h1>
-
+    <div className="grid gap-5 xl:grid-cols-2">
+      <div className="flex flex-col gap-5">
       {miseAJour && <MiseAJour etat={miseAJour.etat} verifier={miseAJour.verifier} />}
+
+      {onChangerTheme && (
+        <Carte titre="Apparence">
+          <Segments options={THEMES} valeur={theme} onChanger={onChangerTheme} taille="text-[13px]" />
+          <p className="mt-3 text-xs text-texte-doux">« Système » suit le thème clair ou sombre de Windows.</p>
+        </Carte>
+      )}
 
       <Carte titre="Supervision">
         <div className="flex flex-wrap items-end gap-4">
@@ -405,7 +417,7 @@ export default function Preferences({ onModification, cheminBase, miseAJour }) {
               </option>
             ))}
           </Selecteur>
-          {enregistre && <span className="pb-2 text-xs text-revenu">Enregistré</span>}
+          {enregistre && <span className="pb-2 text-xs text-ok">Enregistré</span>}
         </div>
 
         <p className="mt-3 text-xs text-texte-doux">
@@ -415,7 +427,9 @@ export default function Preferences({ onModification, cheminBase, miseAJour }) {
       </Carte>
 
       <Demarrage />
+      </div>
 
+      <div className="flex flex-col gap-5">
       <Notifications />
 
       <Carte titre="Données">
@@ -435,6 +449,7 @@ export default function Preferences({ onModification, cheminBase, miseAJour }) {
         </p>
         <Sauvegardes />
       </Carte>
+      </div>
     </div>
   );
 }

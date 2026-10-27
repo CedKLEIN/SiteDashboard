@@ -10,12 +10,15 @@ const SITES_DU_REVENU = `
     WHERE x.revenu_id = r.id) AS sites_noms,
   (SELECT COUNT(*) FROM revenu_sites WHERE revenu_id = r.id) AS nb_sites`;
 
-export function listerRevenus({ limite = 200 } = {}) {
+export function listerRevenus({ limite = 200, siteId = null, depuis = null, jusqua = null } = {}) {
+  // Filtre par site : `part_cents` est la part qui revient a CE site
   return select(
-    `SELECT r.*, ${SITES_DU_REVENU}
+    `SELECT r.*, ${siteId ? "rs.part_cents" : "NULL AS part_cents"}, ${SITES_DU_REVENU}
      FROM revenus r
+     ${siteId ? "JOIN revenu_sites rs ON rs.revenu_id = r.id AND rs.site_id = $4" : ""}
+     WHERE ($2 IS NULL OR r.date >= $2) AND ($3 IS NULL OR r.date <= $3)
      ORDER BY r.date DESC, r.id DESC LIMIT $1`,
-    [limite],
+    siteId ? [limite, depuis, jusqua, siteId] : [limite, depuis, jusqua],
   );
 }
 
@@ -97,8 +100,13 @@ export function supprimerRevenu(id) {
   return execute("DELETE FROM revenus WHERE id = $1", [id]);
 }
 
-/** Nombre total de revenus : l'historique est pagine. */
-export async function compterRevenus() {
-  const [ligne] = await select("SELECT COUNT(*) AS n FROM revenus");
+/** Nombre de revenus (d'un site, d'une periode au besoin) : l'historique est pagine. */
+export async function compterRevenus({ siteId = null, depuis = null, jusqua = null } = {}) {
+  const [ligne] = await select(
+    `SELECT COUNT(*) AS n FROM revenus r
+     WHERE ($1 IS NULL OR EXISTS (SELECT 1 FROM revenu_sites x WHERE x.revenu_id = r.id AND x.site_id = $1))
+       AND ($2 IS NULL OR r.date >= $2) AND ($3 IS NULL OR r.date <= $3)`,
+    [siteId, depuis, jusqua],
+  );
   return ligne?.n ?? 0;
 }

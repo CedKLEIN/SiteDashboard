@@ -94,6 +94,10 @@ npm.cmd run apercu                 # copie la dernière sauvegarde + les rapport
 npm.cmd run captures -- avant      # dans un 2e terminal : un PNG par écran dans captures/
 ```
 
+Dans l'aperçu, `localStorage['apercu:pannes']` (bouts d'URL, en JSON) simule des checks en
+503 et `localStorage['apercu:certificats']` des certificats qui expirent, pour voir les
+écrans d'alerte.
+
 Hors de Tauri, `src/apercu.js` simule les appels à Rust : le SQL tourne sur une **copie** de
 la base chargée dans sql.js, rien ne touche la vraie. Les données préparées vont dans `.apercu/`,
 servies en dev seulement par `vite.config.js` (jamais copiées dans l'appli compilée) ; `.apercu/`
@@ -107,7 +111,7 @@ npm.cmd run installer -- --sans-build  # réinstalle le dernier installeur produ
 ```
 
 Depuis l'appli : quand le dépôt local a des commits plus récents que la version installée,
-le menu affiche **« Mise à jour disponible »** et **Préférences > Mise à jour** les liste.
+la barre latérale affiche **« Mise à jour prête »** et **Réglages › Mise à jour** les liste.
 Le bouton **Mettre à jour** ouvre une console qui lance `npm.cmd run installer` ; l'appli
 se ferme puis se rouvre quelques minutes plus tard. Le commit compilé est gravé dans l'appli
 par `src-tauri/build.rs` et comparé au `HEAD` du dépôt au démarrage puis toutes les 15 min.
@@ -233,34 +237,62 @@ consultation : un don de 50 $ reçu en mars ne vaut pas ce qu'il vaudrait aujour
 Tous les cumuls, graphiques et parts par site sont en **euros**, la devise de référence —
 additionner des euros et des dollars donnerait un nombre qui ne veut rien dire.
 
-## Le tableau de bord
+## L'interface
 
-Deux filtres, en boutons plutôt qu'en sélecteurs de dates — on consulte un tableau de bord
-pour répondre à « où j'en suis cette année », pas pour interroger une plage arbitraire :
+Quatre entrées, organisées par usage plutôt que par table : **Vue d'ensemble**, **Sites**,
+**Finances** (transactions, abonnements) et **Réglages** (général, agents). La barre latérale
+liste aussi chaque site avec son état, pour l'ouvrir en un clic.
 
-- **période** : ce mois, cette année (défaut), 12 derniers mois, année dernière, depuis
-  toujours. « Depuis toujours » démarre à la première écriture connue, sinon le graphe
-  afficherait des siècles de mois vides ;
-- **site** : tous, ou un seul. Filtré sur un site, tout ne compte que **sa part** — une
-  dépense partagée ne doit pas apparaître en entier dans les chiffres d'un seul site.
+- **« + Nouveau »** (et `N` au clavier) ouvre la saisie dans un **panneau latéral** :
+  dépense, revenu, abonnement ou site. Les formulaires ne squattent plus le haut des pages.
+- **`Ctrl+K`** ouvre la palette : actions, sites, transactions (recherche sans accents) et
+  navigation, au clavier.
+- Les actions secondaires d'une ligne passent dans un menu **⋯** ; un clic sur la ligne la
+  modifie. Toute suppression demande confirmation.
+- **Thème** clair, sombre ou celui de Windows (Réglages › Apparence, ou l'icône en bas de la
+  barre latérale).
 
-Les deux choix sont **mémorisés** dans la table `preferences` et rétablis au lancement. Le
-tableau attend de les avoir relus avant de charger : sinon il s'afficherait sur la période
-par défaut puis sauterait sur celle enregistrée, avec deux requêtes au lieu d'une.
+**Couleurs** : deux familles qui ne se croisent jamais. Les **états** (vert OK, orange
+dégradé, rouge en panne, bleu info) disent la santé ; les **données financières** (turquoise
+revenus, rose dépenses, violet abonnements) disent l'argent. Avant, « revenu » et « site OK »
+partageaient le même vert, et une dépense ressemblait à une panne. Tout passe par les
+variables CSS de [`src/index.css`](src/index.css), graphes compris.
 
-Un site mémorisé puis supprimé est confronté aux sites existants au démarrage, et le filtre
-revient à « tous ». Sans ce contrôle, le tableau filtrerait sur un identifiant fantôme :
-aucun chiffre affiché, et rien pour comprendre pourquoi.
+### Vue d'ensemble
 
-Deux graphes, qui ne disent pas la même chose :
+- **les sites** : état, disponibilité des 24 dernières heures en barres (une par heure),
+  latence ;
+- **les indicateurs** de la période, avec leur courbe et l'écart avec **la même période un an
+  plus tôt** (janvier–octobre contre janvier–octobre, pas contre l'année entière) ;
+- **flux mensuels** : revenus au-dessus de zéro, dépenses et abonnements en dessous, et la
+  marge cumulée en courbe ;
+- **À traiter** ([`src/lib/aTraiter.js`](src/lib/aTraiter.js)) : checks en échec (avec
+  « depuis quand »), certificats et domaines qui expirent, points des agents du jour,
+  prélèvements des 7 prochains jours. La pastille du menu compte ce qui demande un geste ;
+- **rentabilité par site** : revenus, coûts (dépenses et abonnements, en parts) et marge.
 
-- **cumul sur la période** : deux courbes qui ne peuvent que monter. Ce qui compte est
-  l'écart entre elles et le moment où les revenus rattrapent les dépenses ;
-- **mois par mois** : dépenses ponctuelles et abonnements empilés, revenus à côté.
+La **période** se choisit en boutons — on consulte un tableau de bord pour répondre à « où
+j'en suis cette année », pas pour interroger une plage arbitraire — et elle est **mémorisée**
+dans la table `preferences`. « Depuis toujours » démarre à la première écriture connue,
+sinon le graphe afficherait des siècles de mois vides. Le bilan
+([`src/lib/bilan.js`](src/lib/bilan.js)) est partagé par la vue d'ensemble, Finances et la
+fiche d'un site ; les cumuls vivent dans [`src/lib/series.js`](src/lib/series.js), pas dans
+un composant : accumuler pendant le rendu donnerait des totaux différents à chaque re-rendu.
 
-Le calcul des cumuls vit dans [`src/lib/series.js`](src/lib/series.js), pas dans le
-composant : accumuler pendant le rendu donnerait des totaux différents à chaque re-rendu,
-et c'est le genre d'erreur qui produit des chiffres faux sans rien casser visiblement.
+### Fiche d'un site
+
+Onglets **Santé** (disponibilité sur 24 h, 7 j ou 30 j — l'historique est purgé à 30 jours —,
+latence médiane et 95e centile par demi-heure, checks, catalogue, informations suivies),
+**Finances** (ses transactions, pour **sa part** : une dépense partagée ne compte qu'à
+hauteur de ce qui lui revient), **Agents** et **Réglages** (nom, URL, couleur, icône, suivi,
+suppression).
+
+### Finances
+
+Dépenses et revenus dans **un seul fil**, regroupés par mois avec leur solde, filtrables par
+type, site, catégorie et période, avec une recherche. « CSV » copie les lignes affichées, à
+coller dans un tableur. Une dépense peut être saisie en **dollars** comme un revenu (migration
+014) : convertie au taux du jour de l'opération, ses parts par site sont en euros.
 
 ## Les abonnements dans les graphes
 
@@ -280,7 +312,7 @@ total d'une échéance.
 
 Tant que l'appli est ouverte, elle rejoue **tous les checks actifs** à la fréquence réglée
 dans les préférences (30 s à 1 h, **1 minute** par défaut) et affiche l'état de chaque site
-en première ligne du tableau de bord :
+sur la vue d'ensemble et dans la barre latérale :
 
 | Icône | Signification |
 |---|---|
@@ -290,12 +322,10 @@ en première ligne du tableau de bord :
 | cercle pointillé, gris | aucun check, ou aucun encore exécuté |
 
 L'état passe par la **forme** de l'icône, pas seulement par la couleur : celle-ci sert déjà
-à identifier les sites, et ne distingue rien pour un daltonien. La couleur du site est donc
-une **barre verticale** sur le bord de la carte — deux pastilles rondes côte à côte se
-lisaient comme la même information.
+à identifier les sites, et ne distingue rien pour un daltonien. La couleur du site teinte
+donc son **monogramme** (ou son favicon), jamais un indicateur d'état.
 
-Un clic sur une carte ouvre le détail du site : disponibilité sur 24 h, courbe de latence,
-liste des checks avec leur dernier résultat, incidents récents et dernières dépenses.
+Un clic sur une carte ouvre la fiche du site (voir « L'interface »).
 
 Les requêtes HTTP partent **du code Rust**, pas de la WebView : depuis le front, un `fetch`
 vers tes sites serait bloqué par CORS et ne donnerait jamais le vrai code de statut.
@@ -465,7 +495,7 @@ et non pendant, pour que le site n'attende pas un aller-retour réseau pour appa
 échec est sans conséquence : le bouton « Icône » relance la recherche
 (`<link rel="icon">` de la page, sinon `/favicon.ico`). Les octets sont stockés en data URI dans `sites.favicon` : une URL distante
 afficherait une image cassée pendant une panne, c'est-à-dire au moment précis où on regarde
-le tableau de bord. Si la récupération échoue, le bouton à côté importe une image locale.
+la vue d'ensemble. Si la récupération échoue, le bouton à côté importe une image locale.
 
 Un garde-fou : une réponse dont le `content-type` n'est pas `image/*` est rejetée, sinon un
 repli SPA ferait stocker une page HTML en guise d'icône.
@@ -506,9 +536,9 @@ joué au démarrage par le plugin SQL. Pour le faire évoluer : ajouter un fichi
 ## Rapports des agents
 
 Les statuts des agents (indexation, santé de la prod, tri Sentry, audit hebdomadaire…) sont
-dans la **fiche de chaque site** : un clic sur un site du tableau de bord montre ce qu'il y a
+dans la **fiche de chaque site** : l'onglet Agents de la fiche d'un site montre ce qu'il y a
 à faire, l'état du jour de chaque tâche et ses derniers passages (sa carte porte une petite
-icône d'état des agents). L'onglet **Agents** ne garde que les réglages, site par site :
+icône d'état des agents). **Réglages › Agents** ne garde que les réglages, site par site :
 activation, horaire, lancement, retrait, ajout, et les tâches que les autres sites ont et
 pas celui-ci (un clic les ajoute). Ainsi, un site sans la tâche « Bing : soumission et
 suivi » a un agent « SEO Google + Bing » qui fait les deux consoles dans Chrome ; avec elle,
@@ -560,7 +590,10 @@ supprimer un fichier le retire de l'écran. Limite assumée : un agent qui n'a *
 ne laisse aucun fichier, donc rien ne le signale encore ; il faudrait connaître le calendrier
 de chaque tâche pour le voir manquer.
 
-## Préférences
+## Réglages
+
+Réglages › Général : mise à jour, apparence (thème), supervision, démarrage avec Windows,
+notifications, données et sauvegardes.
 
 La fréquence de vérification se règle entre 30 secondes et 1 heure, dans une liste fermée
 plutôt qu'un champ libre : une valeur de 2 secondes saisie par mégarde enverrait 1800
@@ -571,7 +604,7 @@ délai avant de les voir.
 
 ## Où sont mes données ?
 
-Le chemin du fichier `.db` est affiché en bas de la barre latérale
+Le chemin du fichier `.db` est affiché dans Réglages › Données
 (typiquement `%APPDATA%\com.cedklein.sitedashboard\sitedashboard.db`).
 Pour sauvegarder : copier ce fichier.
 

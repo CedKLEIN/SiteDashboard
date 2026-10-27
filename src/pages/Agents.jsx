@@ -14,7 +14,6 @@ export default function Agents({ sites = [], configTrouvee = true, dossierRappor
 
   return (
     <div className="flex flex-col gap-5">
-      <h1 className="text-lg font-semibold">Agents</h1>
 
       {!configTrouvee && (
         <Carte>

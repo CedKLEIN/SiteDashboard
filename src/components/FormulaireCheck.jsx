@@ -43,7 +43,7 @@ export default function FormulaireCheck({ site, onAjoute }) {
       setErreur(
         site.url
           ? "Chemin invalide."
-          : "Ce site n'a pas d'URL : renseigne-la d'abord dans l'onglet « Sites ».",
+          : "Ce site n'a pas d'URL : renseigne-la d'abord dans l'onglet Réglages du site.",
       );
       return;
     }
@@ -226,7 +226,7 @@ export default function FormulaireCheck({ site, onAjoute }) {
 
         <Bouton type="submit">Ajouter un check</Bouton>
       </form>
-      {erreur && <p className="mt-2 text-xs text-depense">{erreur}</p>}
+      {erreur && <p className="mt-2 text-xs text-ko">{erreur}</p>}
     </>
   );
 }

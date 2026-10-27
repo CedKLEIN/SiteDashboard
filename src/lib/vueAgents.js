@@ -14,7 +14,7 @@ import { horaireLisible } from "./controles";
 export const RAPPORTS_MAX = 7;
 
 /** Une tache qui tourne en ce moment : bleu, distinct des etats et de l'accent. */
-export const COULEUR_EN_COURS = "#38bdf8";
+export const COULEUR_EN_COURS = "var(--color-info)";
 
 /** Duree d'un passage : '45 s', '12 min', '1 h 05' ; null sans debut ou fin lisibles. */
 export function dureeRapport(debut, fin) {

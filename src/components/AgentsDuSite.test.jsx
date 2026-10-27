@@ -133,7 +133,7 @@ describe("agents dans la fiche du site", () => {
     render(<AgentsDuSite vue={vue("Denivio", { controles })} controles={controles} />);
     const ligne = screen.getByRole("button", { name: /Santé de la prod/, expanded: false });
     expect(ligne.textContent).toContain("En cours");
-    expect(within(ligne).getByTitle("En cours").style.background).toBe("rgb(56, 189, 248)");
+    expect(within(ligne).getByTitle("En cours").style.background).toBe("var(--color-info)");
   });
 
   it("une tache hors du registre peut perdre son historique, apres confirmation", async () => {
@@ -161,6 +161,6 @@ describe("agents dans la fiche du site", () => {
 
   it("sans tache : renvoie vers l'onglet Agents", () => {
     render(<AgentsDuSite vue={null} />);
-    expect(screen.getByText(/ajoute-en une dans l'onglet Agents/)).toBeTruthy();
+    expect(screen.getByText(/ajoute-en une dans Réglages › Agents/)).toBeTruthy();
   });
 });

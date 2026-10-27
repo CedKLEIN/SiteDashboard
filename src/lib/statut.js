@@ -21,11 +21,11 @@ export function etatSite({ nb_checks = 0, nb_resultats = 0, nb_ok = 0 } = {}) {
  * sens, la couleur ne fait que le renforcer.
  */
 export const ETATS = {
-  ok: { libelle: "OK", couleur: "#34d399", icone: "ok" },
-  partiel: { libelle: "Partiel", couleur: "#fbbf24", icone: "alerte" },
-  ko: { libelle: "KO", couleur: "#f97362", icone: "ko" },
-  inconnu: { libelle: "Jamais vérifié", couleur: "#98a2c4", icone: "inconnu" },
-  aucun: { libelle: "Aucun check", couleur: "#3a4570", icone: "aucun" },
+  ok: { libelle: "OK", couleur: "var(--color-ok)", icone: "ok" },
+  partiel: { libelle: "Partiel", couleur: "var(--color-alerte)", icone: "alerte" },
+  ko: { libelle: "KO", couleur: "var(--color-ko)", icone: "ko" },
+  inconnu: { libelle: "Jamais vérifié", couleur: "var(--color-texte-doux)", icone: "inconnu" },
+  aucun: { libelle: "Aucun check", couleur: "var(--color-neutre)", icone: "aucun" },
 };
 
 export function iconeEtat(etat) {
@@ -34,6 +34,14 @@ export function iconeEtat(etat) {
 
 export function couleurEtat(etat) {
   return (ETATS[etat] ?? ETATS.inconnu).couleur;
+}
+
+/**
+ * Fond teinte d'une couleur (variable CSS ou hex) : `color-mix` plutot qu'un
+ * suffixe hexadecimal, qui ne marche pas sur une variable.
+ */
+export function teinte(couleur, pourcent = 14) {
+  return `color-mix(in srgb, ${couleur} ${pourcent}%, transparent)`;
 }
 
 export function libelleEtat(etat) {

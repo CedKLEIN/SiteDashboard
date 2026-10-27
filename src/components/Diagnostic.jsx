@@ -67,7 +67,7 @@ export default function Diagnostic({ check, inspection, site, enCours, onFermer 
 
       {!enCours && inspection && (
         <div className="flex flex-col gap-3">
-          {inspection.erreur && <p className="text-sm text-depense">{inspection.erreur}</p>}
+          {inspection.erreur && <p className="text-sm text-ko">{inspection.erreur}</p>}
 
           <dl className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs sm:grid-cols-4">
             <div>

@@ -47,7 +47,7 @@ export default function RepartitionSites({
   return (
     <div className="flex min-w-64 flex-col gap-2">
       <SelecteurSites
-        label="Sites concernés"
+        label="Sites"
         sites={sites}
         selection={selection}
         onBasculer={onBasculerSite}
@@ -55,13 +55,20 @@ export default function RepartitionSites({
       />
 
       {partageable && !manuel && (
-        <Bouton variante="fantome" className="self-start px-2 py-1 text-xs" onClick={passerEnManuel}>
-          Répartir manuellement
-        </Bouton>
+        <>
+          <div className="flex h-1.5 overflow-hidden rounded-full" aria-hidden="true">
+            {sitesChoisis.map((site) => (
+              <span key={site.id} className="flex-1" style={{ background: site.couleur }} />
+            ))}
+          </div>
+          <Bouton variante="discret" className="self-start px-2 py-1 text-xs text-accent-2" onClick={passerEnManuel}>
+            Répartir à la main
+          </Bouton>
+        </>
       )}
 
       {partageable && manuel && (
-        <div className="flex flex-col gap-2 rounded-lg border border-bord bg-surface-2/40 p-2.5">
+        <div className="flex flex-col gap-2 rounded-xl bg-surface-2/60 p-3 ring-1 ring-bord">
           <div className="flex flex-wrap items-end gap-2">
             {sitesChoisis.map((site) => (
               <label key={site.id} className="flex flex-col gap-1">
@@ -73,14 +80,14 @@ export default function RepartitionSites({
                   inputMode="decimal"
                   value={parts[site.id] ?? ""}
                   onChange={(e) => onChangerParts({ ...parts, [site.id]: e.target.value })}
-                  className="w-24 rounded-lg border border-bord bg-surface px-2 py-1 text-sm text-texte outline-none focus:border-accent"
+                  className="chiffres w-24 rounded-lg bg-surface px-2 py-1 text-sm text-texte ring-1 ring-bord outline-none focus:ring-accent"
                 />
               </label>
             ))}
           </div>
 
           <div className="flex items-center gap-3 text-[11px]">
-            <span className={ecart === 0 ? "text-revenu" : "text-depense"}>
+            <span className={ecart === 0 ? "text-ok" : "text-ko"}>
               total des parts : {formatMontant(somme)}
               {ecart !== 0 &&
                 ` — il ${ecart > 0 ? "faut retirer" : "reste à répartir"} ${formatMontant(
@@ -92,7 +99,7 @@ export default function RepartitionSites({
               className="ml-auto px-2 py-0.5 text-[11px]"
               onClick={() => onChangerParts(null)}
             >
-              Parts egales
+              Parts égales
             </Bouton>
           </div>
         </div>

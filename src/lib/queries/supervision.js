@@ -257,3 +257,46 @@ export function purgerVerifications(jours = 30) {
     `-${jours} days`,
   ]);
 }
+
+/**
+ * Verifications regroupees par tranche (heure ou jour) et par site, pour les
+ * barres de disponibilite. Les checks `valeur` sont exclus, comme partout.
+ * `tranche` vaut 'YYYY-MM-DD HH' a l'heure, 'YYYY-MM-DD' au jour.
+ */
+export function disponibiliteParTranche({ heures = 24, parJour = false, siteId = null } = {}) {
+  return select(
+    `SELECT c.site_id, substr(v.verifie_le, 1, $1) AS tranche,
+            COUNT(*) AS total, SUM(CASE WHEN v.ok = 1 THEN 1 ELSE 0 END) AS ok
+     FROM verifications v
+     JOIN checks c ON c.id = v.check_id
+     WHERE c.type <> 'valeur' AND c.actif = 1
+       AND v.verifie_le >= datetime('now', 'localtime', $2)
+       AND ($3 IS NULL OR c.site_id = $3)
+     GROUP BY c.site_id, tranche`,
+    [parJour ? 10 : 13, `-${heures} hours`, siteId],
+  );
+}
+
+/**
+ * Checks actifs dont le DERNIER resultat est un echec, avec le debut de la
+ * serie d'echecs en cours (premier echec apres le dernier succes) : « 503
+ * depuis 12 min » dit plus qu'un simple « KO ».
+ */
+export function checksEnEchec() {
+  return select(
+    `SELECT c.id, c.site_id, c.libelle, c.url, c.type, s.nom AS site_nom,
+            v.statut_http, v.erreur, v.jours_restants, v.verifie_le,
+            (SELECT MIN(x.verifie_le) FROM verifications x
+              WHERE x.check_id = c.id
+                AND x.verifie_le > COALESCE(
+                  (SELECT MAX(y.verifie_le) FROM verifications y WHERE y.check_id = c.id AND y.ok = 1), '')
+            ) AS depuis
+     FROM checks c
+     JOIN sites s ON s.id = c.site_id AND s.actif = 1
+     JOIN verifications v ON v.id = (
+       SELECT id FROM verifications WHERE check_id = c.id ORDER BY verifie_le DESC, id DESC LIMIT 1
+     )
+     WHERE c.actif = 1 AND c.type <> 'valeur' AND v.ok = 0
+     ORDER BY s.nom, c.id`,
+  );
+}

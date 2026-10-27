@@ -35,12 +35,31 @@ function executer(base, requete, valeurs) {
   return [base.getRowsModified(), values[0][0]];
 }
 
+/**
+ * Pannes simulees, pour voir les ecrans d'alerte : un tableau JSON de bouts
+ * d'URL dans localStorage['apercu:pannes'] (checks en 503) ou
+ * ['apercu:certificats'] (certificats a 9 jours), par ex. ["site.fr/healthz"].
+ */
+function enPanne(url, cle = "apercu:pannes") {
+  try {
+    return JSON.parse(localStorage.getItem(cle) ?? "[]").some((bout) => String(url).includes(bout));
+  } catch {
+    return false;
+  }
+}
+
 /** Reponses de demonstration des commandes reseau : tout va bien, sans rien appeler. */
 const RESEAU = {
-  executer_check: () => ({ statut: 200, latence_ms: 140, entetes: [], taille: 50_000, occurrences: 50_000 }),
+  executer_check: ({ url }) =>
+    enPanne(url)
+      ? { statut: 503, latence_ms: 90, entetes: [], taille: 0, occurrences: 0 }
+      : { statut: 200, latence_ms: 120 + Math.round(Math.random() * 80), entetes: [], taille: 50_000, occurrences: 50_000 },
   executer_redirection: () => ({ statut: 301, cible: "https://denivio.fr/", latence_ms: 90 }),
   lire_valeur: () => ({ valeur: "2026-10-17T16:07:23Z", statut: 200, latence_ms: 80 }),
-  verifier_certificat: () => ({ jours_restants: 32, expire_le: "2026-11-26", emetteur: "Let's Encrypt" }),
+  verifier_certificat: ({ domaine, url }) =>
+    enPanne(domaine ?? url, "apercu:certificats")
+      ? { jours_restants: 9, expire_le: "2026-11-05", emetteur: "Let's Encrypt" }
+      : { jours_restants: 64, expire_le: "2026-12-30", emetteur: "Let's Encrypt" },
   verifier_domaine: () => ({ adresses: ["82.165.10.4"], jours_restants: 300, latence_ms: 60 }),
   inspecter_url: ({ url }) => ({ url_demandee: url, methode: "GET", statut: 200, statut_texte: "OK", duree_ms: 140 }),
   taux_change: () => 1,

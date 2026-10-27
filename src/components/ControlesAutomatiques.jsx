@@ -318,7 +318,7 @@ function Alignement({ manques, onAjouter }) {
 function GroupeSite({ groupe, controles, manques }) {
   return (
     <section className="relative overflow-hidden rounded-xl border border-bord bg-surface p-4 pl-5 shadow-sm">
-      <span className="absolute inset-y-0 left-0 w-1.5" style={{ background: groupe.couleur ?? "#3a4570" }} aria-hidden="true" />
+      <span className="absolute inset-y-0 left-0 w-1.5" style={{ background: groupe.couleur ?? "var(--color-neutre)" }} aria-hidden="true" />
       <header className="mb-1 flex flex-wrap items-center gap-2">
         <h2 className="text-base font-semibold">{groupe.nom}</h2>
         {groupe.domaine !== groupe.nom && <span className="text-xs text-texte-doux">{groupe.domaine}</span>}
@@ -359,7 +359,7 @@ export default function ControlesAutomatiques({ controles, groupes }) {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-texte-doux">
-          Les statuts du jour et l&apos;historique des passages sont dans la fiche de chaque site (tableau de bord).
+          Statuts du jour et historique des passages : onglet Agents de chaque site.
         </p>
         {controles.modeles.length > 0 && !ajout && (
           <Bouton className="flex shrink-0 items-center gap-1.5 px-2.5 py-1.5 text-xs" onClick={() => setAjout(true)}>

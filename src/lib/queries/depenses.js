@@ -11,28 +11,30 @@ const SITES_DE_LA_DEPENSE = `
     WHERE x.depense_id = d.id) AS sites_noms,
   (SELECT COUNT(*) FROM depense_sites WHERE depense_id = d.id) AS nb_sites`;
 
-export function listerDepenses({ siteId = null, limite = 200 } = {}) {
+export function listerDepenses({ siteId = null, limite = 200, depuis = null, jusqua = null } = {}) {
   // Filtre par site: on renvoie en plus `part_cents`, la portion qui incombe a
   // CE site, qui n'est pas le montant total quand la depense est partagee.
   if (siteId) {
     return select(
-      `SELECT d.*, f.nom AS fournisseur_nom, ds.part_cents, ${SITES_DE_LA_DEPENSE}
+      `SELECT d.*, f.nom AS fournisseur_nom, f.favicon AS fournisseur_favicon, ds.part_cents, ${SITES_DE_LA_DEPENSE}
        FROM depenses d
        JOIN depense_sites ds ON ds.depense_id = d.id AND ds.site_id = $1
        LEFT JOIN fournisseurs f ON f.id = d.fournisseur_id
+       WHERE ($3 IS NULL OR d.date >= $3) AND ($4 IS NULL OR d.date <= $4)
        ORDER BY d.date DESC, d.id DESC
        LIMIT $2`,
-      [siteId, limite],
+      [siteId, limite, depuis, jusqua],
     );
   }
 
   return select(
-    `SELECT d.*, f.nom AS fournisseur_nom, NULL AS part_cents, ${SITES_DE_LA_DEPENSE}
+    `SELECT d.*, f.nom AS fournisseur_nom, f.favicon AS fournisseur_favicon, NULL AS part_cents, ${SITES_DE_LA_DEPENSE}
      FROM depenses d
      LEFT JOIN fournisseurs f ON f.id = d.fournisseur_id
+     WHERE ($2 IS NULL OR d.date >= $2) AND ($3 IS NULL OR d.date <= $3)
      ORDER BY d.date DESC, d.id DESC
      LIMIT $1`,
-    [limite],
+    [limite, depuis, jusqua],
   );
 }
 
@@ -122,10 +124,13 @@ export function supprimerDepense(id) {
   return execute("DELETE FROM depenses WHERE id = $1", [id]);
 }
 
-/** Nombre total de depenses (d'un site au besoin) : l'historique est pagine. */
-export async function compterDepenses({ siteId = null } = {}) {
-  const [ligne] = siteId
-    ? await select("SELECT COUNT(*) AS n FROM depense_sites WHERE site_id = $1", [siteId])
-    : await select("SELECT COUNT(*) AS n FROM depenses");
+/** Nombre de depenses (d'un site, d'une periode au besoin) : l'historique est pagine. */
+export async function compterDepenses({ siteId = null, depuis = null, jusqua = null } = {}) {
+  const [ligne] = await select(
+    `SELECT COUNT(*) AS n FROM depenses d
+     WHERE ($1 IS NULL OR EXISTS (SELECT 1 FROM depense_sites x WHERE x.depense_id = d.id AND x.site_id = $1))
+       AND ($2 IS NULL OR d.date >= $2) AND ($3 IS NULL OR d.date <= $3)`,
+    [siteId, depuis, jusqua],
+  );
   return ligne?.n ?? 0;
 }
