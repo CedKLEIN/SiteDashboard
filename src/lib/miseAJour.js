@@ -17,9 +17,11 @@ export function resumeMiseAJour(etat) {
   if (etat.erreur) return { disponible: false, libelle: `Vérification impossible : ${etat.erreur}` };
   const n = etat.nouveaux?.length ?? 0;
   if (n === 0) return { disponible: false, libelle: "À jour" };
+  // Commits seulement sur le distant : la mise a jour commence par les recuperer
+  const distants = etat.a_recuperer ? ` (dont ${etat.a_recuperer} à récupérer)` : "";
   return {
     disponible: true,
-    libelle: n === 1 ? "1 nouveau commit" : `${n} nouveaux commits`,
+    libelle: `${n === 1 ? "1 nouveau commit" : `${n} nouveaux commits`}${distants}`,
   };
 }
 
