@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+/*
+ * Design system de la refonte. Deux familles de couleurs qui ne se croisent pas :
+ *  - ETATS (ok / alerte / ko / info) : sante des sites, agents, checks
+ *  - DONNEES FINANCIERES (revenus / depenses / abonnements) : montants, graphes
+ * Avant, « revenu » et « site OK » partageaient le meme vert, et « depense »
+ * ressemblait au rouge « panne ».
+ */
+@theme {
+  --font-sans: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, monospace;
+
+  --color-fond: #0a0d14;
+  --color-surface: #11151f;
+  --color-surface-2: #171c29;
+  --color-surface-3: #1f2533;
+  --color-ligne: #222a3a;
+  --color-texte: #e9edf5;
+  --color-doux: #8a93a8;
+  --color-pale: #5b6478;
+
+  --color-accent: #7c6cff;
+  --color-accent-2: #a594ff;
+
+  --color-ok: #22c55e;
+  --color-alerte: #f59e0b;
+  --color-ko: #ef4444;
+  --color-info: #38bdf8;
+
+  --color-revenu: #2dd4bf;
+  --color-depense: #f472b6;
+  --color-abonnement: #c084fc;
+}
+
+.clair {
+  --color-fond: #f5f6fa;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f3f8;
+  --color-surface-3: #e7eaf2;
+  --color-ligne: #e3e7ef;
+  --color-texte: #131826;
+  --color-doux: #5d6679;
+  --color-pale: #9099ac;
+  --color-accent: #6553f5;
+  --color-accent-2: #6553f5;
+  --color-revenu: #0d9488;
+  --color-depense: #db2777;
+  --color-abonnement: #9333ea;
+  --color-ok: #16a34a;
+  --color-alerte: #d97706;
+  --color-ko: #dc2626;
+}
+
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+.chiffres { font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
