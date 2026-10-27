@@ -1,7 +1,7 @@
 {
   "id": "bing",
-  "titre": "Soumission Bing",
-  "description": "Chaque jour : soumet à Bing, par son API, les URL du sitemap jamais soumises, dans la limite du quota. Demande la clé API Bing.",
+  "titre": "Bing : soumission et suivi",
+  "description": "Chaque jour, par l'API de Bing : soumet les URL du sitemap jamais soumises dans la limite du quota, puis surveille l'exploration, les erreurs 4xx/5xx, les pages dans l'index, les sitemaps et le trafic. L'agent SEO du site ne va alors plus sur Bing. Demande la clé API Bing.",
   "type": "script",
   "script": "bing.mjs",
   "cron": "0 9 * * *",

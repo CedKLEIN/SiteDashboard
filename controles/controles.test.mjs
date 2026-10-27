@@ -4,7 +4,7 @@ import { archiverRapport, empreinte, isoLocal, jsonLd, liens, meta, pointsDuRapp
 import { extraireJson, validerAnalyse } from "./lib/claude.mjs";
 import { analyserCatalogue, analyserHistoire, clesObjet, hausses, souverainsCites } from "./lib/donnees.mjs";
 import { configSante, defautsSeo, locs, verifierApi } from "./sante-prod.mjs";
-import { aSoumettre, configBing, ordonner } from "./bing.mjs";
+import { aSoumettre, configBing, dateBing, ordonner, surveillance } from "./bing.mjs";
 import { avecAnalyse } from "./lancer.mjs";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -231,6 +231,76 @@ describe("Bing", () => {
   it("tire sa configuration de la fiche du site", () => {
     const controle = { fiche: { url: "https://d.fr/", bing: { fiches: "^/x/" } }, fichierSuivi: "C:\\p\\soumises.txt" };
     expect(configBing(controle)).toEqual({ site: "https://d.fr/", sitemap: "https://d.fr/sitemap.xml", soumises: "C:\\p\\soumises.txt", fiches: "^/x/" });
+  });
+});
+
+describe("Bing : surveillance par l'API", () => {
+  const MAINTENANT = new Date("2026-10-27T09:00:00Z");
+  const jour = (iso, champs) => ({ Date: `/Date(${Date.parse(`${iso}T00:00:00Z`)})/`, CrawledPages: 500, Code4xx: 5, Code5xx: 0, InIndex: 7000, ...champs });
+  const textes = (r, niveau) => r.points.filter((p) => p.niveau === niveau).map((p) => p.texte);
+
+  it("lit les dates de l'API", () => {
+    expect(dateBing("/Date(1791676800000)/").toISOString()).toBe("2026-10-11T00:00:00.000Z");
+    expect(dateBing("n'importe quoi")).toBeNull();
+  });
+
+  it("tout va bien : index en hausse sur 7 jours, exploration, sitemap et trafic en points ok", () => {
+    const r = surveillance(
+      {
+        // Dans le desordre : l'API ne promet pas d'ordre
+        stats: [jour("2026-10-25", { InIndex: 7916 }), jour("2026-10-17", { InIndex: 7459 }), jour("2026-10-18", { InIndex: 7460 })],
+        feeds: [{ Url: "https://d.fr/sitemap.xml", Status: "Success", LastCrawled: `/Date(${Date.parse("2026-10-21T10:00:00Z")})/`, UrlCount: 143030 }],
+        trafic: [{ Date: "/Date(1792800000000)/", Clicks: 2, Impressions: 30 }],
+      },
+      MAINTENANT,
+    );
+    expect(textes(r, "attention")).toEqual([]);
+    expect(textes(r, "ok")).toEqual([
+      "Bing : 7 916 pages dans l'index (+456 en 7 j)",
+      "Bing a exploré 500 pages le 25/10 : 5 en 4xx, 0 en 5xx",
+      "Sitemap Bing lu le 21/10 : 143 030 URL",
+      "Trafic Bing sur 1 j : 2 clics, 30 impressions",
+    ]);
+    expect(r.resume).toEqual({ index: 7916, clics: 2, impressions: 30 });
+  });
+
+  it("alerte sur une part de 4xx ou de 5xx, pas sur un nombre", () => {
+    const r = surveillance({ stats: [jour("2026-10-25", { CrawledPages: 1252, Code4xx: 1064, Code5xx: 30 })] }, MAINTENANT);
+    expect(textes(r, "attention")).toEqual([
+      "Bing : 85 % des pages explorées le 25/10 répondent en 4xx (1 064 sur 1 252)",
+      "Bing : 2 % des pages explorées le 25/10 répondent en 5xx (30 sur 1 252)",
+    ]);
+    // Beaucoup de pages explorees, peu d'erreurs : rien a signaler
+    expect(textes(surveillance({ stats: [jour("2026-10-25", { CrawledPages: 5000, Code4xx: 400 })] }, MAINTENANT), "attention")).toEqual([]);
+  });
+
+  it("alerte sur un index en baisse, des stats figees, un sitemap en erreur ou pas relu", () => {
+    const r = surveillance(
+      {
+        stats: [jour("2026-10-01", { InIndex: 8000 }), jour("2026-10-12", { InIndex: 7000, BlockedByRobotsTxt: 3, DnsFailures: 1 })],
+        feeds: [
+          { Url: "https://d.fr/a.xml", Status: "Failed", LastCrawled: "/Date(1792800000000)/" },
+          { Url: "https://d.fr/b.xml", Status: "Success", LastCrawled: `/Date(${Date.parse("2026-10-01T00:00:00Z")})/` },
+        ],
+      },
+      MAINTENANT,
+    );
+    expect(textes(r, "attention")).toEqual([
+      "Statistiques Bing figées : dernière exploration connue le 12/10 (il y a 15 jours)",
+      "Bing : pages dans l'index en baisse, 7 000 (-1 000 en 11 j)",
+      "Bing : 1 échec(s) DNS ou délai dépassé le 12/10",
+      "Bing : 3 pages bloquées par robots.txt le 12/10 (0 avant)",
+      "Sitemap Bing en erreur (Failed) : https://d.fr/a.xml",
+      "Bing n'a pas relu le sitemap https://d.fr/b.xml depuis 26 jours",
+    ]);
+  });
+
+  it("une reponse manquante (appel en erreur) est sautee, une page malveillante est un echec", () => {
+    expect(surveillance({}).points).toEqual([]);
+    expect(textes(surveillance({ stats: [] }, MAINTENANT), "attention")).toEqual(["Bing ne renvoie aucune statistique d'exploration"]);
+    expect(textes(surveillance({ stats: [jour("2026-10-25", { ContainsMalware: 2 })] }, MAINTENANT), "echec")).toEqual([
+      "Bing signale 2 page(s) contenant un logiciel malveillant",
+    ]);
   });
 });
 
