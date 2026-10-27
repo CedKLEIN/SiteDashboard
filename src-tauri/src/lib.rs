@@ -200,6 +200,7 @@ pub fn run() {
             ant::ant_installer,
             ant::ant_connexion,
             ant::ant_jeton,
+            ant::ant_statut,
             connecteurs::secrets_connecteurs,
             connecteurs::enregistrer_secret_connecteur,
             tracer

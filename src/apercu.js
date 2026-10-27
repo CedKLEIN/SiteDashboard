@@ -129,6 +129,7 @@ export async function installerApercu() {
       case "ant_installer":
       case "ant_connexion":
       case "ant_jeton":
+      case "ant_statut":
         throw new Error("apercu : pas de connexion Anthropic");
       case "appel_api":
         throw new Error("apercu : pas d'appel aux API des connecteurs");

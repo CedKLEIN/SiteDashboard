@@ -126,6 +126,11 @@ async function entetesAnthropic(secret, jetonAnt) {
   ];
 }
 
+export const MESSAGE_DROITS_ANTHROPIC =
+  "Connexion acceptée, mais ce compte n'a pas le droit de lire les coûts de l'organisation : il faut être " +
+  "administrateur (rôle Admin) de l'organisation API dans la Console Anthropic. Un abonnement Claude Pro ou Max " +
+  "seul n'a pas de coûts d'API à importer.";
+
 async function synchroniserAnthropic({ secret, depuis, appel, aujourdhui, jetonAnt }) {
   const entetes = await entetesAnthropic(secret, jetonAnt);
   const jours = [];
@@ -133,14 +138,17 @@ async function synchroniserAnthropic({ secret, depuis, appel, aujourdhui, jetonA
   for (let page = 0; page < 40; page += 1) {
     const params = new URLSearchParams({ starting_at: `${depuis}T00:00:00Z`, bucket_width: "1d", limit: "31" });
     if (suivante) params.set("page", suivante);
-    const json = verifier(
-      await appel({
-        methode: "GET",
-        url: `https://api.anthropic.com/v1/organizations/cost_report?${params}`,
-        entetes,
-      }),
-      "Anthropic",
-    );
+    const reponse = await appel({
+      methode: "GET",
+      url: `https://api.anthropic.com/v1/organizations/cost_report?${params}`,
+      entetes,
+    });
+    // Connexion par le navigateur acceptee, mais pas le droit de lire les couts :
+    // la cause est le role du compte, pas une cle a verifier
+    if (secret.mode === "ant" && (reponse.statut === 401 || reponse.statut === 403)) {
+      throw new Error(MESSAGE_DROITS_ANTHROPIC);
+    }
+    const json = verifier(reponse, "Anthropic");
     for (const tranche of json.data ?? []) {
       // Montants en CENTIMES de dollar, sous forme de chaine decimale
       const cents = (tranche.results ?? []).reduce((t, r) => t + (Number.parseFloat(r.amount) || 0), 0);
@@ -202,7 +210,8 @@ export const CONNECTEURS = [
   {
     type: "anthropic",
     nom: "Anthropic (API Claude)",
-    description: "Coût de l'API, une dépense par mois mise à jour chaque jour. L'abonnement Claude Max n'y figure pas.",
+    description:
+      "Seulement si tu paies l'API à l'usage (clés sk-ant-…) : une dépense par mois, mise à jour chaque jour. Un abonnement Claude Pro ou Max se suit dans Abonnements.",
     couleur: "#d97757",
     champs: [{ cle: "cle", libelle: "Clé Admin", format: /^sk-ant-admin\S{10,}$/, exemple: "sk-ant-admin…" }],
     lien: "https://console.anthropic.com/settings/admin-keys",
@@ -214,7 +223,8 @@ export const CONNECTEURS = [
   {
     type: "openai",
     nom: "OpenAI (API)",
-    description: "Coût de l'API, une dépense par mois mise à jour chaque jour. ChatGPT Plus n'y figure pas.",
+    description:
+      "Seulement si tu paies l'API à l'usage (clés sk-…) : une dépense par mois, mise à jour chaque jour. ChatGPT Plus se suit dans Abonnements.",
     couleur: "#10a37f",
     champs: [{ cle: "cle", libelle: "Clé Admin", format: /^sk-admin-\S{10,}$/, exemple: "sk-admin-…" }],
     lien: "https://platform.openai.com/settings/organization/admin-keys",

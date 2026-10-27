@@ -54,6 +54,13 @@ describe("Anthropic", () => {
     );
   });
 
+  it("explique un refus apres connexion par le navigateur : le role du compte, pas une cle", async () => {
+    const appel = async () => ({ statut: 403, json: { error: { message: "Missing permissions." } } });
+    await expect(
+      definition("anthropic").synchroniser({ secret: { mode: "ant" }, depuis: "2026-10-01", appel, aujourdhui: "2026-10-27", jetonAnt: async () => "j" }),
+    ).rejects.toThrow(/administrateur/);
+  });
+
   it("reconnait le format de chaque cle", () => {
     expect(definition("anthropic").champs[0].format.test("sk-ant-admin01-abcdefghijklmnop")).toBe(true);
     expect(definition("openai").champs[0].format.test("sk-admin-abcdefghijklmnop")).toBe(true);

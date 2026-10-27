@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { readText } from "@tauri-apps/plugin-clipboard-manager";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { CircleCheck, CircleX, ClipboardPaste, ExternalLink, Loader, LogIn, Pencil, Plug, RefreshCw, Unplug } from "lucide-react";
+import { CircleCheck, CircleX, ClipboardCopy, ClipboardPaste, ExternalLink, Loader, LogIn, Pencil, Plug, RefreshCw, Unplug } from "lucide-react";
 import { Bouton, Carte, Champ, Interrupteur, MenuActions, SelecteurSites, Tiroir } from "../components/ui";
 import { CONNECTEURS } from "../lib/connecteurs/definitions";
 import { ecrireConnecteurs, lireConnecteurs, synchroniserEtEnregistrer } from "../lib/connecteurs/moteur";
@@ -17,6 +17,35 @@ function depuis(iso) {
   if (minutes < 60) return `il y a ${minutes} min`;
   if (minutes < 48 * 60) return `il y a ${Math.round(minutes / 60)} h`;
   return `le ${new Date(iso).toLocaleDateString("fr-FR")}`;
+}
+
+/**
+ * Copie l'etat de la connexion Anthropic (`ant auth status` : organisation,
+ * droits accordes) et l'erreur : de quoi comprendre un refus en un collage.
+ */
+function CopierEtatAnthropic({ erreur }) {
+  const [etat, setEtat] = useState(null);
+  async function copier() {
+    let statut;
+    try {
+      statut = await invoke("ant_statut");
+    } catch (e) {
+      statut = `ant auth status impossible : ${e}`;
+    }
+    try {
+      await writeText(`=== Connecteur Anthropic ===\nErreur : ${erreur}\n\n--- ant auth status ---\n${statut}`);
+      setEtat("Copié !");
+    } catch (e) {
+      setEtat(`Impossible : ${e}`);
+    }
+    setTimeout(() => setEtat(null), 2500);
+  }
+  return (
+    <Bouton variante="fantome" className="mt-2 flex items-center gap-1.5 self-start text-xs" onClick={copier}>
+      <ClipboardCopy size={13} />
+      {etat ?? "Copier l'état de la connexion"}
+    </Bouton>
+  );
 }
 
 /** Une etape numerotee du panneau de connexion. */
@@ -249,7 +278,12 @@ function TiroirConnecteur({ def, config, sites, onFermer, onEnregistre }) {
         Les clés restent sur cet ordinateur (%USERPROFILE%\.sitedashboard\connecteurs.json), jamais dans la base ni dans ses
         sauvegardes. Lecture seule suffit.
       </p>
-      {erreur && <p className="rounded-lg bg-ko/10 px-3 py-2 text-xs text-ko">{erreur}</p>}
+      {erreur && (
+        <div className="flex flex-col rounded-lg bg-ko/10 px-3 py-2 text-xs text-ko">
+          {erreur}
+          {def.navigateur && <CopierEtatAnthropic erreur={erreur} />}
+        </div>
+      )}
       {resultat && (
         <p className="flex items-center gap-2 rounded-lg bg-ok/10 px-3 py-2 text-xs text-ok">
           <CircleCheck size={14} />
@@ -352,7 +386,10 @@ export default function Connecteurs({ rafraichissement, onModification }) {
                     ) : (
                       <>
                         <CircleX size={14} className="shrink-0 text-ko" />
-                        <span className="text-ko">{resultat.message}</span>
+                        <span className="text-ko">
+                          {resultat.message}
+                          {def.navigateur && <CopierEtatAnthropic erreur={resultat.message} />}
+                        </span>
                       </>
                     )}
                   </p>

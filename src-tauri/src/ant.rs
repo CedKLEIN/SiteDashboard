@@ -168,3 +168,15 @@ pub async fn ant_jeton(app: AppHandle) -> Result<String, String> {
         ))
     }
 }
+
+/// Etat de la connexion du profil de SiteDashboard (organisation, droits
+/// accordes), tel que `ant auth status` le decrit : pour comprendre un refus.
+#[tauri::command]
+pub async fn ant_statut(app: AppHandle) -> Result<String, String> {
+    let sortie = commande(&app)?
+        .args(["auth", "status", "--profile", PROFIL])
+        .output()
+        .await
+        .map_err(|e| format!("ant introuvable ({e})"))?;
+    Ok(format!("{}\n{}", texte(&sortie.stdout), texte(&sortie.stderr)).trim().to_string())
+}
