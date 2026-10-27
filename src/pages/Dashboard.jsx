@@ -262,10 +262,6 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
           <EtatVide>Aucune écriture sur cette période.</EtatVide>
         ) : (
           <>
-            <p className="mb-2 text-xs text-texte-doux">
-              Les deux courbes ne peuvent que monter : ce qui compte est l&apos;écart entre elles,
-              et le moment où les revenus rattrapent les dépenses.
-            </p>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={serie} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>

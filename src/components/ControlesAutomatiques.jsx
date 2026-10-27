@@ -209,12 +209,13 @@ function LigneTache({ controle, dernier, resultat, enCours, onLancer, onHoraire,
         {!aLaDemande && (
           <Bouton
             variante="fantome"
-            className="flex shrink-0 items-center gap-1.5 px-2 py-1 text-xs"
+            className="shrink-0 px-2 py-1 text-xs"
             onClick={() => setEdition((e) => !e)}
+            aria-expanded={edition}
             title="Modifier l'horaire"
+            aria-label={`Modifier l'horaire de ${controle.titre} (${controle.site})`}
           >
             <Clock size={13} />
-            Horaire
           </Bouton>
         )}
         <Bouton

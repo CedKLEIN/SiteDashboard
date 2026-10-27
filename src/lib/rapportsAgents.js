@@ -164,15 +164,26 @@ export function regrouperParJournee(rapports) {
   return [...groupes.values()]
     .map((g) => {
       const tries = [...g.rapports].sort(
-        (a, b) =>
-          String(a.debut ?? a.fin ?? "").localeCompare(String(b.debut ?? b.fin ?? "")) ||
-          a.titre.localeCompare(b.titre),
+        (a, b) => momentRapport(a) - momentRapport(b) || a.titre.localeCompare(b.titre),
       );
       const compte = { ok: 0, attention: 0, echec: 0 };
       for (const r of tries) compte[r.statut] += 1;
       return { ...g, rapports: tries, compte, verdict: verdictJournee(tries) };
     })
     .sort((a, b) => b.date.localeCompare(a.date) || a.site.localeCompare(b.site));
+}
+
+/**
+ * Instant d'un passage (ms), pour trier : son debut, sinon sa fin, sinon son
+ * jour. Compare des instants, pas des textes : un agent ecrit `09:31+01:00`,
+ * un autre `08:37Z`, et l'ordre alphabetique les melangeait.
+ */
+export function momentRapport(rapport) {
+  for (const valeur of [rapport.debut, rapport.fin, rapport.date]) {
+    const ms = Date.parse(valeur ?? "");
+    if (Number.isFinite(ms)) return ms;
+  }
+  return 0;
 }
 
 /** Date ISO du jour `jours` jours avant `aujourdhui` (date locale). */

@@ -7,7 +7,7 @@
  * arrivent deja lus. Le resume est assemble a partir des rapports, sans IA :
  * le meme etat donne toujours le meme texte.
  */
-import { STATUTS_RAPPORT, dateDepuis, domaine, rattacherSite } from "./rapportsAgents";
+import { STATUTS_RAPPORT, dateDepuis, domaine, momentRapport, rattacherSite } from "./rapportsAgents";
 import { horaireLisible } from "./controles";
 
 /** Passages gardes dans la frise et l'historique d'une tache. */
@@ -122,6 +122,16 @@ export function aFaire(taches) {
   return liste.sort((a, b) => (a.niveau === "echec" ? 0 : 1) - (b.niveau === "echec" ? 0 : 1));
 }
 
+/**
+ * La tache a-t-elle sa pastille sur la carte du site ? Une tache sans horaire
+ * (les correctifs, lances a la demande) tourne rarement : sans passage du jour,
+ * un « Rien aujourd'hui » de plus n'apprend rien.
+ */
+export function surLaCarte(tache) {
+  const aLaDemande = tache.controle && !tache.controle.cron;
+  return !aLaDemande || tache.enCours || tache.niveau !== "aucun";
+}
+
 /** Statut d'un site : le pire de ses taches du jour. */
 export function statutSite(taches) {
   let pire = "aucun";
@@ -202,7 +212,8 @@ export function vueParSite({ rapports = [], attendus = [], controles = [], sites
   return [...parSite.values()]
     .map(({ cle, nomSite, taches }) => {
       const liste = [...taches.values()].map((t) => {
-        const tries = [...t.rapports].sort((a, b) => `${b.date}${b.fin ?? b.debut ?? ""}`.localeCompare(`${a.date}${a.fin ?? a.debut ?? ""}`));
+        // Un jour avant tout : un passage tardif range dans le dossier du lendemain reste a sa place
+        const tries = [...t.rapports].sort((a, b) => b.date.localeCompare(a.date) || momentRapport(b) - momentRapport(a));
         // Le dernier passage du jour fait foi : une relance qui corrige un probleme l'efface de « À faire »
         const rapportDuJour = tries.find((r) => r.date === jour) ?? null;
         if (t.attendu && rapportDuJour) Object.assign(t.attendu, { rapport: rapportDuJour, situation: "recu" });

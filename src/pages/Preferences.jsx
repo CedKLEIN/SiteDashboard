@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Download, FolderOpen, HardDriveDownload, RefreshCw } from "lucide-react";
-import { commitCourt, lancerMiseAJour, resumeMiseAJour } from "../lib/miseAJour";
+import { avancementMiseAJour, commitCourt, lancerMiseAJour, lireJournalMiseAJour, resumeMiseAJour } from "../lib/miseAJour";
 import { Bouton, BoutonCopier, Carte, Selecteur } from "../components/ui";
 import { ecrirePreference, lirePreference } from "../lib/queries";
 import {
@@ -17,6 +17,57 @@ import { JOURS_HISTORIQUE_VERIFICATIONS } from "../lib/monitoring";
 import { notificationTest } from "../lib/notifications";
 import { CLE_NOTIFICATIONS, notificationsWindows } from "../lib/useNotifications";
 import { tracer } from "../lib/trace";
+
+/** Delai entre deux lectures du journal de mise a jour. */
+const LECTURE_JOURNAL_MS = 1500;
+
+/**
+ * Plein ecran pendant la mise a jour : l'etape en cours, lue dans le journal
+ * du script. La compilation prend quelques minutes, puis le script ferme
+ * l'appli, installe et la relance. En cas d'echec, la fin de la sortie.
+ */
+function EcranMiseAJour({ onFermer }) {
+  const [avancement, setAvancement] = useState(() => avancementMiseAJour(""));
+
+  useEffect(() => {
+    let annule = false;
+    const lire = () =>
+      lireJournalMiseAJour()
+        .then((journal) => !annule && setAvancement(avancementMiseAJour(journal)))
+        .catch((e) => tracer("mise-a-jour", `journal illisible: ${e}`));
+    lire();
+    const minuterie = setInterval(lire, LECTURE_JOURNAL_MS);
+    return () => {
+      annule = true;
+      clearInterval(minuterie);
+    };
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-fond/95 p-4" role="dialog" aria-modal="true" aria-label="Mise à jour">
+      <div className="flex w-full max-w-lg flex-col items-center gap-4 text-center">
+        {avancement.echec ? (
+          <>
+            <p className="text-base font-semibold text-depense">La mise à jour a échoué</p>
+            <pre className="max-h-64 w-full overflow-auto rounded-lg bg-surface p-3 text-left font-mono text-[11px] whitespace-pre-wrap text-texte-doux">
+              {avancement.fin}
+            </pre>
+            <Bouton variante="fantome" onClick={onFermer}>
+              Fermer
+            </Bouton>
+          </>
+        ) : (
+          <>
+            <RefreshCw size={32} className="animate-spin text-accent" aria-hidden="true" />
+            <p className="text-base font-semibold">Mise à jour en cours</p>
+            <p className="text-sm text-texte-doux">{avancement.etape}</p>
+            <p className="text-xs text-texte-doux">L'appli va se fermer puis se rouvrir toute seule.</p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /** Version installee, commits plus recents du depot, et lancement de l'installeur. */
 function MiseAJour({ etat, verifier }) {
@@ -83,13 +134,9 @@ function MiseAJour({ etat, verifier }) {
             Mettre à jour
           </span>
         </Bouton>
-        <p className="text-xs text-texte-doux">
-          {lancee
-            ? "Mise à jour lancée : suis la console. L'appli va se fermer puis se rouvrir (quelques minutes)."
-            : "Compile le dépôt local, ferme l'appli, installe la nouvelle version et la relance."}
-        </p>
       </div>
       {erreur && <p className="mt-2 text-xs text-depense">{erreur}</p>}
+      {lancee && <EcranMiseAJour onFermer={() => setLancee(false)} />}
     </Carte>
   );
 }
@@ -182,7 +229,6 @@ function Notifications() {
       </label>
       <p className="mt-2 text-xs text-texte-doux">
         Une seule notification par changement : un site en panne ne sonne pas à chaque minute.
-        Comme la supervision, elles ne partent que pendant que l&apos;application est ouverte.
       </p>
       <div className="mt-3 flex items-center gap-3">
         <Bouton variante="fantome" onClick={tester}>
@@ -371,12 +417,7 @@ export default function Preferences({ onModification, cheminBase, miseAJour }) {
 
         <p className="mt-3 text-xs text-texte-doux">
           Chaque check actif est rejoué à cette fréquence, soit{" "}
-          <span className="text-texte">{parHeure} requête(s) par heure et par check</span>. Une
-          fréquence élevée ne détecte pas mieux les pannes durables : elle ne raccourcit que le
-          délai avant de les voir, au prix de requêtes supplémentaires sur tes sites.
-        </p>
-        <p className="mt-1 text-xs text-texte-doux">
-          La supervision ne tourne que pendant que l&apos;application est ouverte.
+          <span className="text-texte">{parHeure} requête(s) par heure et par check</span>.
         </p>
       </Carte>
 

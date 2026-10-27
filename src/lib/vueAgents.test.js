@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RAPPORTS_MAX, aFaire, dureeRapport, frise, libelleNiveau, niveauTache, resumeSite, statutSite, vueParSite } from "./vueAgents";
+import { RAPPORTS_MAX, aFaire, dureeRapport, frise, libelleNiveau, niveauTache, resumeSite, statutSite, surLaCarte, vueParSite } from "./vueAgents";
 
 const MAINTENANT = new Date(2026, 9, 26, 12, 0);
 const rapport = (site, date, agent, statut, extra = {}) => ({
@@ -230,6 +230,38 @@ describe("vue par site", () => {
     expect(dates).toHaveLength(RAPPORTS_MAX);
     expect(dates[0]).toBe("2026-10-26");
     expect(dates.at(-1)).toBe("2026-10-20");
+  });
+
+  it("dans un jour, les passages par heure de debut, quel que soit le fuseau ecrit par l'agent", () => {
+    const passage = (debut, fin) => ({ ...rapport("roisempereurs.fr", "2026-10-26", "seo-r", "ok"), cle: debut, debut, fin });
+    const [site] = vueParSite({
+      rapports: [
+        // Relance : debut 09:31 local, fin ecrite en UTC (08:37Z), qui passait avant 09:15+01:00 en ordre alphabetique
+        passage("2026-10-26T09:31:36+01:00", "2026-10-26T08:37:56.207Z"),
+        passage("2026-10-26T09:14:31+01:00", "2026-10-26T09:15:13+01:00"),
+        passage("2026-10-26T08:00:00Z", null),
+      ],
+      aujourdhui: MAINTENANT,
+    });
+    const tache = site.taches.find((t) => t.id === "seo-r");
+    expect(tache.rapports.map((r) => r.debut)).toEqual(["2026-10-26T09:31:36+01:00", "2026-10-26T09:14:31+01:00", "2026-10-26T08:00:00Z"]);
+    expect(tache.rapportDuJour.debut).toBe("2026-10-26T09:31:36+01:00");
+    // La frise va du plus ancien (gauche) au plus recent (droite)
+    expect(tache.frise.filter(Boolean).map((p) => p.cle)).toEqual(["2026-10-26T08:00:00Z", "2026-10-26T09:14:31+01:00", "2026-10-26T09:31:36+01:00"]);
+  });
+});
+
+describe("pastilles de la carte du site", () => {
+  const correctifs = { controle: { id: "correctifs-d", cron: null }, niveau: "aucun", enCours: false };
+  it("une tache sans horaire n'y figure que si elle a tourne aujourd'hui ou tourne", () => {
+    expect(surLaCarte(correctifs)).toBe(false);
+    expect(surLaCarte({ ...correctifs, niveau: "ok" })).toBe(true);
+    expect(surLaCarte({ ...correctifs, enCours: true })).toBe(true);
+  });
+
+  it("une tache a l'horaire y figure toujours", () => {
+    expect(surLaCarte({ ...correctifs, controle: { cron: "0 9 * * *" } })).toBe(true);
+    expect(surLaCarte({ niveau: "aucun" })).toBe(true);
   });
 });
 

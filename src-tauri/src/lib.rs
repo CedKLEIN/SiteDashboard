@@ -161,6 +161,7 @@ pub fn run() {
             sauvegarde::dossier_sauvegardes,
             mise_a_jour::etat_mise_a_jour,
             mise_a_jour::lancer_mise_a_jour,
+            mise_a_jour::journal_mise_a_jour,
             controles::lancer_controle,
             controles::registre_agents,
             notifications::notifications_windows,

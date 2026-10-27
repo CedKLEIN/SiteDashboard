@@ -16,8 +16,9 @@ import path from "node:path";
 const RACINE = path.resolve(import.meta.dirname, "..");
 const EXE = "site-dashboard.exe";
 
+/** `==> ` : l'ecran de mise a jour de l'appli y lit l'etape en cours (npm ecrit deja des `> `). */
 function etape(message) {
-  console.log(`\n> ${message}`);
+  console.log(`\n==> ${message}`);
 }
 
 const { productName, version } = JSON.parse(
@@ -35,7 +36,7 @@ const installeur = path.join(
 const installe = path.join(process.env.LOCALAPPDATA ?? "", productName, EXE);
 
 if (!process.argv.includes("--sans-build")) {
-  etape("Compilation de la version release (quelques minutes la premiere fois)");
+  etape("Compilation de la nouvelle version (quelques minutes)");
   // shell: un .cmd ne se lance pas sans shell depuis Node sous Windows
   execSync("npm.cmd run app:build", { cwd: RACINE, stdio: "inherit" });
 }
@@ -55,7 +56,7 @@ try {
   console.log("  (elle ne tournait pas)");
 }
 
-etape(`Installation silencieuse de ${path.basename(installeur)}`);
+etape("Installation de la nouvelle version");
 execFileSync(installeur, ["/S"], { stdio: "inherit" });
 
 if (!existsSync(installe)) {

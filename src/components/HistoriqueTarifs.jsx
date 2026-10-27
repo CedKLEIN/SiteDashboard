@@ -63,8 +63,7 @@ export default function HistoriqueTarifs({ abonnement, tarifs, onModifie, onErre
   return (
     <>
       <p className="mb-2 text-xs font-medium text-texte-doux">
-        Historique des tarifs — chaque ligne s&apos;applique à partir de sa
-        date, les échéances antérieures gardent l&apos;ancien prix
+        Historique des tarifs
       </p>
       <ul className="mb-3 flex flex-col gap-1">
         {tarifs.map((t) =>

@@ -417,10 +417,6 @@ export default function DetailSite({
 
       {informations.length > 0 && (
         <Carte titre="Informations">
-          <p className="mb-3 text-xs text-texte-doux">
-            Ces checks n'émettent aucun verdict : un retard de déploiement n'est pas une panne,
-            c'est une information.
-          </p>
           <ul className="flex flex-col gap-2 text-sm">
             {informations.map((check) => {
               const jours = joursDepuis(check.valeur_depuis);

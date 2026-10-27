@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Source des icones de l'appli : npx tauri icon src-tauri/icons/source.svg -->
+  <defs>
+    <linearGradient id="fond" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b2340" />
+      <stop offset="1" stop-color="#0b1020" />
+    </linearGradient>
+  </defs>
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="url(#fond)" />
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="none" stroke="#2a3358" stroke-width="12" />
+  <!-- Barres : les sites suivis -->
+  <rect x="208" y="616" width="152" height="200" rx="40" fill="#6366f1" opacity="0.55" />
+  <rect x="436" y="528" width="152" height="288" rx="40" fill="#6366f1" opacity="0.8" />
+  <rect x="664" y="440" width="152" height="376" rx="40" fill="#6366f1" />
+  <!-- Pouls : la supervision -->
+  <polyline points="192,304 336,304 412,168 516,372 600,236 652,304 832,304" fill="none" stroke="#34d399" stroke-width="64" stroke-linecap="round" stroke-linejoin="round" />
+</svg>

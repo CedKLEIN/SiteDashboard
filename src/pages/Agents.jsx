@@ -17,12 +17,12 @@ import {
 } from "../lib/rapportsAgents";
 import {
   COULEUR_EN_COURS,
-  RAPPORTS_MAX,
   STATUTS_SITE,
   dureeRapport,
   etatNiveau,
   etatRapport,
   libelleNiveau,
+  surLaCarte,
   vueParSite,
 } from "../lib/vueAgents";
 import { tracer } from "../lib/trace";
@@ -174,7 +174,7 @@ function CarteSiteAgents({ vue, onOuvrir }) {
       </div>
       <p className="text-sm text-texte-doux">{vue.resume}</p>
       <div className="flex flex-wrap gap-x-3 gap-y-1">
-        {vue.taches.map((t) => (
+        {vue.taches.filter(surLaCarte).map((t) => (
           <span key={t.id} className="flex items-center gap-1.5 text-[11px] text-texte-doux">
             <span
               className={`size-2 rounded-full ${t.enCours ? "animate-pulse" : ""}`}
@@ -255,11 +255,8 @@ function DetailTache({ tache, controles, onEfface }) {
       {tache.rapports.length === 0 ? (
         <p className="text-xs text-texte-doux">Aucun rapport sur les {JOURS_HISTORIQUE} derniers jours.</p>
       ) : (
-        <>
-          <p className="mb-1.5 text-[11px] text-texte-doux">Les {RAPPORTS_MAX} derniers passages au plus</p>
-          {/* Un nouveau passage rouvre l'historique sur lui */}
-          <Historique key={tache.rapports[0].cle} rapports={tache.rapports} />
-        </>
+        // Un nouveau passage rouvre l'historique sur lui
+        <Historique key={tache.rapports[0].cle} rapports={tache.rapports} />
       )}
     </div>
   );
@@ -403,10 +400,7 @@ export default function Agents({ sites = [], rafraichissement, attendus = [], co
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold">Agents</h1>
-          <p className="text-xs text-texte-doux">État du jour par site ; un clic pour le détail et l'historique</p>
-        </div>
+        <h1 className="text-lg font-semibold">Agents</h1>
         <Bouton variante="fantome" onClick={charger} disabled={chargement}>
           <span className="flex items-center gap-1.5">
             <RefreshCw size={14} className={chargement ? "animate-spin" : ""} />

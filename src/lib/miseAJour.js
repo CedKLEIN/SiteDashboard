@@ -51,7 +51,33 @@ export function useMiseAJour() {
   return { etat, verifier };
 }
 
-/** Ouvre la console de mise a jour ; l'appli sera fermee puis relancee par le script. */
+/** Lance la mise a jour, sans fenetre ; l'appli sera fermee puis relancee par le script. */
 export function lancerMiseAJour() {
   return invoke("lancer_mise_a_jour");
+}
+
+/** Fin du journal de la mise a jour en cours (sortie de scripts/installer.mjs). */
+export function lireJournalMiseAJour() {
+  return invoke("journal_mise_a_jour");
+}
+
+/** Ecrit par la commande Rust quand le script echoue (voir mise_a_jour.rs). */
+const MARQUE_ECHEC = "MISE_A_JOUR_ECHEC";
+
+/**
+ * Ce que l'ecran de mise a jour montre du journal : l'etape en cours (les
+ * lignes « ==> ... » de scripts/installer.mjs), et en cas d'echec la fin de la sortie.
+ */
+export function avancementMiseAJour(journal) {
+  const lignes = String(journal ?? "")
+    .split(/\r?\n/)
+    .map((l) => l.trimEnd())
+    .filter(Boolean);
+  const etapes = lignes.filter((l) => l.startsWith("==> ")).map((l) => l.slice(4));
+  const echec = lignes.some((l) => l.trim() === MARQUE_ECHEC);
+  return {
+    etape: etapes.at(-1) ?? "Démarrage",
+    echec,
+    fin: echec ? lignes.filter((l) => l.trim() !== MARQUE_ECHEC).slice(-12).join("\n") : "",
+  };
 }
