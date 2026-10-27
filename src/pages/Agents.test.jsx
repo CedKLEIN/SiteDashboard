@@ -66,6 +66,11 @@ describe("onglet Agents : les reglages, site par site", () => {
     expect(within(denivio).queryByText("Les autres sites ont aussi :")).toBeNull();
   });
 
+  it("pas de statut du jour par site : il est dans la fiche du site", () => {
+    render(<Agents sites={SITES} controles={controles()} />);
+    expect(screen.queryByText(/Tout va bien|À regarder|Action requise|Rien aujourd'hui/)).toBeNull();
+  });
+
   it("previent quand les horaires des taches sont introuvables", () => {
     render(<Agents sites={SITES} controles={controles()} configTrouvee={false} />);
     expect(screen.getByText(/Horaires des tâches planifiées introuvables/)).toBeTruthy();

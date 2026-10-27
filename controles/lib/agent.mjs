@@ -113,7 +113,11 @@ export function fin(texte, lignes = 8) {
   return texte.trim().split(/\r?\n/).filter(Boolean).slice(-lignes).join(" / ").slice(0, 400);
 }
 
-function rapportEchec(controle, debut, message) {
+/**
+ * `claude` : « session » si la session de travail a tourne (cout plein),
+ * « non » si l'agent s'est arrete avant (Claude introuvable, Chrome muet).
+ */
+function rapportEchec(controle, debut, message, claude = "non") {
   return ecrireRapport({
     site: controle.site,
     agent: controle.id,
@@ -126,6 +130,7 @@ function rapportEchec(controle, debut, message) {
     points: [{ niveau: "echec", texte: message }],
     fichier: controle.fichierSuivi,
     source: "agent-claude",
+    claude,
   });
 }
 
@@ -285,11 +290,10 @@ export async function lancerAgent(controle, { essai = false } = {}) {
     try {
       let contenu = JSON.parse(readFileSync(rapport, "utf8"));
       const nettoye = sansRangementOnglets(contenu);
-      if (nettoye) {
-        writeFileSync(rapport, `${JSON.stringify(nettoye, null, 2)}\n`, "utf8");
-        appendFileSync(journal, "\n[SiteDashboard] points sur la fermeture des onglets retirés du rapport\n");
-        contenu = nettoye;
-      }
+      if (nettoye) appendFileSync(journal, "\n[SiteDashboard] points sur la fermeture des onglets retirés du rapport\n");
+      // La session a tourne : le rapport le dit, pour l'icone Claude de chaque passage
+      contenu = { ...(nettoye ?? contenu), source: "agent-claude", claude: "session" };
+      writeFileSync(rapport, `${JSON.stringify(contenu, null, 2)}\n`, "utf8");
       const { statut } = contenu;
       // Un agent Chrome en echec n'a pas fait son travail (deconnexion en cours de route) : nouvel essai
       return { id: controle.id, statut, rapport, claude: "session", code, ...(statut === "echec" && controle.chrome ? { reessai: true } : {}) };
@@ -301,7 +305,7 @@ export async function lancerAgent(controle, { essai = false } = {}) {
   return {
     id: controle.id,
     statut: "echec",
-    rapport: rapportEchec(controle, debut, message),
+    rapport: rapportEchec(controle, debut, message, "session"),
     claude: "session",
     code,
     ...(controle.chrome ? { reessai: true } : {}),

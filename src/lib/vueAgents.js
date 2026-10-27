@@ -7,7 +7,7 @@
  * arrivent deja lus. Le resume est assemble a partir des rapports, sans IA :
  * le meme etat donne toujours le meme texte.
  */
-import { STATUTS_RAPPORT, dateDepuis, domaine, momentRapport, rattacherSite } from "./rapportsAgents";
+import { STATUTS_RAPPORT, dateDepuis, domaine, momentRapport, rattacherSite, usageClaude } from "./rapportsAgents";
 import { horaireLisible } from "./controles";
 
 /** Passages gardes dans la frise et l'historique d'une tache. */
@@ -75,7 +75,7 @@ export function etatNiveau(niveau) {
 
 /**
  * Les derniers passages d'une tache, un carre chacun, du plus ancien au plus
- * recent : [{ cle, date, debut, statut } | { enCours: true } | null]. Un
+ * recent : [{ cle, date, debut, statut, claude } | { enCours: true } | null]. Un
  * carre est un passage, pas un jour : sept relances dans la journee remplissent
  * la frise. La tache qui tourne ajoute un carre a droite et pousse le plus ancien.
  * Moins de passages que de carres : des cases vides (null) a gauche.
@@ -84,7 +84,7 @@ export function frise(rapportsRecentsDabord, { enCours = false, places = RAPPORT
   const passages = rapportsRecentsDabord
     .slice(0, enCours ? places - 1 : places)
     .reverse()
-    .map((r) => ({ cle: r.cle, date: r.date, debut: r.debut, statut: r.statut }));
+    .map((r) => ({ cle: r.cle, date: r.date, debut: r.debut, statut: r.statut, claude: usageClaude(r) }));
   if (enCours) passages.push({ enCours: true });
   return [...Array(places - passages.length).fill(null), ...passages];
 }

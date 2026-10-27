@@ -99,6 +99,7 @@ export async function lancer(id, { claude = true, ecrire = true } = {}) {
       points: [{ niveau: "echec", texte: controle.erreur }],
       fichier: null,
       source: "script",
+      claude: "non",
     });
     return { id, statut: "echec", rapport, erreur: message };
   }
@@ -167,6 +168,8 @@ export async function lancer(id, { claude = true, ecrire = true } = {}) {
   }
 
   rapport.fin = isoLocal(new Date());
+  // Ce que le passage a coute en Claude : non, appele, reprise (analyse reprise sans le rappeler), erreur
+  rapport.claude = claudeEtat;
   const suites = [...new Set([...suitesDemandees(controle, resultat.suites, registre), ...relanceApres(controle, resultat, registre)])];
   if (!ecrire) {
     // --essai : on montre tout, on n'ecrit rien (ni rapport, ni journal, ni etat)

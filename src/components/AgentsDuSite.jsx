@@ -3,10 +3,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { ChevronDown, ChevronRight, CircleDashed, FolderOpen, Play, RefreshCw, Trash2 } from "lucide-react";
 import { ICONES } from "./CarteSite";
-import { Bouton, BoutonCopier, EtatVide } from "./ui";
+import { Bouton, BoutonCopier, EtatVide, LogoClaude } from "./ui";
 import { couleurEtat, iconeEtat } from "../lib/statut";
 import { file } from "../lib/controles";
-import { JOURS_HISTORIQUE, STATUTS_RAPPORT, heureRapport, texteRapport } from "../lib/rapportsAgents";
+import { JOURS_HISTORIQUE, STATUTS_RAPPORT, USAGES_CLAUDE, heureRapport, texteRapport, usageClaude } from "../lib/rapportsAgents";
 import { COULEUR_EN_COURS, dureeRapport, etatNiveau, etatRapport, libelleNiveau } from "../lib/vueAgents";
 import { tracer } from "../lib/trace";
 
@@ -35,7 +35,8 @@ function titrePassage(p) {
   if (!p) return "Pas de passage";
   if (p.enCours) return "En cours";
   const heure = heureRapport(p.debut);
-  return `${jourLisible(p.date)}${heure ? ` à ${heure}` : ""} : ${STATUTS_RAPPORT[p.statut]?.libelle}`;
+  const claude = USAGES_CLAUDE[p.claude]?.utilise ? " · Claude utilisé" : " · sans Claude";
+  return `${jourLisible(p.date)}${heure ? ` à ${heure}` : ""} : ${STATUTS_RAPPORT[p.statut]?.libelle}${claude}`;
 }
 
 /** Les derniers passages d'une tache, un carre chacun (gris : vide, bleu : tourne en ce moment). */
@@ -63,6 +64,7 @@ function DetailRapport({ rapport, ouvert, onBasculer }) {
   const duree = dureeRapport(rapport.debut, rapport.fin);
   const fichier = rapport.fichierSuivi ?? rapport.chemin;
   const Chevron = ouvert ? ChevronDown : ChevronRight;
+  const usage = USAGES_CLAUDE[usageClaude(rapport)];
   return (
     <li className="rounded-lg border border-bord bg-surface-2/40">
       <div className="flex items-center gap-2 px-3 py-2">
@@ -80,6 +82,7 @@ function DetailRapport({ rapport, ouvert, onBasculer }) {
             {duree && ` · ${duree}`}
           </span>
         </button>
+        <LogoClaude utilise={usage.utilise} titre={usage.libelle} />
         <span className="shrink-0 text-[11px]" style={{ color: couleurEtat(etat) }}>
           {STATUTS_RAPPORT[rapport.statut].libelle}
         </span>

@@ -132,7 +132,6 @@ export default function App() {
     agents: (
       <Agents
         sites={sites}
-        vues={vuesAgents}
         configTrouvee={agents.configTrouvee}
         dossierRapports={agents.dossier}
         controles={controles}

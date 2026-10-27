@@ -2,14 +2,14 @@
  * Onglet Agents (les reglages des taches), site par site. Fonctions pures : le
  * registre (controles et modeles, voir useControles) arrive deja lu.
  */
-import { domaine, rattacherSite } from "./rapportsAgents";
+import { rattacherSite } from "./rapportsAgents";
 
 /**
  * Les taches du registre regroupees par site (fiche `siteCle`), avec le nom et
- * la couleur du site du tableau de bord et son statut du jour (`vues`, voir
- * vueParSite). Les sites par nom ; dans un site, l'ordre du registre.
+ * la couleur du site du tableau de bord. Les sites par nom ; dans un site,
+ * l'ordre du registre.
  */
-export function groupesParSite(controles = [], sites = [], vues = []) {
+export function groupesParSite(controles = [], sites = []) {
   const groupes = new Map();
   for (const c of controles) {
     const cle = c.siteCle ?? c.site;
@@ -20,7 +20,6 @@ export function groupesParSite(controles = [], sites = [], vues = []) {
         nom: site?.nom ?? c.site,
         domaine: c.site,
         couleur: site?.couleur ?? null,
-        vue: vues.find((v) => v.cle === (domaine(c.site) || c.site)) ?? null,
         controles: [],
       });
     }

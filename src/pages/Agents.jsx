@@ -9,8 +9,8 @@ import { groupesParSite } from "../lib/reglagesAgents";
  * alors que les autres l'ont). Les statuts du jour et les rapports passes sont
  * dans la fiche de chaque site, ouverte depuis le tableau de bord.
  */
-export default function Agents({ sites = [], vues = [], configTrouvee = true, dossierRapports = "", controles = null }) {
-  const groupes = useMemo(() => groupesParSite(controles?.controles ?? [], sites, vues), [controles?.controles, sites, vues]);
+export default function Agents({ sites = [], configTrouvee = true, dossierRapports = "", controles = null }) {
+  const groupes = useMemo(() => groupesParSite(controles?.controles ?? [], sites), [controles?.controles, sites]);
 
   return (
     <div className="flex flex-col gap-5">

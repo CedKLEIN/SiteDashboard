@@ -211,3 +211,20 @@ describe("dates", () => {
     expect(heureRapport(null)).toBeNull();
   });
 });
+
+describe("usage de Claude par passage", () => {
+  it("lit le champ claude du rapport, sinon le devine a sa source", async () => {
+    const { USAGES_CLAUDE, usageClaude } = await import("./rapportsAgents");
+    expect(usageClaude({ claude: "appele", source: "script+claude" })).toBe("appele");
+    expect(usageClaude({ claude: "reprise", source: "script+claude" })).toBe("reprise");
+    expect(usageClaude({ claude: "session", source: "agent-claude" })).toBe("session");
+    // Agent arrete avant sa session : rien consomme
+    expect(usageClaude({ claude: "non", source: "agent-claude" })).toBe("arrete");
+    // Rapports d'avant le champ
+    expect(usageClaude({ source: "script" })).toBe("non");
+    expect(usageClaude({ source: "script+claude" })).toBe("appele");
+    expect(usageClaude({})).toBe("session");
+    expect(USAGES_CLAUDE.session.utilise).toBe(true);
+    expect(USAGES_CLAUDE.reprise.utilise).toBe(false);
+  });
+});

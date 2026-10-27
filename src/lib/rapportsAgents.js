@@ -67,6 +67,8 @@ export function lireRapport({ chemin, contenu, erreur } = {}) {
     resume: "",
     points: [],
     fichierSuivi: null,
+    source: null,
+    claude: null,
   };
 
   if (erreur || contenu == null) {
@@ -102,7 +104,35 @@ export function lireRapport({ chemin, contenu, erreur } = {}) {
       : `Statut inconnu « ${texte(donnees.statut) || "absent"} »${resume ? ` — ${resume}` : ""}`,
     points: normaliserPoints(donnees.points),
     fichierSuivi: texte(donnees.fichier) || null,
+    source: texte(donnees.source) || null,
+    claude: texte(donnees.claude) || null,
   };
+}
+
+/**
+ * Ce qu'un passage a demande a Claude, pour savoir quelles taches coutent :
+ * `session` (une session complete), `appele` (un script qui a fait analyser
+ * une anomalie nouvelle), `reprise` (anomalie deja analysee, Claude pas
+ * rappele), `erreur` (analyse demandee mais impossible) ou `non`. Les rapports
+ * d'avant ce champ se devinent a leur source ; sans source, c'etait un agent
+ * Claude (les seuls a deposer des rapports avant les scripts).
+ */
+export const USAGES_CLAUDE = {
+  session: { utilise: true, libelle: "Agent Claude : une session Claude complète à chaque passage (le plus coûteux)." },
+  appele: { utilise: true, libelle: "Script, mais une anomalie nouvelle : Claude a été appelé pour l'analyser (session courte)." },
+  reprise: { utilise: false, libelle: "Anomalie déjà analysée : l'analyse précédente est reprise, Claude n'a pas été rappelé." },
+  erreur: { utilise: false, libelle: "Claude devait analyser l'anomalie mais n'a pas pu être appelé." },
+  non: { utilise: false, libelle: "Script seul : rien de nouveau à analyser, Claude n'a pas été appelé." },
+  arrete: { utilise: false, libelle: "Agent Claude arrêté avant sa session (Claude ou Chrome indisponible) : rien consommé." },
+};
+
+export function usageClaude(rapport) {
+  const lu = rapport?.claude;
+  if (lu === "non" && rapport.source === "agent-claude") return "arrete";
+  if (USAGES_CLAUDE[lu]) return lu;
+  if (rapport?.source === "script+claude") return "appele";
+  if (rapport?.source === "script") return "non";
+  return "session";
 }
 
 /**

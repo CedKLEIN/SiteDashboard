@@ -85,6 +85,20 @@ describe("agents dans la fiche du site", () => {
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining("Indexation Google — denivio.fr"));
   });
 
+  it("chaque passage dit, logo Claude a l'appui, s'il a fait appel a Claude et pourquoi", () => {
+    const fichiers = [
+      fichier("denivio.fr", AUJOURDHUI, "sante", { titre: "Santé de la prod", statut: "ok", resume: "RAS", source: "script", claude: "non" }),
+      fichier("denivio.fr", HIER, "sante", { titre: "Santé de la prod", statut: "attention", resume: "404", source: "script+claude", claude: "appele" }),
+    ];
+    render(<AgentsDuSite vue={vue("Denivio", { fichiers })} />);
+    fireEvent.click(screen.getByRole("button", { name: /Santé de la prod/, expanded: false }));
+    expect(screen.getByRole("img", { name: /Script seul.*Claude n'a pas été appelé/ })).toBeTruthy();
+    expect(screen.getByRole("img", { name: /anomalie nouvelle : Claude a été appelé/ })).toBeTruthy();
+    // La frise le dit aussi au survol
+    expect(screen.getAllByTitle(/sans Claude$/).length).toBe(1);
+    expect(screen.getAllByTitle(/Claude utilisé$/).length).toBe(1);
+  });
+
   it("tout va bien : le resume a la place de la liste a faire", () => {
     render(<AgentsDuSite vue={vue("Rois & Empereurs")} />);
     expect(screen.queryByText("À faire")).toBeNull();

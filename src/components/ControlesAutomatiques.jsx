@@ -1,10 +1,8 @@
 import { useState } from "react";
 import { Bot, Clock, Play, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { Bouton, Interrupteur } from "./ui";
-import { PastilleStatut } from "./AgentsDuSite";
 import { JOURS_PROPOSES, composerCron, decomposerCron, file, horaireLisible } from "../lib/controles";
 import { couleurEtat } from "../lib/statut";
-import { STATUTS_SITE } from "../lib/vueAgents";
 import { manquesParSite } from "../lib/reglagesAgents";
 
 const ETATS = { ok: "ok", attention: "partiel", echec: "ko" };
@@ -316,9 +314,8 @@ function Alignement({ manques, onAjouter }) {
   );
 }
 
-/** Un site : sa barre de couleur, son statut du jour, ses taches et ce qui lui manque. */
+/** Un site : sa barre de couleur, ses taches et ce qui lui manque. */
 function GroupeSite({ groupe, controles, manques }) {
-  const statut = groupe.vue ? STATUTS_SITE[groupe.vue.statut] : null;
   return (
     <section className="relative overflow-hidden rounded-xl border border-bord bg-surface p-4 pl-5 shadow-sm">
       <span className="absolute inset-y-0 left-0 w-1.5" style={{ background: groupe.couleur ?? "#3a4570" }} aria-hidden="true" />
@@ -326,11 +323,6 @@ function GroupeSite({ groupe, controles, manques }) {
         <h2 className="text-base font-semibold">{groupe.nom}</h2>
         {groupe.domaine !== groupe.nom && <span className="text-xs text-texte-doux">{groupe.domaine}</span>}
         <span className="text-xs text-texte-doux">· {groupe.controles.length} tâche(s)</span>
-        {statut && (
-          <span className="ml-auto" title="Statut du jour : le détail est dans la fiche du site">
-            <PastilleStatut etat={statut.etat}>{statut.libelle}</PastilleStatut>
-          </span>
-        )}
       </header>
       <ul className="flex flex-col divide-y divide-bord/50">
         {groupe.controles.map((c) => (

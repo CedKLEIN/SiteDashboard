@@ -202,3 +202,38 @@ export function Interrupteur({ actif, onChanger, disabled = false, title, classN
     </label>
   );
 }
+
+/** Couleur de la marque Claude : un passage qui a fait appel a Claude. */
+export const COULEUR_CLAUDE = "#d97757";
+
+/**
+ * Logo de Claude (l'etoile a rayons), en SVG : orange si le passage a utilise
+ * Claude, gris pale sinon. `titre` est l'infobulle qui dit pourquoi.
+ */
+export function LogoClaude({ utilise = true, taille = 14, titre, className = "" }) {
+  const rayons = 12;
+  return (
+    <span title={titre} aria-label={titre} role="img" className={`inline-flex shrink-0 ${className}`}>
+      <svg
+        width={taille}
+        height={taille}
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        style={{ color: utilise ? COULEUR_CLAUDE : "var(--color-texte-doux)", opacity: utilise ? 1 : 0.35 }}
+      >
+        {Array.from({ length: rayons }, (_, i) => (
+          <rect
+            key={i}
+            x="11"
+            y={i % 2 ? 3.5 : 1.5}
+            width="2"
+            height={i % 2 ? 8.5 : 10.5}
+            rx="1"
+            fill="currentColor"
+            transform={`rotate(${(360 / rayons) * i} 12 12)`}
+          />
+        ))}
+      </svg>
+    </span>
+  );
+}

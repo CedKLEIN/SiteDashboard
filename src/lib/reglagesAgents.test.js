@@ -10,14 +10,12 @@ const controles = [
 describe("reglages des agents par site", () => {
   it("regroupe les taches par fiche de site, avec le nom et la couleur du tableau de bord", () => {
     const sites = [{ id: 1, nom: "Denivio", url: "https://www.denivio.fr", couleur: "#0f0" }];
-    const vues = [{ cle: "denivio.fr", statut: "ok" }];
-    const groupes = groupesParSite(controles, sites, vues);
+    const groupes = groupesParSite(controles, sites);
     expect(groupes.map((g) => [g.nom, g.controles.map((c) => c.id)])).toEqual([
       ["Denivio", ["seo-d", "bing-d"]],
       ["roisempereurs.fr", ["seo-h"]],
     ]);
-    expect(groupes[0]).toMatchObject({ couleur: "#0f0", vue: vues[0] });
-    expect(groupes[1].vue).toBeNull();
+    expect(groupes[0]).toMatchObject({ couleur: "#0f0" });
   });
 
   it("ce que les autres sites ont et pas celui-ci, sauf modele inapplicable", () => {
