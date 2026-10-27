@@ -4,7 +4,7 @@ import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { Download, FolderOpen, HardDriveDownload, RefreshCw } from "lucide-react";
 import { avancementMiseAJour, commitCourt, lancerMiseAJour, lireJournalMiseAJour, resumeMiseAJour } from "../lib/miseAJour";
-import { Bouton, BoutonCopier, Carte, Selecteur } from "../components/ui";
+import { Bouton, BoutonCopier, Carte, Interrupteur, Selecteur } from "../components/ui";
 import { ecrirePreference, lirePreference } from "../lib/queries";
 import {
   JOURS_ENTRE_SAUVEGARDES,
@@ -171,15 +171,9 @@ function Demarrage() {
 
   return (
     <Carte titre="Démarrage">
-      <label className="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={Boolean(actif)}
-          disabled={actif === null}
-          onChange={(e) => basculer(e.target.checked)}
-        />
+      <Interrupteur actif={Boolean(actif)} disabled={actif === null} onChanger={basculer} className="text-sm">
         Démarrer SiteDashboard avec Windows
-      </label>
+      </Interrupteur>
       <p className="mt-2 text-xs text-texte-doux">
         La supervision, les contrôles et les agents ne tournent que pendant que l&apos;application
         est ouverte : la lancer avec Windows évite de rater un passage.
@@ -222,11 +216,10 @@ function Notifications() {
 
   return (
     <Carte titre="Notifications">
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={actives} onChange={(e) => basculer(e.target.checked)} />
+      <Interrupteur actif={actives} onChanger={basculer} className="text-sm">
         Notifier dans Windows quand un site tombe ou revient, et quand un agent est bloqué, pas
         lancé ou en échec
-      </label>
+      </Interrupteur>
       <p className="mt-2 text-xs text-texte-doux">
         Une seule notification par changement : un site en panne ne sonne pas à chaque minute.
       </p>

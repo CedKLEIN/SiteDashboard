@@ -181,7 +181,7 @@ export function resumeSite(taches) {
  * Une tache qui tourne garde son niveau du jour (le rapport precedent compte
  * tant que le nouveau n'est pas ecrit) mais se montre en cours.
  *
- * Renvoie [{ cle, nom, couleur, statut, resume, aFaire, taches }], les sites
+ * Renvoie [{ cle, siteId, nom, couleur, statut, resume, aFaire, taches }], les sites
  * qui demandent une action d'abord.
  */
 export function vueParSite({ rapports = [], attendus = [], controles = [], sites = [], enCours = [], aujourdhui = new Date() }) {
@@ -232,6 +232,7 @@ export function vueParSite({ rapports = [], attendus = [], controles = [], sites
       const site = rattacherSite(nomSite, sites);
       return {
         cle,
+        siteId: site?.id ?? null,
         nom: site?.nom ?? nomSite,
         couleur: site?.couleur ?? null,
         statut: statutSite(liste),

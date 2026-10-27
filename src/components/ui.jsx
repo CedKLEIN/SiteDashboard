@@ -163,3 +163,42 @@ export function SelecteurSites({ label, sites, selection, onBasculer, aide }) {
     </div>
   );
 }
+
+/**
+ * Interrupteur on/off (switch), a la place d'une case a cocher. Un vrai
+ * bouton `role="switch"` : clavier, lecteur d'ecran et `aria-checked` compris.
+ * Avec `children`, le libelle est cliquable aussi.
+ */
+export function Interrupteur({ actif, onChanger, disabled = false, title, className = "", children, ...props }) {
+  const bouton = (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={Boolean(actif)}
+      disabled={disabled}
+      title={title}
+      onClick={(e) => {
+        e.stopPropagation();
+        onChanger(!actif);
+      }}
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        actif ? "border-accent bg-accent" : "border-bord bg-surface-2"
+      } ${children ? "" : className}`}
+      {...props}
+    >
+      <span
+        aria-hidden="true"
+        className={`inline-block size-3.5 rounded-full bg-white shadow transition-transform ${
+          actif ? "translate-x-[18px]" : "translate-x-[2px]"
+        }`}
+      />
+    </button>
+  );
+  if (!children) return bouton;
+  return (
+    <label className={`flex items-center gap-2.5 ${disabled ? "" : "cursor-pointer"} ${className}`}>
+      {bouton}
+      <span>{children}</span>
+    </label>
+  );
+}

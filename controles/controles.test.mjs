@@ -9,7 +9,7 @@ import { avecAnalyse } from "./lancer.mjs";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { CONSIGNE_TEST_CHROME, chromeConnecte, construireConsigne, messageChromeDeconnecte, preambule } from "./lib/agent.mjs";
+import { CONSIGNE_TEST_CHROME, chromeConnecte, construireConsigne, messageChromeDeconnecte, preambule, sansRangementOnglets } from "./lib/agent.mjs";
 import { DOSSIER_MODELES, ajouterAgent, applicables, chargerTout, composer, identifiant, pourInterface, rendre, retirerAgent } from "./lib/registre.mjs";
 import { chromeDansListe, cookiesClaudeEffaces, fermerChrome, trouverChrome } from "./lib/chrome.mjs";
 
@@ -20,7 +20,7 @@ describe("agents Claude", () => {
     expect(texte).toContain("Session lancée automatiquement par SiteDashboard (tâche « Indexation Google », site denivio.fr), le 26/10/2026 à 09:00");
     expect(texte).toContain("Produis TOUJOURS le rapport JSON");
     expect(texte).toContain("mcp__claude-in-chrome__*");
-    expect(texte).toContain("ferme chacun de tes onglets");
+    expect(texte).toContain("ferme les onglets qui te restent");
     expect(preambule({ ...controle, chrome: false })).not.toContain("Chrome");
   });
 });
@@ -44,8 +44,33 @@ describe("test de connexion a Chrome avant un agent", () => {
   it("demande a l'agent Chrome de fermer tous ses onglets a la fin", () => {
     const texte = preambule({ titre: "Indexation Google", site: "denivio.fr", chrome: true });
     expect(texte).toContain("mcp__claude-in-chrome__tabs_close_mcp");
-    expect(texte).toContain("DERNIÈRE ÉTAPE OBLIGATOIRE");
+    expect(texte).toContain("DERNIÈRE ÉTAPE");
+    expect(texte).toContain("n'en parle ni dans le rapport");
     expect(preambule({ titre: "Santé", site: "denivio.fr" })).not.toContain("tabs_close_mcp");
+  });
+
+  it("retire du rapport les points sur des onglets restes ouverts, pas le reste", () => {
+    const rapport = {
+      statut: "attention",
+      resume: "8 demandes Google acceptées.",
+      points: [
+        { niveau: "ok", texte: "8 demandes Google acceptées" },
+        { niveau: "attention", texte: "Extension Chrome déconnectée en fin de run : 1 onglet (Bing, groupe Claude) n'a pas pu être fermé" },
+      ],
+    };
+    expect(sansRangementOnglets(rapport)).toEqual({
+      statut: "ok",
+      resume: "8 demandes Google acceptées.",
+      points: [{ niveau: "ok", texte: "8 demandes Google acceptées" }],
+    });
+    // Un autre point a regarder garde le statut ; un echec reste un echec
+    const autre = { ...rapport, points: [...rapport.points, { niveau: "attention", texte: "/cols répond 404" }] };
+    expect(sansRangementOnglets(autre).statut).toBe("attention");
+    expect(sansRangementOnglets({ ...rapport, statut: "echec" }).statut).toBe("echec");
+    // Le resume qui n'en parlait que prend le premier point restant
+    expect(sansRangementOnglets({ ...rapport, resume: "Un onglet n'a pas pu être fermé." }).resume).toBe("8 demandes Google acceptées");
+    // Rien a retirer : rien a reecrire
+    expect(sansRangementOnglets({ statut: "ok", resume: "RAS", points: [{ niveau: "ok", texte: "Tableau de bord Bing lu" }] })).toBeNull();
   });
 
   it("repere un Chrome qui efface les cookies de claude.ai a la fermeture", () => {
@@ -377,6 +402,21 @@ describe("registre : modeles appliques aux sites", () => {
     expect(sante).toMatchObject({ site: "a.fr", titre: "Santé", cron: "45 7 * * *", fichierSuivi: "C:\\p\\a\\sante-a.md", type: "script" });
     expect(sante.erreur).toBeUndefined();
     expect(idees).toMatchObject({ cron: "0 10 * * 6", chrome: true, dureeMaxMin: 90, parametres: { corriger: true }, soumissionBingAuto: true });
+  });
+
+  it("l'agent SEO s'appelle « SEO Google » sur un site dont Bing passe par l'API", () => {
+    const seo = { id: "seo", titre: "SEO Google + Bing", titreBingParApi: "SEO Google", type: "claude", consigne: "seo.md", requis: ["url"] };
+    const [seoA, , seoB] = composer({
+      modeles: [...modeles, seo],
+      sites,
+      agents: [
+        { id: "seo-a", modele: "seo", site: "a" },
+        { id: "bing-a", modele: "bing", site: "a" },
+        { id: "seo-b", modele: "seo", site: "b" },
+      ],
+    });
+    expect(seoA).toMatchObject({ titre: "SEO Google", soumissionBingAuto: true });
+    expect(seoB).toMatchObject({ titre: "SEO Google + Bing", soumissionBingAuto: false });
   });
 
   it("compose une tache sans horaire, avec ce qui la declenche", () => {

@@ -76,9 +76,12 @@ export function composer({ modeles, sites, agents }) {
     const site = parSite.get(agent.site);
     const base = { id: agent.id, modele: agent.modele, siteCle: agent.site, site: site?.domaine ?? agent.site };
     if (!modele) return { ...base, titre: agent.titre ?? agent.id, type: "script", cron: agent.cron ?? "0 7 * * *", erreur: `modèle inconnu : ${agent.modele}` };
+    // Un agent Claude ne soumet rien a Bing si un controle Bing le fait deja pour ce site
+    const bingParApi = agents.some((a) => a.modele === "bing" && a.site === agent.site);
     const commun = {
       ...base,
-      titre: agent.titre ?? modele.titre,
+      // Le titre dit ce que l'agent fait vraiment : « SEO Google » quand Bing passe par l'API
+      titre: agent.titre ?? ((bingParApi && modele.titreBingParApi) || modele.titre),
       type: modele.type,
       // null : pas d'horaire, lancee a la main ou a la demande d'un autre controle
       cron: agent.cron ?? modele.cron ?? null,
@@ -93,8 +96,7 @@ export function composer({ modeles, sites, agents }) {
     const absents = manquants(modele, site);
     return {
       ...commun,
-      // Un agent Claude ne soumet rien a Bing si un controle Bing le fait deja pour ce site
-      soumissionBingAuto: agents.some((a) => a.modele === "bing" && a.site === agent.site),
+      soumissionBingAuto: bingParApi,
       projet: site.projet,
       fichierSuivi: modele.suivi ? path.join(site.projet ?? "", remplir(modele.suivi, { site })) : null,
       ...(absents.length ? { erreur: `fiche ${site.cle} incomplète : ${absents.join(", ")}` } : {}),
