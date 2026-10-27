@@ -242,7 +242,7 @@ function LigneTache({ controle, dernier, resultat, enCours, onLancer, onHoraire,
             className="shrink-0 px-2 py-1 text-xs"
             disabled={actif}
             onClick={() => setRetrait(true)}
-            title="Retirer cette tâche (ses rapports passés restent)"
+            title="Retirer cette tâche et son historique"
             aria-label={`Retirer ${controle.titre} (${controle.site})`}
           >
             <Trash2 size={13} />

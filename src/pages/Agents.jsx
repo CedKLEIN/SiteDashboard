@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { ArrowLeft, ChevronDown, ChevronRight, CircleDashed, FolderOpen, Play, RefreshCw, Settings2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, CircleDashed, FolderOpen, Play, RefreshCw, Settings2, Trash2 } from "lucide-react";
 import { ICONES } from "../components/CarteSite";
 import ControlesAutomatiques from "../components/ControlesAutomatiques";
 import { Bouton, BoutonCopier, Carte, EtatVide } from "../components/ui";
@@ -188,8 +188,47 @@ function CarteSiteAgents({ vue, onOuvrir }) {
   );
 }
 
+/**
+ * Efface l'historique d'une tache hors du registre (une ancienne tache Claude) :
+ * celles du registre perdent le leur en etant retirees dans les reglages.
+ */
+function EffacerHistorique({ tache, onEfface }) {
+  const [confirmation, setConfirmation] = useState(false);
+  const [erreur, setErreur] = useState(null);
+  async function effacer() {
+    try {
+      await invoke("supprimer_rapports_agent", { agent: tache.id });
+      onEfface();
+    } catch (e) {
+      setErreur(String(e));
+      tracer("agents", `historique de ${tache.id} non efface: ${e}`);
+    }
+  }
+  if (erreur) return <span className="text-depense">Effacement impossible : {erreur}</span>;
+  return confirmation ? (
+    <span className="flex items-center gap-1">
+      <Bouton variante="danger" className="px-2 py-1 text-xs" onClick={effacer}>
+        Effacer
+      </Bouton>
+      <Bouton variante="fantome" className="px-2 py-1 text-xs" onClick={() => setConfirmation(false)}>
+        Garder
+      </Bouton>
+    </span>
+  ) : (
+    <Bouton
+      variante="fantome"
+      className="flex items-center gap-1.5 px-2 py-1 text-xs"
+      onClick={() => setConfirmation(true)}
+      title="Efface tous les rapports de cette tâche"
+    >
+      <Trash2 size={13} />
+      Effacer l'historique
+    </Bouton>
+  );
+}
+
 /** Niveau 3 : une tache ouverte, ses actions et ses rapports passes. */
-function DetailTache({ tache, controles }) {
+function DetailTache({ tache, controles, onEfface }) {
   const controle = tache.controle;
   const voie = controle ? file(controle) : null;
   const enCours = voie && controles?.enCours[voie] === controle.id;
@@ -211,6 +250,7 @@ function DetailTache({ tache, controles }) {
           </Bouton>
         )}
         {tache.attendu?.message && !tache.attendu.rapport && <span>{tache.attendu.message}</span>}
+        {!controle && !tache.enCours && tache.rapports.length > 0 && <EffacerHistorique tache={tache} onEfface={onEfface} />}
       </div>
       {tache.rapports.length === 0 ? (
         <p className="text-xs text-texte-doux">Aucun rapport sur les {JOURS_HISTORIQUE} derniers jours.</p>
@@ -225,7 +265,7 @@ function DetailTache({ tache, controles }) {
   );
 }
 
-function LigneTache({ tache, ouverte, onBasculer, controles }) {
+function LigneTache({ tache, ouverte, onBasculer, controles, onEfface }) {
   const Chevron = ouverte ? ChevronDown : ChevronRight;
   const etat = etatNiveau(tache.niveau);
   return (
@@ -245,13 +285,13 @@ function LigneTache({ tache, ouverte, onBasculer, controles }) {
         <span className="hidden w-40 shrink-0 truncate text-[11px] text-texte-doux sm:block">{tache.planning ?? ""}</span>
         <Frise passages={tache.frise} />
       </button>
-      {ouverte && <DetailTache tache={tache} controles={controles} />}
+      {ouverte && <DetailTache tache={tache} controles={controles} onEfface={onEfface} />}
     </li>
   );
 }
 
 /** Niveau 2 : un site, ce qu'il y a a faire, puis ses taches. */
-function DetailSiteAgents({ vue, controles, onRetour }) {
+function DetailSiteAgents({ vue, controles, onRetour, onEfface }) {
   const [ouvertes, setOuvertes] = useState(() => new Set());
   const statut = STATUTS_SITE[vue.statut];
   const basculer = (id) =>
@@ -296,7 +336,7 @@ function DetailSiteAgents({ vue, controles, onRetour }) {
 
       <ul className="flex flex-col gap-2">
         {vue.taches.map((t) => (
-          <LigneTache key={t.id} tache={t} ouverte={ouvertes.has(t.id)} onBasculer={() => basculer(t.id)} controles={controles} />
+          <LigneTache key={t.id} tache={t} ouverte={ouvertes.has(t.id)} onBasculer={() => basculer(t.id)} controles={controles} onEfface={onEfface} />
         ))}
       </ul>
     </div>
@@ -347,6 +387,18 @@ export default function Agents({ sites = [], rafraichissement, attendus = [], co
     [dossier.fichiers, attendus, controles?.controles, controles?.enCours, sites],
   );
   const vue = vues.find((v) => v.cle === siteOuvert);
+  // Retirer une tache efface son historique : la liste des rapports est relue
+  const controlesVus = useMemo(
+    () =>
+      controles && {
+        ...controles,
+        retirer: async (id) => {
+          await controles.retirer(id);
+          charger();
+        },
+      },
+    [controles, charger],
+  );
 
   return (
     <div className="flex flex-col gap-5">
@@ -377,7 +429,7 @@ export default function Agents({ sites = [], rafraichissement, attendus = [], co
       )}
 
       {vue ? (
-        <DetailSiteAgents key={vue.cle} vue={vue} controles={controles} onRetour={() => setSiteOuvert(null)} />
+        <DetailSiteAgents key={vue.cle} vue={vue} controles={controlesVus} onRetour={() => setSiteOuvert(null)} onEfface={charger} />
       ) : (
         <>
           {vues.length === 0 && !chargement && !erreur && (
@@ -404,7 +456,7 @@ export default function Agents({ sites = [], rafraichissement, attendus = [], co
             </button>
             {reglages && (
               <div className="mt-3">
-                <ControlesAutomatiques controles={controles} />
+                <ControlesAutomatiques controles={controlesVus} />
               </div>
             )}
           </div>

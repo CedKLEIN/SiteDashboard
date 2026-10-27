@@ -104,6 +104,45 @@ pub(crate) fn lire_rapports(racine: &std::path::Path, depuis: &str) -> DossierRa
     resultat
 }
 
+/// Efface tous les rapports d'un agent, sur tous les sites et tous les jours:
+/// une tache retiree ne laisse pas un historique qui la fait vivre a l'ecran.
+/// Renvoie le nombre de fichiers effaces.
+#[tauri::command]
+pub fn supprimer_rapports_agent(app: tauri::AppHandle, agent: String) -> Result<usize, String> {
+    if !crate::controles::identifiant_valide(&agent) {
+        return Err("identifiant invalide".to_string());
+    }
+    supprimer_rapports(&dossier_rapports(&app)?, &agent)
+}
+
+pub(crate) fn supprimer_rapports(racine: &std::path::Path, agent: &str) -> Result<usize, String> {
+    // `<agent>.json`, et `<agent>@HHMMSS.json` pour les passages precedents du jour
+    let est_de_l_agent = |nom: &str| {
+        nom.strip_suffix(".json")
+            .is_some_and(|base| base == agent || base.strip_prefix(agent).is_some_and(|r| r.starts_with('@')))
+    };
+    let mut effaces = 0;
+    for dossier_site in sous_dossiers(racine) {
+        for dossier_jour in sous_dossiers(&dossier_site) {
+            let Ok(entrees) = std::fs::read_dir(&dossier_jour) else {
+                continue;
+            };
+            for entree in entrees.filter_map(Result::ok) {
+                let chemin = entree.path();
+                let nom = chemin.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+                if chemin.is_file() && est_de_l_agent(nom) {
+                    std::fs::remove_file(&chemin).map_err(|e| format!("{}: {e}", chemin.display()))?;
+                    effaces += 1;
+                }
+            }
+            // Un jour vide n'a plus rien a montrer (echoue sans bruit s'il reste des fichiers)
+            let _ = std::fs::remove_dir(&dossier_jour);
+        }
+        let _ = std::fs::remove_dir(&dossier_site);
+    }
+    Ok(effaces)
+}
+
 #[derive(serde::Serialize, Default)]
 pub struct TachePlanifiee {
     id: String,
@@ -210,6 +249,33 @@ mod tests {
         assert_eq!(resultat.fichiers.len(), 1);
         assert!(resultat.fichiers[0].chemin.ends_with("sante.json"));
         assert_eq!(resultat.fichiers[0].contenu.as_deref(), Some(r#"{"statut":"ok"}"#));
+    }
+
+    #[test]
+    fn supprime_tous_les_rapports_d_un_agent_et_seulement_les_siens() {
+        let racine = std::env::temp_dir().join(format!("rapports-suppression-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&racine);
+        let ecrire = |chemin: &str| {
+            let p = racine.join(chemin);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, "{}").unwrap();
+        };
+        ecrire("denivio.fr/2026-10-24/sentry.json");
+        ecrire("denivio.fr/2026-10-25/sentry.json");
+        ecrire("denivio.fr/2026-10-25/sentry@091200.json");
+        ecrire("denivio.fr/2026-10-25/sentry-hebdo.json");
+        ecrire("denivio.fr/2026-10-25/sante.json");
+
+        let effaces = supprimer_rapports(&racine, "sentry").unwrap();
+        let reste = lire_rapports(&racine, "2026-01-01");
+        let jour_vide_parti = !racine.join("denivio.fr/2026-10-24").exists();
+        let _ = std::fs::remove_dir_all(&racine);
+
+        assert_eq!(effaces, 3);
+        assert!(jour_vide_parti);
+        let mut noms: Vec<_> = reste.fichiers.iter().map(|f| f.chemin.rsplit(['/', '\\']).next().unwrap().to_string()).collect();
+        noms.sort();
+        assert_eq!(noms, ["sante.json", "sentry-hebdo.json"]);
     }
 
     #[test]

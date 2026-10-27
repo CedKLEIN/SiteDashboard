@@ -203,6 +203,8 @@ export function useControles(rafraichissement, onTermine) {
   const retirer = useCallback(
     async (id) => {
       await invoke("registre_agents", { action: "retirer", args: [id] });
+      // L'historique part avec la tache : sinon elle reste a l'ecran par ses anciens rapports
+      await invoke("supprimer_rapports_agent", { agent: id }).catch((e) => tracer("controles", `historique de ${id} non efface: ${e}`));
       recharger();
     },
     [recharger],

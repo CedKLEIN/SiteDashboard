@@ -22,7 +22,7 @@ pub struct ResultatControle {
 
 /// Identifiants d'agent, de modele et de site : minuscules, chiffres et tirets.
 /// node les recoit en arguments (sans shell) ; on refuse tout le reste quand meme.
-fn identifiant_valide(id: &str) -> bool {
+pub(crate) fn identifiant_valide(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 80
         && id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')

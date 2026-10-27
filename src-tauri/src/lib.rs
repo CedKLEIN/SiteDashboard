@@ -154,6 +154,7 @@ pub fn run() {
             icones::importer_image,
             agents::lire_rapports_agents,
             agents::lire_taches_planifiees,
+            agents::supprimer_rapports_agent,
             devises::taux_change,
             sauvegarde::chemin_sauvegarde,
             sauvegarde::nettoyer_sauvegardes,

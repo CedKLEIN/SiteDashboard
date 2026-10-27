@@ -132,6 +132,41 @@ describe("page Agents par site", () => {
     expect(within(ligne).getByTitle("En cours").style.background).toBe("rgb(56, 189, 248)");
   });
 
+  it("une tache hors du registre peut perdre son historique, apres confirmation", async () => {
+    let fichiers = FICHIERS;
+    invoke.mockImplementation(async (commande, args) => {
+      if (commande === "supprimer_rapports_agent") {
+        fichiers = fichiers.filter((f) => !f.chemin.endsWith(`\\${args.agent}.json`));
+        return 2;
+      }
+      return { dossier: RACINE, existe: true, fichiers };
+    });
+    const controles = {
+      controles: [{ id: "sante", site: "denivio.fr", titre: "Santé de la prod", cron: "45 7 * * *", type: "script" }],
+      modeles: [],
+      derniers: {},
+      resultats: {},
+      enCours: {},
+      erreurRegistre: null,
+      lancer: vi.fn(),
+    };
+    render(<Agents sites={SITES} rafraichissement={0} controles={controles} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Denivio/ }));
+
+    // Une tache du registre se retire dans les reglages, pas ici
+    fireEvent.click(screen.getByRole("button", { name: /Santé de la prod/, expanded: false }));
+    expect(screen.queryByRole("button", { name: /Effacer l'historique/ })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Indexation Google/, expanded: false }));
+    fireEvent.click(screen.getByRole("button", { name: /Effacer l'historique/ }));
+    expect(invoke).not.toHaveBeenCalledWith("supprimer_rapports_agent", expect.anything());
+    fireEvent.click(screen.getByRole("button", { name: "Effacer" }));
+
+    expect(await screen.findByText("Tout va bien")).toBeTruthy();
+    expect(invoke).toHaveBeenCalledWith("supprimer_rapports_agent", { agent: "indexation" });
+    expect(screen.queryByText("Indexation Google")).toBeNull();
+  });
+
   it("les reglages des taches sont replies en bas", async () => {
     invoke.mockResolvedValue({ dossier: RACINE, existe: true, fichiers: FICHIERS });
     const controles = { controles: [], modeles: [], derniers: {}, resultats: {}, enCours: {}, erreurRegistre: null };
