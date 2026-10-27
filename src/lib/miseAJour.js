@@ -80,6 +80,38 @@ export function avancementMiseAJour(journal) {
   return {
     etape: etapes.at(-1) ?? "Démarrage",
     echec,
-    fin: echec ? lignes.filter((l) => l.trim() !== MARQUE_ECHEC).slice(-12).join("\n") : "",
+    fin: echec ? lignes.filter((l) => l.trim() !== MARQUE_ECHEC).slice(-25).join("\n") : "",
+    cause: echec ? causeProbable(lignes.join("\n")) : null,
   };
+}
+
+/**
+ * La cause d'un echec en clair, d'apres le journal : la fin n'est souvent
+ * qu'une pile Node, la vraie raison est plus haut (message de git, de npm...).
+ */
+export function causeProbable(journal) {
+  const texte = String(journal ?? "");
+  if (/would be overwritten by merge|Your local changes/i.test(texte)) {
+    return "Des fichiers modifiés sur ce PC bloquent la récupération des commits (git pull).";
+  }
+  if (/Not possible to fast-forward|diverg/i.test(texte)) {
+    return "La branche locale a divergé du dépôt : git pull --ff-only refuse de fusionner.";
+  }
+  if (/Could not resolve host|unable to access|Authentication failed|could not read Username/i.test(texte)) {
+    return "Le dépôt GitHub est injoignable (réseau ou identifiants git).";
+  }
+  if (/failed to resolve import|Cannot find (package|module)|ERR_MODULE_NOT_FOUND/i.test(texte)) {
+    return "Une dépendance npm manque : lance « npm.cmd ci --legacy-peer-deps » dans le dépôt.";
+  }
+  if (/error\[E\d+\]|could not compile/i.test(texte)) return "La compilation Rust a échoué.";
+  if (/npm (ERR|error)/i.test(texte)) return "npm a échoué (installation des dépendances ou build).";
+  if (/EBUSY|EPERM|being used by another process/i.test(texte)) {
+    return "Un fichier est verrouillé par un autre programme (appli encore ouverte, antivirus…).";
+  }
+  return null;
+}
+
+/** Diagnostic complet (versions, etat du depot, journal entier), pret a coller. */
+export function diagnosticMiseAJour() {
+  return invoke("diagnostic_mise_a_jour");
 }

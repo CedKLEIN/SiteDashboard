@@ -160,6 +160,59 @@ pub fn journal_mise_a_jour() -> String {
     String::from_utf8_lossy(&texte[debut..]).into_owned()
 }
 
+/// Sortie d'une commande quelconque, sans fenetre, pour le diagnostic.
+fn sortie(programme: &str, args: &[&str], dossier: &Path) -> String {
+    let mut commande = Command::new(programme);
+    commande.args(args).current_dir(dossier);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        commande.creation_flags(SANS_FENETRE);
+    }
+    match commande.output() {
+        Ok(s) => {
+            let mut texte = String::from_utf8_lossy(&s.stdout).trim().to_string();
+            let erreur = String::from_utf8_lossy(&s.stderr).trim().to_string();
+            if !erreur.is_empty() {
+                texte = format!("{texte}\n[stderr] {erreur}").trim().to_string();
+            }
+            texte
+        }
+        Err(e) => format!("(introuvable : {e})"),
+    }
+}
+
+/// Tout ce qu'il faut pour comprendre une mise a jour ratee, en un texte a
+/// copier : versions, etat du depot, outils, et le journal complet (60 Ko au
+/// plus) — l'ecran n'en montre que la fin, souvent une pile Node sans la cause.
+#[tauri::command]
+pub fn diagnostic_mise_a_jour() -> String {
+    let depot = depot();
+    let journal = std::fs::read(journal()).unwrap_or_default();
+    let debut = journal.len().saturating_sub(60_000);
+    let npm = if cfg!(windows) { "npm.cmd" } else { "npm" };
+    let shell: (&str, Vec<&str>) = if cfg!(windows) { ("cmd.exe", vec!["/c", "ver"]) } else { ("uname", vec!["-a"]) };
+    let blocs = [
+        ("Version installée", COMMIT_INSTALLE.to_string()),
+        ("Dépôt", depot.display().to_string()),
+        ("git status -sb", sortie("git", &["status", "-sb"], &depot)),
+        ("git log (local)", sortie("git", &["log", "--oneline", "-5"], &depot)),
+        ("git log (distant)", sortie("git", &["log", "--oneline", "-5", "@{u}"], &depot)),
+        ("git diff --stat", sortie("git", &["diff", "--stat"], &depot)),
+        ("node", sortie("node", &["--version"], &depot)),
+        ("npm", sortie(npm, &["--version"], &depot)),
+        ("cargo", sortie("cargo", &["--version"], &depot)),
+        ("rustc", sortie("rustc", &["--version"], &depot)),
+        ("Système", sortie(shell.0, &shell.1, &depot)),
+        ("Journal de la mise à jour", String::from_utf8_lossy(&journal[debut..]).trim().to_string()),
+    ];
+    let mut texte = String::from("=== Diagnostic SiteDashboard (mise à jour) ===\n");
+    for (titre, contenu) in blocs {
+        texte.push_str(&format!("\n--- {titre} ---\n{contenu}\n"));
+    }
+    texte
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

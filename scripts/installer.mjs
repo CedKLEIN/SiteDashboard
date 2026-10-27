@@ -36,11 +36,42 @@ const installeur = path.join(
 );
 const installe = path.join(process.env.LOCALAPPDATA ?? "", productName, EXE);
 
+/**
+ * Fichiers generes que la compilation reecrit parfois sur ce PC (Cargo.lock
+ * selon la version de cargo, package-lock.json selon celle de npm). Modifies
+ * localement, ils bloquaient « git pull --ff-only » des qu'un commit les
+ * changeait aussi : on les remet tels que commites, ils seront regeneres.
+ */
+const GENERES = ["src-tauri/Cargo.lock", "package-lock.json"];
+
+function preparerDepot() {
+  const modifies = execFileSync("git", ["status", "--porcelain"], { cwd: RACINE, encoding: "utf8" })
+    .split(/\r?\n/)
+    .filter(Boolean);
+  if (modifies.length === 0) return;
+  console.log("État du dépôt avant récupération :");
+  for (const ligne of modifies) console.log(`  ${ligne}`);
+  const generes = modifies.map((l) => l.slice(3).trim()).filter((f) => GENERES.includes(f));
+  if (generes.length) {
+    console.log(`Fichiers générés remis tels que commités : ${generes.join(", ")}`);
+    execFileSync("git", ["checkout", "--", ...generes], { cwd: RACINE, stdio: "inherit" });
+  }
+}
+
 if (!process.argv.includes("--sans-build")) {
   // Les commits pousses d'ailleurs d'abord. --ff-only : jamais de fusion ;
   // une branche qui a diverge arrete la mise a jour, a regler a la main.
   etape("Récupération des derniers commits");
-  execFileSync("git", ["pull", "--ff-only"], { cwd: RACINE, stdio: "inherit" });
+  preparerDepot();
+  try {
+    execFileSync("git", ["pull", "--ff-only"], { cwd: RACINE, stdio: "inherit" });
+  } catch (e) {
+    console.error(
+      "\nÉchec de « git pull --ff-only ». Causes possibles : un fichier modifié sur ce PC que les nouveaux commits\n" +
+        "changent aussi (voir « git status » ci-dessus), ou une branche locale qui a divergé du dépôt.",
+    );
+    throw e;
+  }
 
   etape("Compilation de la nouvelle version (quelques minutes)");
   // shell: un .cmd ne se lance pas sans shell depuis Node sous Windows

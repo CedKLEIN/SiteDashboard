@@ -46,7 +46,7 @@ describe("avancementMiseAJour", () => {
   ].join("\r\n");
 
   it("l'etape en cours est la derniere du script, pas une ligne de npm", () => {
-    expect(avancementMiseAJour(JOURNAL)).toEqual({ etape: "Compilation de la nouvelle version (quelques minutes)", echec: false, fin: "" });
+    expect(avancementMiseAJour(JOURNAL)).toEqual({ etape: "Compilation de la nouvelle version (quelques minutes)", echec: false, fin: "", cause: null });
     expect(avancementMiseAJour("").etape).toBe("Démarrage");
   });
 
@@ -55,5 +55,15 @@ describe("avancementMiseAJour", () => {
     expect(r.echec).toBe(true);
     expect(r.fin.split("\n").at(-1)).toBe("error: could not compile");
     expect(r.fin).not.toContain("MISE_A_JOUR_ECHEC");
+  });
+});
+
+describe("cause probable d'un echec", () => {
+  it("reconnait les echecs courants", async () => {
+    const { causeProbable } = await import("./miseAJour");
+    expect(causeProbable("error: Your local changes to the following files would be overwritten by merge:\n\tsrc-tauri/Cargo.lock")).toMatch(/fichiers modifiés/);
+    expect(causeProbable("fatal: Not possible to fast-forward, aborting.")).toMatch(/divergé/);
+    expect(causeProbable("[vite]: Rollup failed to resolve import \"@fontsource-variable/inter\"")).toMatch(/dépendance npm/);
+    expect(causeProbable("rien de connu")).toBeNull();
   });
 });

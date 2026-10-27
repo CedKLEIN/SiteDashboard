@@ -114,6 +114,8 @@ export async function installerApercu() {
         return { code: 0, resume: { id: args.id, statut: "ok", claude: "non" }, erreurs: "" };
       case "notifications_windows":
         return true;
+      case "diagnostic_mise_a_jour":
+        return "=== Diagnostic SiteDashboard (apercu) ===";
       case "etat_barre":
         return null;
       case "secrets_connecteurs":

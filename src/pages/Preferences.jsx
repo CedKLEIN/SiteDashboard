@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { Download, FolderOpen, HardDriveDownload, Monitor, Moon, RefreshCw, Sun } from "lucide-react";
-import { avancementMiseAJour, commitCourt, lancerMiseAJour, lireJournalMiseAJour, resumeMiseAJour } from "../lib/miseAJour";
+import { ClipboardCopy, Download, FolderOpen, HardDriveDownload, Monitor, Moon, RefreshCw, Sun } from "lucide-react";
+import { avancementMiseAJour, commitCourt, diagnosticMiseAJour, lancerMiseAJour, lireJournalMiseAJour, resumeMiseAJour } from "../lib/miseAJour";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { Bouton, BoutonCopier, Carte, Interrupteur, Segments, Selecteur } from "../components/ui";
 import { ecrirePreference, lirePreference } from "../lib/queries";
 import {
@@ -49,12 +50,16 @@ function EcranMiseAJour({ onFermer }) {
         {avancement.echec ? (
           <>
             <p className="text-base font-semibold text-ko">La mise à jour a échoué</p>
+            {avancement.cause && <p className="text-sm text-texte">{avancement.cause}</p>}
             <pre className="max-h-64 w-full overflow-auto rounded-lg bg-surface p-3 text-left font-mono text-[11px] whitespace-pre-wrap text-texte-doux">
               {avancement.fin}
             </pre>
-            <Bouton variante="fantome" onClick={onFermer}>
-              Fermer
-            </Bouton>
+            <div className="flex gap-2">
+              <BoutonDiagnostic />
+              <Bouton variante="fantome" onClick={onFermer}>
+                Fermer
+              </Bouton>
+            </div>
           </>
         ) : (
           <>
@@ -66,6 +71,30 @@ function EcranMiseAJour({ onFermer }) {
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Copie TOUT ce qu'il faut pour comprendre un echec de mise a jour (versions,
+ * etat du depot, outils, journal complet) : un seul collage suffit a le diagnostiquer.
+ */
+function BoutonDiagnostic({ className = "", variante = "primaire" }) {
+  const [etat, setEtat] = useState(null);
+  async function copier() {
+    setEtat("…");
+    try {
+      await writeText(await diagnosticMiseAJour());
+      setEtat("Copié !");
+    } catch (e) {
+      setEtat(`Impossible : ${e}`);
+    }
+    setTimeout(() => setEtat(null), 2500);
+  }
+  return (
+    <Bouton variante={variante} className={`flex items-center gap-1.5 ${className}`} onClick={copier} title="Versions, état du dépôt, outils et journal complet, prêts à coller">
+      <ClipboardCopy size={14} />
+      {etat ?? "Copier le diagnostic"}
+    </Bouton>
   );
 }
 
@@ -145,6 +174,8 @@ function MiseAJour({ etat, verifier }) {
             Mettre à jour
           </span>
         </Bouton>
+        {/* Toujours la : apres un echec, l'ecran de mise a jour est peut-etre deja ferme */}
+        <BoutonDiagnostic variante="fantome" className="text-xs" />
       </div>
       {erreur && <p className="mt-2 text-xs text-ko">{erreur}</p>}
       {lancee && <EcranMiseAJour onFermer={() => setLancee(false)} />}
