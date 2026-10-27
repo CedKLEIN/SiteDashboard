@@ -107,7 +107,27 @@ async function synchroniserStripe({ secret, depuis, appel, aujourdhui }) {
 
 /* --------------------------------------------------------------- Anthropic */
 
-async function synchroniserAnthropic({ secret, depuis, appel, aujourdhui }) {
+/**
+ * En-tetes d'Anthropic : cle Admin collee, ou jeton de la connexion par le
+ * navigateur (outil `ant`, OAuth) — qui demande Bearer et l'en-tete beta OAuth.
+ */
+async function entetesAnthropic(secret, jetonAnt) {
+  if (secret.mode === "ant") {
+    if (!jetonAnt) throw new Error("Connexion Anthropic indisponible ici.");
+    return [
+      ["Authorization", `Bearer ${await jetonAnt()}`],
+      ["anthropic-beta", "oauth-2025-04-20"],
+      ["anthropic-version", "2023-06-01"],
+    ];
+  }
+  return [
+    ["x-api-key", secret.cle],
+    ["anthropic-version", "2023-06-01"],
+  ];
+}
+
+async function synchroniserAnthropic({ secret, depuis, appel, aujourdhui, jetonAnt }) {
+  const entetes = await entetesAnthropic(secret, jetonAnt);
   const jours = [];
   let suivante = null;
   for (let page = 0; page < 40; page += 1) {
@@ -117,10 +137,7 @@ async function synchroniserAnthropic({ secret, depuis, appel, aujourdhui }) {
       await appel({
         methode: "GET",
         url: `https://api.anthropic.com/v1/organizations/cost_report?${params}`,
-        entetes: [
-          ["x-api-key", secret.cle],
-          ["anthropic-version", "2023-06-01"],
-        ],
+        entetes,
       }),
       "Anthropic",
     );
@@ -173,7 +190,13 @@ export const CONNECTEURS = [
     nom: "Stripe",
     description: "Paiements et remboursements en revenus, frais Stripe en dépense mensuelle.",
     couleur: "#635bff",
-    champs: [{ cle: "cle", libelle: "Clé restreinte (rk_live_…)", aide: "Dashboard Stripe › Développeurs › Clés API › Créer une clé restreinte, droit « Lecture » sur « Balance »." }],
+    champs: [{ cle: "cle", libelle: "Clé restreinte", format: /^(rk|sk)_(live|test)_[A-Za-z0-9]{10,}$/, exemple: "rk_live_…" }],
+    lien: "https://dashboard.stripe.com/apikeys",
+    etapes: [
+      "« Créer une clé restreinte », nom : SiteDashboard",
+      "Ligne « Balance » : Lecture (tout le reste sur Aucun), puis Créer",
+      "Copie la clé rk_live_… : elle se colle toute seule ici",
+    ],
     synchroniser: synchroniserStripe,
   },
   {
@@ -181,7 +204,11 @@ export const CONNECTEURS = [
     nom: "Anthropic (API Claude)",
     description: "Coût de l'API, une dépense par mois mise à jour chaque jour. L'abonnement Claude Max n'y figure pas.",
     couleur: "#d97757",
-    champs: [{ cle: "cle", libelle: "Clé Admin (sk-ant-admin…)", aide: "Console Anthropic › Settings › Admin keys. Réservé aux administrateurs de l'organisation." }],
+    champs: [{ cle: "cle", libelle: "Clé Admin", format: /^sk-ant-admin\S{10,}$/, exemple: "sk-ant-admin…" }],
+    lien: "https://console.anthropic.com/settings/admin-keys",
+    etapes: ["« Create admin key », nom : SiteDashboard", "Copie la clé sk-ant-admin… : elle se colle toute seule ici"],
+    // Connexion par le navigateur (outil ant, OAuth) : pas de cle a creer
+    navigateur: true,
     synchroniser: synchroniserAnthropic,
   },
   {
@@ -189,7 +216,9 @@ export const CONNECTEURS = [
     nom: "OpenAI (API)",
     description: "Coût de l'API, une dépense par mois mise à jour chaque jour. ChatGPT Plus n'y figure pas.",
     couleur: "#10a37f",
-    champs: [{ cle: "cle", libelle: "Clé Admin (sk-admin-…)", aide: "platform.openai.com › Settings › Organization › Admin keys." }],
+    champs: [{ cle: "cle", libelle: "Clé Admin", format: /^sk-admin-\S{10,}$/, exemple: "sk-admin-…" }],
+    lien: "https://platform.openai.com/settings/organization/admin-keys",
+    etapes: ["« Create new admin key », nom : SiteDashboard, droit Read Only", "Copie la clé sk-admin-… : elle se colle toute seule ici"],
     synchroniser: synchroniserOpenAI,
   },
 ];

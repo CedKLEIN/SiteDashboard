@@ -43,6 +43,24 @@ describe("Anthropic", () => {
     expect(requetes[1].url).toContain("page=p2");
   });
 
+  it("passe par le jeton de la connexion navigateur quand il n'y a pas de cle", async () => {
+    const { appel, requetes } = reseau([{ data: [], has_more: false }]);
+    await definition("anthropic").synchroniser({ secret: { mode: "ant" }, depuis: "2026-10-01", appel, aujourdhui: "2026-10-27", jetonAnt: async () => "jeton-oauth" });
+    expect(requetes[0].entetes).toEqual(
+      expect.arrayContaining([
+        ["Authorization", "Bearer jeton-oauth"],
+        ["anthropic-beta", "oauth-2025-04-20"],
+      ]),
+    );
+  });
+
+  it("reconnait le format de chaque cle", () => {
+    expect(definition("anthropic").champs[0].format.test("sk-ant-admin01-abcdefghijklmnop")).toBe(true);
+    expect(definition("openai").champs[0].format.test("sk-admin-abcdefghijklmnop")).toBe(true);
+    expect(definition("stripe").champs[0].format.test("rk_live_51Habcdefghijk")).toBe(true);
+    expect(definition("stripe").champs[0].format.test("sk-admin-abcdefghijklmnop")).toBe(false);
+  });
+
   it("dit clairement qu'une cle est refusee", async () => {
     const appel = async () => ({ statut: 401, json: { error: { message: "invalid x-api-key" } } });
     await expect(definition("anthropic").synchroniser({ secret: { cle: "x" }, depuis: "2026-10-01", appel, aujourdhui: "2026-10-27" })).rejects.toThrow(/refuse la clé/);

@@ -122,6 +122,12 @@ export async function installerApercu() {
         if (args.secret == null) secrets.delete(args.id);
         else secrets.set(args.id, args.secret);
         return null;
+      case "ant_etat":
+        return { installe: false, version: null, connecte: false };
+      case "ant_installer":
+      case "ant_connexion":
+      case "ant_jeton":
+        throw new Error("apercu : pas de connexion Anthropic");
       case "appel_api":
         throw new Error("apercu : pas d'appel aux API des connecteurs");
       case "plugin:event|listen":

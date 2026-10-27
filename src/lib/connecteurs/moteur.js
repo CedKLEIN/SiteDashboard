@@ -70,12 +70,22 @@ export function debutSynchro(config, aujourdhui) {
   return joursAvant(derniere < aujourdhui ? derniere : aujourdhui, JOURS_RECOUVREMENT);
 }
 
-export async function synchroniserConnecteur({ config, secret, appel = appelReel, aujourdhui = aujourdhuiIso(), convertir = convertirVersReference }) {
+/** Jeton frais de la connexion Anthropic par le navigateur (outil ant). */
+const jetonAntReel = () => invoke("ant_jeton");
+
+export async function synchroniserConnecteur({
+  config,
+  secret,
+  appel = appelReel,
+  aujourdhui = aujourdhuiIso(),
+  convertir = convertirVersReference,
+  jetonAnt = jetonAntReel,
+}) {
   const def = definition(config.type);
   if (!def) throw new Error(`connecteur inconnu : ${config.type}`);
   if (!secret) throw new Error("Clé manquante : renseigne-la dans les réglages du connecteur.");
 
-  const lignes = await def.synchroniser({ secret, depuis: debutSynchro(config, aujourdhui), appel, aujourdhui });
+  const lignes = await def.synchroniser({ secret, depuis: debutSynchro(config, aujourdhui), appel, aujourdhui, jetonAnt });
   const sitesExistants = new Set((await listerSites()).map((s) => s.id));
   const siteIds = (config.siteIds ?? []).filter((id) => sitesExistants.has(id));
   const taux = new Map();

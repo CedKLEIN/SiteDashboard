@@ -1,6 +1,7 @@
 //! SiteDashboard : point d'entree Tauri. Les commandes vivent dans un module par theme.
 
 mod agents;
+mod ant;
 mod barre;
 mod certificat;
 mod controles;
@@ -194,6 +195,10 @@ pub fn run() {
             notifications::notifications_windows,
             barre::etat_barre,
             connecteurs::appel_api,
+            ant::ant_etat,
+            ant::ant_installer,
+            ant::ant_connexion,
+            ant::ant_jeton,
             connecteurs::secrets_connecteurs,
             connecteurs::enregistrer_secret_connecteur,
             tracer

@@ -563,7 +563,7 @@ savent déjà :
 | Connecteur | Importe | Clé |
 |---|---|---|
 | Stripe | paiements et remboursements en **revenus** (un par transaction), frais Stripe en dépense mensuelle | clé restreinte en lecture sur « Balance » |
-| Anthropic | coût de l'API Claude, **une dépense par mois** mise à jour (USD, convertie) | clé Admin `sk-ant-admin…` |
+| Anthropic | coût de l'API Claude, **une dépense par mois** mise à jour (USD, convertie) | **connexion par le navigateur** (aucune clé), ou clé Admin `sk-ant-admin…` |
 | OpenAI | coût de l'API, une dépense par mois mise à jour (USD, convertie) | clé Admin |
 
 Chaque écriture porte la référence du service (`ref_externe`) et le connecteur comme
@@ -571,6 +571,21 @@ Chaque écriture porte la référence du service (`ref_externe`) et le connecteu
 cours est **mis à jour**, pas dupliqué. Une écriture rattachée à la main à d'autres sites
 garde ces sites. La première synchronisation remonte un an ; les suivantes, 40 jours. Un
 connecteur en échec (clé refusée…) remonte dans « À traiter ».
+
+**Connecter un service** se fait en trois étapes dans son panneau : un bouton ouvre la page
+exacte où créer la clé, la clé copiée dans le navigateur est **détectée dans le
+presse-papiers** au retour dans l'appli (format vérifié), et « Connecter » lance aussitôt la
+première synchronisation : une clé refusée s'affiche là, pas plus tard.
+
+**Anthropic sans clé** : « Se connecter avec Anthropic » installe au besoin l'outil `ant`
+d'Anthropic (dernière version publiée sur GitHub, dans
+`%LOCALAPPDATA%\com.cedklein.sitedashboard\outils`), puis ouvre la page de connexion
+(OAuth, droit `org:admin`, réservé aux administrateurs). `ant` garde et rafraîchit le jeton
+dans son profil `sitedashboard` ; chaque synchronisation lui en demande un frais
+([`src-tauri/src/ant.rs`](src-tauri/src/ant.rs)). Si la connexion expire, le connecteur
+passe en échec dans « À traiter » : il suffit de se reconnecter. Stripe n'a pas d'équivalent
+raisonnable (il faudrait déclarer une plateforme Stripe Connect) : sa clé restreinte se colle
+une fois.
 
 Les **clés** ne vont jamais dans la base (donc jamais dans ses sauvegardes) :
 `%USERPROFILE%\.sitedashboard\connecteurs.json`, comme la clé Bing. Les appels passent par

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { CircleCheck, CircleX, Pencil, Plug, RefreshCw, Unplug } from "lucide-react";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { CircleCheck, CircleX, ClipboardPaste, ExternalLink, Loader, LogIn, Pencil, Plug, RefreshCw, Unplug } from "lucide-react";
 import { Bouton, Carte, Champ, Interrupteur, MenuActions, SelecteurSites, Tiroir } from "../components/ui";
 import { CONNECTEURS } from "../lib/connecteurs/definitions";
 import { ecrireConnecteurs, lireConnecteurs, synchroniserEtEnregistrer } from "../lib/connecteurs/moteur";
@@ -17,34 +19,145 @@ function depuis(iso) {
   return `le ${new Date(iso).toLocaleDateString("fr-FR")}`;
 }
 
-/** Saisie des cles et des sites d'un connecteur. Les cles ne sont jamais reaffichees. */
+/** Une etape numerotee du panneau de connexion. */
+function Etape({ numero, titre, children }) {
+  return (
+    <div className="flex gap-3">
+      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-accent/15 text-xs font-semibold text-accent-2">{numero}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <p className="text-[13px] font-medium">{titre}</p>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Connexion Anthropic par le navigateur : installe l'outil ant si besoin, puis ouvre la page de connexion. */
+function ConnexionNavigateur({ onConnecte }) {
+  const [etape, setEtape] = useState(null);
+  const [erreur, setErreur] = useState("");
+
+  async function connecter() {
+    setErreur("");
+    try {
+      setEtape("Vérification de l'outil Anthropic…");
+      const etat = await invoke("ant_etat");
+      if (!etat.installe) {
+        setEtape("Installation de l'outil Anthropic (une seule fois)…");
+        await invoke("ant_installer");
+      }
+      setEtape("Valide la connexion dans ton navigateur…");
+      await invoke("ant_connexion");
+      setEtape(null);
+      await onConnecte();
+    } catch (e) {
+      setEtape(null);
+      setErreur(String(e?.message ?? e));
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl bg-accent/8 p-4 ring-1 ring-accent/25">
+      <p className="text-[13px] font-medium">Le plus simple : se connecter</p>
+      <p className="text-xs text-texte-doux">
+        Une page Anthropic s&apos;ouvre dans ton navigateur : connecte-toi et accepte. Pas de clé à créer ni à copier. Il faut être
+        administrateur de l&apos;organisation.
+      </p>
+      <Bouton className="mt-1 flex items-center justify-center gap-2 self-start" onClick={connecter} disabled={Boolean(etape)}>
+        {etape ? <Loader size={14} className="animate-spin" /> : <LogIn size={14} />}
+        {etape ?? "Se connecter avec Anthropic"}
+      </Bouton>
+      {erreur && (
+        <p className="rounded-lg bg-ko/10 px-3 py-2 text-xs text-ko">
+          {erreur}
+          <span className="mt-1 block text-texte-doux">Tu peux aussi coller une clé Admin ci-dessous.</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Connexion d'un service, en etapes : ouvrir la bonne page, copier la cle (elle
+ * est detectee dans le presse-papiers des qu'on revient), choisir les sites,
+ * connecter — la premiere synchronisation tourne ici et dit tout de suite si
+ * c'est bon. Les cles enregistrees ne sont jamais reaffichees.
+ */
 function TiroirConnecteur({ def, config, sites, onFermer, onEnregistre }) {
   const [cles, setCles] = useState({});
+  const [detectee, setDetectee] = useState(false);
   const [siteIds, setSiteIds] = useState(config?.siteIds ?? []);
   const [erreur, setErreur] = useState("");
+  const [resultat, setResultat] = useState(null);
   const [envoi, setEnvoi] = useState(false);
+  const champUnique = def.champs.length === 1 ? def.champs[0] : null;
 
-  async function enregistrer(e) {
-    e?.preventDefault();
+  // La cle copiee dans le navigateur arrive toute seule quand on revient sur l'appli
+  useEffect(() => {
+    if (!champUnique?.format) return undefined;
+    const lire = async () => {
+      try {
+        const texte = String((await readText()) ?? "").trim();
+        if (champUnique.format.test(texte)) {
+          setCles((c) => (c[champUnique.cle] ? c : { ...c, [champUnique.cle]: texte }));
+          setDetectee(true);
+        }
+      } catch {
+        // presse-papiers vide ou illisible : rien a faire
+      }
+    };
+    lire();
+    window.addEventListener("focus", lire);
+    return () => window.removeEventListener("focus", lire);
+  }, [champUnique]);
+
+  async function coller(champ) {
+    try {
+      const texte = String((await readText()) ?? "").trim();
+      if (texte) setCles((c) => ({ ...c, [champ.cle]: texte }));
+    } catch {
+      setErreur("Presse-papiers illisible : colle la clé avec Ctrl+V.");
+    }
+  }
+
+  /** Enregistre (cles, sites) puis synchronise ; reste ouvert si ca echoue. */
+  async function connecter(secret = null) {
     setErreur("");
+    setResultat(null);
     const remplies = Object.fromEntries(Object.entries(cles).filter(([, v]) => v.trim()).map(([k, v]) => [k, v.trim()]));
-    if (!config && def.champs.some((c) => !remplies[c.cle])) {
-      setErreur("Renseigne toutes les clés.");
+    if (!secret && !config && def.champs.some((c) => !remplies[c.cle])) {
+      setErreur(def.navigateur ? "Connecte-toi avec le bouton ci-dessus, ou colle une clé Admin." : "Colle la clé pour continuer.");
+      return;
+    }
+    const malFormee = def.champs.find((c) => remplies[c.cle] && c.format && !c.format.test(remplies[c.cle]));
+    if (malFormee) {
+      setErreur(`Ça ne ressemble pas à une ${malFormee.libelle.toLowerCase()} (${malFormee.exemple}). Vérifie que tu as copié la bonne.`);
       return;
     }
     setEnvoi(true);
     try {
-      if (Object.keys(remplies).length > 0) {
+      if (secret) {
+        await invoke("enregistrer_secret_connecteur", { id: def.type, secret });
+      } else if (Object.keys(remplies).length > 0) {
         const anciens = config ? ((await invoke("secrets_connecteurs"))?.[def.type] ?? {}) : {};
-        await invoke("enregistrer_secret_connecteur", { id: def.type, secret: { ...anciens, ...remplies } });
+        // Une cle collee remplace la connexion par le navigateur
+        const { mode: _mode, ...sansMode } = anciens;
+        await invoke("enregistrer_secret_connecteur", { id: def.type, secret: { ...sansMode, ...remplies } });
       }
       const liste = await lireConnecteurs();
       const suivant = { ...(config ?? { id: def.type, type: def.type, actif: true }), nom: def.nom, siteIds };
       await ecrireConnecteurs([...liste.filter((c) => c.id !== def.type), suivant]);
-      onEnregistre(true);
-      onFermer();
-    } catch (e2) {
-      setErreur(String(e2?.message ?? e2));
+      const r = await synchroniserEtEnregistrer(def.type);
+      onEnregistre();
+      if (r && !r.ok) {
+        setErreur(r.message);
+        setEnvoi(false);
+        return;
+      }
+      setResultat(r?.message ?? "Connecté");
+      setTimeout(onFermer, 1500);
+    } catch (e) {
+      setErreur(String(e?.message ?? e));
       setEnvoi(false);
     }
   }
@@ -54,47 +167,95 @@ function TiroirConnecteur({ def, config, sites, onFermer, onEnregistre }) {
       titre={config ? `${def.nom} : réglages` : `Connecter ${def.nom}`}
       ouvert
       onFermer={onFermer}
-      largeur="w-[460px]"
+      largeur="w-[480px]"
       pied={
         <>
           <Bouton variante="fantome" onClick={onFermer}>
             Annuler
           </Bouton>
-          <Bouton onClick={enregistrer} disabled={envoi}>
-            {config ? "Enregistrer" : "Connecter et synchroniser"}
+          <Bouton onClick={() => connecter()} disabled={envoi}>
+            {envoi ? "Connexion…" : config ? "Enregistrer" : "Connecter"}
           </Bouton>
         </>
       }
     >
-      <form onSubmit={enregistrer} className="flex flex-col gap-5">
-        <p className="text-[13px] text-texte-doux">{def.description}</p>
-        {def.champs.map((champ) => (
-          <div key={champ.cle} className="flex flex-col gap-1.5">
-            <Champ
-              label={champ.libelle}
-              type="password"
-              autoComplete="off"
-              placeholder={config ? "•••••••• enregistrée — laisser vide pour la garder" : ""}
-              value={cles[champ.cle] ?? ""}
-              onChange={(e) => setCles((c) => ({ ...c, [champ.cle]: e.target.value }))}
-            />
-            {champ.aide && <span className="text-[11px] text-pale">{champ.aide}</span>}
-          </div>
-        ))}
-        <SelecteurSites
-          label="Rattacher aux sites"
-          sites={sites}
-          selection={siteIds}
-          onBasculer={(id) => setSiteIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))}
-          aide={siteIds.length ? "Montants répartis à parts égales entre ces sites" : "Aucun site : coût ou revenu transverse"}
-        />
-        <p className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] text-texte-doux">
-          Les clés restent sur cet ordinateur, dans %USERPROFILE%\.sitedashboard\connecteurs.json : jamais dans la base ni dans
-          ses sauvegardes. Une clé en lecture seule suffit.
+      <p className="text-[13px] text-texte-doux">{def.description}</p>
+
+      {def.navigateur && <ConnexionNavigateur onConnecte={() => connecter({ mode: "ant" })} />}
+
+      <div className="flex flex-col gap-5">
+        {def.navigateur && <p className="text-xs font-medium tracking-wider text-pale uppercase">Ou avec une clé</p>}
+        {def.lien && (
+          <Etape numero={1} titre="Ouvre la page de création de clé">
+            <Bouton variante="fantome" className="flex items-center gap-1.5 self-start text-xs" onClick={() => openUrl(def.lien).catch(() => {})}>
+              <ExternalLink size={13} />
+              Ouvrir {new URL(def.lien).hostname}
+            </Bouton>
+            {def.etapes && (
+              <ul className="flex flex-col gap-1 text-xs text-texte-doux">
+                {def.etapes.map((e) => (
+                  <li key={e} className="flex gap-1.5">
+                    <span className="text-pale">•</span>
+                    {e}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Etape>
+        )}
+        <Etape numero={def.lien ? 2 : 1} titre={champUnique ? "Colle la clé" : "Colle les clés"}>
+          {def.champs.map((champ) => {
+            const valeur = cles[champ.cle] ?? "";
+            const valide = valeur && champ.format?.test(valeur.trim());
+            return (
+              <div key={champ.cle} className="flex flex-col gap-1">
+                <div className="flex items-end gap-2">
+                  <Champ
+                    label={champ.libelle}
+                    type="password"
+                    autoComplete="off"
+                    className="flex-1"
+                    placeholder={config ? "•••••••• enregistrée — vide pour la garder" : champ.exemple}
+                    value={valeur}
+                    onChange={(e) => setCles((c) => ({ ...c, [champ.cle]: e.target.value }))}
+                  />
+                  <Bouton variante="fantome" className="flex items-center gap-1.5 text-xs" onClick={() => coller(champ)} title="Coller depuis le presse-papiers">
+                    <ClipboardPaste size={13} />
+                    Coller
+                  </Bouton>
+                </div>
+                {valide && (
+                  <span className="flex items-center gap-1 text-[11px] text-ok">
+                    <CircleCheck size={12} />
+                    {detectee ? "Clé détectée dans le presse-papiers" : "Format reconnu"}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </Etape>
+        <Etape numero={def.lien ? 3 : 2} titre="Rattache-le à des sites (facultatif)">
+          <SelecteurSites
+            label=""
+            sites={sites}
+            selection={siteIds}
+            onBasculer={(id) => setSiteIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))}
+            aide={siteIds.length ? "Montants répartis à parts égales entre ces sites" : "Aucun site : coût ou revenu transverse"}
+          />
+        </Etape>
+      </div>
+
+      <p className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] text-texte-doux">
+        Les clés restent sur cet ordinateur (%USERPROFILE%\.sitedashboard\connecteurs.json), jamais dans la base ni dans ses
+        sauvegardes. Lecture seule suffit.
+      </p>
+      {erreur && <p className="rounded-lg bg-ko/10 px-3 py-2 text-xs text-ko">{erreur}</p>}
+      {resultat && (
+        <p className="flex items-center gap-2 rounded-lg bg-ok/10 px-3 py-2 text-xs text-ok">
+          <CircleCheck size={14} />
+          Connecté : {resultat}
         </p>
-        {erreur && <p className="rounded-lg bg-ko/10 px-3 py-2 text-xs text-ko">{erreur}</p>}
-        <button type="submit" hidden aria-hidden="true" />
-      </form>
+      )}
     </Tiroir>
   );
 }
@@ -225,13 +386,7 @@ export default function Connecteurs({ rafraichissement, onModification }) {
           config={configs.find((c) => c.id === edition.type) ?? null}
           sites={sites}
           onFermer={() => setEdition(null)}
-          onEnregistre={async () => {
-            const nouveau = !configs.some((c) => c.id === edition.type);
-            const id = edition.type;
-            onModification();
-            // Premiere connexion : on synchronise tout de suite, pour verifier la cle
-            if (nouveau) await synchroniser(id);
-          }}
+          onEnregistre={onModification}
         />
       )}
     </>
