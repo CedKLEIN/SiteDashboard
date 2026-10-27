@@ -37,12 +37,14 @@ const installeur = path.join(
 const installe = path.join(process.env.LOCALAPPDATA ?? "", productName, EXE);
 
 /**
- * Fichiers generes que la compilation reecrit parfois sur ce PC (Cargo.lock
- * selon la version de cargo, package-lock.json selon celle de npm). Modifies
- * localement, ils bloquaient « git pull --ff-only » des qu'un commit les
- * changeait aussi : on les remet tels que commites, ils seront regeneres.
+ * Fichiers que la compilation reecrit parfois sur ce PC : Cargo.lock selon la
+ * version de cargo, package-lock.json selon celle de npm, et Cargo.toml, dont
+ * la CLI Tauri reformate les « features » de tauri. On n'y touche jamais a la
+ * main ici (le code arrive par des commits) : modifies localement, ils
+ * bloquaient « git pull --ff-only » des qu'un commit les changeait aussi. On
+ * les remet tels que commites avant le pull, et apres la compilation.
  */
-const GENERES = ["src-tauri/Cargo.lock", "package-lock.json"];
+const GENERES = ["src-tauri/Cargo.lock", "src-tauri/Cargo.toml", "package-lock.json"];
 
 function preparerDepot() {
   const modifies = execFileSync("git", ["status", "--porcelain"], { cwd: RACINE, encoding: "utf8" })
@@ -53,6 +55,8 @@ function preparerDepot() {
   for (const ligne of modifies) console.log(`  ${ligne}`);
   const generes = modifies.map((l) => l.slice(3).trim()).filter((f) => GENERES.includes(f));
   if (generes.length) {
+    // La difference d'abord, dans le journal : pour savoir ce que l'outil a reecrit
+    console.log(execFileSync("git", ["diff", "--", ...generes], { cwd: RACINE, encoding: "utf8" }).slice(0, 4000));
     console.log(`Fichiers générés remis tels que commités : ${generes.join(", ")}`);
     execFileSync("git", ["checkout", "--", ...generes], { cwd: RACINE, stdio: "inherit" });
   }
@@ -76,6 +80,8 @@ if (!process.argv.includes("--sans-build")) {
   etape("Compilation de la nouvelle version (quelques minutes)");
   // shell: un .cmd ne se lance pas sans shell depuis Node sous Windows
   execSync("npm.cmd run app:build", { cwd: RACINE, stdio: "inherit" });
+  // Depot laisse propre : la prochaine mise a jour ne butera pas sur ces fichiers
+  preparerDepot();
 }
 
 if (!existsSync(installeur)) {
