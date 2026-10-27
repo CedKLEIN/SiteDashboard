@@ -32,7 +32,7 @@ MSVC et le runtime WebView2 (déjà présents sur une machine avec Visual Studio
 ```bash
 npm run test       # tests (vitest) : logique pure + requêtes SQL réelles
 npm run lint       # oxlint
-npm run app:build  # build release : installeurs .msi et -setup.exe dans src-tauri/target/release/bundle
+npm run app:build  # build release : installeur -setup.exe (NSIS) dans src-tauri/target/release/bundle/nsis
 ```
 
 ### Tâches planifiées : modèles appliqués à des sites

@@ -49,9 +49,16 @@ tauri-plugin-single-instance = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 # https://tauri.app/concept/size/#cargo-configuration
+# Compilation rapide plutot que binaire minimal : la mise a jour recompile sur
+# ce PC a chaque fois. Avec `lto = true` et un seul codegen-unit, la moindre
+# modification reoptimisait tout le programme (~4 min mesurees) ; sans LTO, en
+# 16 unites et en incremental, seul le code change est recompile (secondes).
+# Pour une appli qui affiche des ecrans et interroge des sites, la difference de
+# vitesse ne se voit pas ; le binaire est un peu plus gros.
 [profile.release]
-codegen-units = 1
-lto = true
+codegen-units = 16
+lto = false
+incremental = true
 opt-level = 3
 panic = "abort"
 strip = true
