@@ -82,9 +82,27 @@ export function lireCookiesClaudeEffaces(env = process.env) {
   }
 }
 
-/** Ferme Chrome proprement (sans /F : il enregistre sa session comme a la main). */
-export function fermerChrome() {
+/** Temps laisse a Chrome pour se fermer completement. */
+export const ATTENTE_FERMETURE_MS = 30_000;
+
+function demanderFermeture() {
   return new Promise((resolve) => {
     execFile("taskkill", ["/IM", "chrome.exe"], { windowsHide: true }, () => resolve());
   });
+}
+
+/**
+ * Ferme Chrome proprement (sans /F : il enregistre sa session comme a la main)
+ * et attend que ses processus aient disparu. taskkill rend la main tout de
+ * suite alors que Chrome met quelques secondes a s'arreter : l'agent suivant le
+ * croyait « deja ouvert », ne le rouvrait pas, et trouvait l'extension muette.
+ * Renvoie true si Chrome est bien ferme.
+ */
+export async function fermerChrome({ attente = ATTENTE_FERMETURE_MS, pas = 500, tuer = demanderFermeture, ouvert = chromeOuvert } = {}) {
+  await tuer();
+  for (let ecoule = 0; ecoule < attente; ecoule += pas) {
+    if (!(await ouvert())) return true;
+    await new Promise((r) => setTimeout(r, pas));
+  }
+  return !(await ouvert());
 }

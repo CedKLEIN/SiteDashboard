@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { archiverRapport, empreinte, isoLocal, jsonLd, liens, meta, pointsDuRapport, statutGlobal, texteVisible, racine } from "./lib/commun.mjs";
 import { extraireJson, validerAnalyse } from "./lib/claude.mjs";
 import { analyserCatalogue, analyserHistoire, clesObjet, hausses, souverainsCites } from "./lib/donnees.mjs";
@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { CONSIGNE_TEST_CHROME, chromeConnecte, construireConsigne, messageChromeDeconnecte, preambule } from "./lib/agent.mjs";
 import { DOSSIER_MODELES, ajouterAgent, applicables, chargerTout, composer, identifiant, pourInterface, rendre, retirerAgent } from "./lib/registre.mjs";
-import { chromeDansListe, cookiesClaudeEffaces, trouverChrome } from "./lib/chrome.mjs";
+import { chromeDansListe, cookiesClaudeEffaces, fermerChrome, trouverChrome } from "./lib/chrome.mjs";
 
 describe("agents Claude", () => {
   it("previent la session qu'elle tourne seule, et lui donne Chrome si besoin", () => {
@@ -83,6 +83,18 @@ describe("Chrome pour les agents", () => {
 
   it("cherche chrome.exe dans l'installation par utilisateur puis pour tous", () => {
     expect(trouverChrome({ LOCALAPPDATA: "Z:\\absent", ProgramFiles: "Z:\\absent2" })).toBeNull();
+  });
+
+  it("ne rend la main qu'une fois Chrome vraiment ferme : l'agent suivant ne doit pas le croire ouvert", async () => {
+    // Chrome met trois verifications a disparaitre apres la demande de fermeture
+    let restant = 3;
+    const tuer = vi.fn(async () => {});
+    const ouvert = vi.fn(async () => restant-- > 0);
+    expect(await fermerChrome({ attente: 100, pas: 1, tuer, ouvert })).toBe(true);
+    expect(tuer).toHaveBeenCalledOnce();
+    expect(ouvert).toHaveBeenCalledTimes(4);
+    // Toujours la a la fin du delai : on le dit, sans forcer la fermeture
+    expect(await fermerChrome({ attente: 5, pas: 1, tuer, ouvert: async () => true })).toBe(false);
   });
 });
 

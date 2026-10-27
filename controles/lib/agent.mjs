@@ -248,8 +248,8 @@ export async function lancerAgent(controle, { essai = false } = {}) {
     dureeMaxMin: controle.dureeMaxMin ?? 120,
   });
   if (chrome.ouvertParNous) {
-    await fermerChrome();
-    appendFileSync(journal, "\n[SiteDashboard] Chrome refermé\n");
+    const ferme = await fermerChrome();
+    appendFileSync(journal, `\n[SiteDashboard] ${ferme ? "Chrome refermé" : "Chrome toujours ouvert 30 s après la demande de fermeture"}\n`);
   }
 
   // La session a-t-elle ecrit son rapport pendant ce passage ?
