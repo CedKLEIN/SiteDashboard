@@ -34,8 +34,8 @@ async function lireJson(cle, defaut) {
 }
 
 /**
- * Lance les controles et agents dus a chaque `rafraichissement` (le cycle de
- * supervision, toutes les minutes). Deux files independantes, une a la fois
+ * Lance les controles et agents dus a chaque `rafraichissement` (chaque minute,
+ * et apres chaque ecriture en base). Deux files independantes, une a la fois
  * chacune : les scripts (secondes) et les agents Claude (jusqu'a des heures,
  * l'indexation attend le quota Google) ne se bloquent pas entre eux.
  *

@@ -18,6 +18,9 @@ import { resumeMiseAJour, useMiseAJour } from "./lib/miseAJour";
 import { lirePreference, listerSites } from "./lib/queries";
 import { tracer } from "./lib/trace";
 
+/** Le planning des taches regarde ce qui est du toutes les minutes. */
+const BATTEMENT_PLANNING_MS = 60_000;
+
 export default function App() {
   const [onglet, setOnglet] = useState("dashboard");
   const [siteOuvert, setSiteOuvert] = useState(null);
@@ -90,7 +93,16 @@ export default function App() {
     return () => clearInterval(minuterie);
   }, [verifier, intervalleS]);
 
-  const controles = useControles(revision, signalerModification);
+  // Le planning des taches bat a la minute, quel que soit l'intervalle de
+  // supervision : avec des cycles de 30 min, une tache de 9 h partait a 9 h 08
+  const [battement, setBattement] = useState(0);
+  useEffect(() => {
+    const minuterie = setInterval(() => setBattement((b) => b + 1), BATTEMENT_PLANNING_MS);
+    return () => clearInterval(minuterie);
+  }, []);
+
+  // Les deux compteurs ne font que croitre : leur somme change a chaque battement comme a chaque ecriture
+  const controles = useControles(revision + battement, signalerModification);
   const agents = useAgentsAttendus(revision, controles.controles, controles.derniers, controles.ajouts);
   const notifications = useNotifications(revision, agents.attendus);
   const miseAJour = useMiseAJour();
