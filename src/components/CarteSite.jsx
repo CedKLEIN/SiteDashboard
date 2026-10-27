@@ -1,5 +1,6 @@
-import { CircleAlert, CircleCheck, CircleDashed, CircleOff, CircleX } from "lucide-react";
+import { Bot, CircleAlert, CircleCheck, CircleDashed, CircleOff, CircleX } from "lucide-react";
 import { couleurEtat, etatSite, iconeEtat, libelleEtat } from "../lib/statut";
+import { STATUTS_SITE } from "../lib/vueAgents";
 
 // Exportee: la page des rapports d'agents reprend les memes formes pour ses verdicts
 export const ICONES = {
@@ -16,16 +17,18 @@ function heure(horodatage) {
   return String(horodatage).slice(11, 16);
 }
 
-export default function CarteSite({ site, onOuvrir }) {
+export default function CarteSite({ site, agents = null, onOuvrir }) {
   const etat = etatSite(site);
   const couleur = couleurEtat(etat);
   const Icone = ICONES[iconeEtat(etat)] ?? CircleDashed;
+  // Statut du jour des agents du site (le detail est dans la fiche du site)
+  const statutAgents = agents ? STATUTS_SITE[agents.statut] : null;
 
   return (
     <button
       type="button"
       onClick={() => onOuvrir(site.id)}
-      title={`${site.nom} — ${libelleEtat(etat)}`}
+      title={`${site.nom} — ${libelleEtat(etat)}${statutAgents ? ` — agents : ${statutAgents.libelle.toLowerCase()}` : ""}`}
       // Hauteur fixe et non carree: etirees sur toute la largeur, des cartes
       // carrees deviendraient enormes des qu'il n'y a que deux sites.
       className="group relative flex h-32 w-full flex-col justify-between overflow-hidden rounded-xl border border-bord bg-surface p-3 pl-4 text-left transition hover:border-accent hover:bg-surface-2"
@@ -46,8 +49,19 @@ export default function CarteSite({ site, onOuvrir }) {
         ) : (
           <span className="size-5 shrink-0" />
         )}
-        {/* L'etat est porte par la FORME de l'icone, la couleur ne fait que la renforcer */}
-        <Icone size={18} strokeWidth={2.25} style={{ color: couleur }} className="shrink-0" />
+        <span className="flex items-center gap-1.5">
+          {statutAgents && (
+            <span
+              className="flex items-center gap-0.5"
+              style={{ color: couleurEtat(statutAgents.etat) }}
+              aria-label={`Agents : ${statutAgents.libelle}`}
+            >
+              <Bot size={15} strokeWidth={2.25} className="shrink-0" />
+            </span>
+          )}
+          {/* L'etat est porte par la FORME de l'icone, la couleur ne fait que la renforcer */}
+          <Icone size={18} strokeWidth={2.25} style={{ color: couleur }} className="shrink-0" />
+        </span>
       </div>
 
       <div className="min-w-0">

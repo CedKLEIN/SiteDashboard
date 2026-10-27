@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, ExternalLink, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronDown, ChevronRight, ExternalLink, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -11,14 +11,15 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { Bouton, BoutonCopier, Carte, EtatVide, Kpi } from "../components/ui";
+import { Bouton, BoutonCopier, Carte, EtatVide, Interrupteur, Kpi } from "../components/ui";
+import AgentsDuSite, { PastilleStatut } from "../components/AgentsDuSite";
+import { STATUTS_SITE } from "../lib/vueAgents";
 import {
   basculerCheck,
   coutFixeDuSite,
   creerCheck,
   historiqueSite,
   listerChecks,
-  listerDepenses,
   supprimerCheck,
 } from "../lib/queries";
 import {
@@ -36,17 +37,21 @@ import {
   dernierResultat,
   heure,
   LIBELLES_TYPE,
-  regrouperIncidents,
   resumeAssertions,
   texteCheck,
   tonDisponibilite,
 } from "../lib/affichageChecks";
+import { formatMontant, joursDepuis } from "../lib/format";
 
-/** '10:01' ou '09:52 → 10:01' pour un incident regroupe. */
-function plageIncident({ debut, fin }) {
-  return debut === fin ? heure(fin) : `${heure(debut)} → ${heure(fin)}`;
+/**
+ * Un clic sur l'en-tete replie ou deplie, sauf a la fin d'une selection : le
+ * titre se selectionne comme le reste du texte.
+ */
+function surClicHorsSelection(action) {
+  return () => {
+    if (!window.getSelection?.()?.toString()) action();
+  };
 }
-import { dateFr, formatMontant, joursDepuis } from "../lib/format";
 
 export default function DetailSite({
   site,
@@ -54,25 +59,28 @@ export default function DetailSite({
   onVerifierMaintenant,
   verificationEnCours,
   rafraichissement,
+  vueAgents = null,
+  controles = null,
+  erreurAgents = null,
+  onModification,
 }) {
   const [checks, setChecks] = useState([]);
   const [historique, setHistorique] = useState([]);
-  const [depenses, setDepenses] = useState([]);
   const [diagnostic, setDiagnostic] = useState(null);
   const [coutFixe, setCoutFixe] = useState(0);
   const [uniteCout, setUniteCout] = useState("mois");
   const [formulaireOuvert, setFormulaireOuvert] = useState(false);
+  // Replies par defaut : le compte « 7 / 7 OK » de l'en-tete suffit d'ordinaire
+  const [checksOuverts, setChecksOuverts] = useState(false);
 
   const recharger = useCallback(async () => {
-    const [c, h, d, fixe] = await Promise.all([
+    const [c, h, fixe] = await Promise.all([
       listerChecks(site.id),
       historiqueSite(site.id, 24),
-      listerDepenses({ siteId: site.id, limite: 8 }),
       coutFixeDuSite(site.id),
     ]);
     setChecks(c);
     setHistorique(h);
-    setDepenses(d);
     setCoutFixe(fixe);
   }, [site.id]);
 
@@ -147,8 +155,6 @@ export default function DetailSite({
     latence: v.ok ? v.latence_ms : null,
   }));
 
-  // Toute la fenetre de 24 h, les echecs identiques consecutifs regroupes
-  const incidents = regrouperIncidents(historique.filter((v) => !v.ok).reverse()).slice(0, 8);
   const checksActifs = supervises.filter((c) => c.actif && c.derniere_verif);
   const checksOk = checksActifs.filter((c) => c.dernier_ok).length;
 
@@ -226,6 +232,14 @@ export default function DetailSite({
         />
       </div>
 
+      <Carte
+        titre="Agents"
+        action={vueAgents && <PastilleStatut etat={STATUTS_SITE[vueAgents.statut].etat}>{STATUTS_SITE[vueAgents.statut].libelle}</PastilleStatut>}
+      >
+        {erreurAgents && <p className="mb-2 text-xs text-depense">Lecture des rapports impossible : {erreurAgents}</p>}
+        <AgentsDuSite key={vueAgents?.cle} vue={vueAgents} controles={controles} onEfface={onModification} />
+      </Carte>
+
       <Carte titre="Latence sur 24 h">
         {serie.length === 0 ? (
           <EtatVide>Aucune vérification sur les dernières 24 h.</EtatVide>
@@ -266,7 +280,39 @@ export default function DetailSite({
         )}
       </Carte>
 
-      <Carte titre="Checks">
+      <section className="rounded-xl border border-bord bg-surface p-4 shadow-sm">
+        <header
+          className={`flex cursor-pointer items-center gap-2 ${checksOuverts ? "mb-3" : ""}`}
+          onClick={surClicHorsSelection(() => setChecksOuverts((o) => !o))}
+        >
+          <button
+            type="button"
+            aria-expanded={checksOuverts}
+            aria-label={checksOuverts ? "Replier les checks" : "Déplier les checks"}
+            onClick={(e) => {
+              e.stopPropagation();
+              setChecksOuverts((o) => !o);
+            }}
+            className="text-texte-doux hover:text-texte"
+          >
+            {checksOuverts ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+          </button>
+          <h2 className="text-sm font-semibold text-texte">Checks</h2>
+          <span
+            className="rounded-md px-2 py-0.5 text-[11px] font-medium tabular-nums"
+            style={{
+              color: couleurEtat(etat),
+              background: `${couleurEtat(etat)}22`,
+            }}
+          >
+            {checksActifs.length === 0 ? "aucun vérifié" : `${checksOk} / ${checksActifs.length} OK`}
+          </span>
+          {informations.length > 0 && (
+            <span className="text-[11px] text-texte-doux">+ {informations.length} information(s)</span>
+          )}
+        </header>
+        {checksOuverts && (
+        <>
         {supervises.length === 0 ? (
           <EtatVide>Aucun check. Ajoute-en un ci-dessous.</EtatVide>
         ) : (
@@ -288,10 +334,10 @@ export default function DetailSite({
                   className={`border-b border-bord/50 last:border-0 ${check.actif ? "" : "opacity-50"}`}
                 >
                   <td className="py-2">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(check.actif)}
-                      onChange={() => basculer(check)}
+                    <Interrupteur
+                      actif={Boolean(check.actif)}
+                      onChanger={() => basculer(check)}
+                      aria-label={`Activer ${check.libelle}`}
                     />
                   </td>
                   <td className="py-2">
@@ -413,10 +459,10 @@ export default function DetailSite({
             </Bouton>
           )}
         </div>
-      </Carte>
 
-      {informations.length > 0 && (
-        <Carte titre="Informations">
+        {informations.length > 0 && (
+          <div className="mt-4 border-t border-bord/50 pt-3">
+          <h3 className="mb-2 text-xs font-medium uppercase text-texte-doux">Informations</h3>
           <ul className="flex flex-col gap-2 text-sm">
             {informations.map((check) => {
               const jours = joursDepuis(check.valeur_depuis);
@@ -457,74 +503,11 @@ export default function DetailSite({
               );
             })}
           </ul>
-        </Carte>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Carte
-          titre="Incidents récents"
-          action={
-            incidents.length > 0 && (
-              <BoutonCopier
-                texte={() =>
-                  incidents
-                    .map((i) => `${plageIncident(i)} — ${i.check_libelle} — ${i.erreur}${i.nombre > 1 ? ` (x${i.nombre})` : ""}`)
-                    .join("\n")
-                }
-                titre="Copier les incidents"
-              />
-            )
-          }
-        >
-          {incidents.length === 0 ? (
-            <EtatVide>Aucun incident sur 24 h.</EtatVide>
-          ) : (
-            <ul className="flex flex-col gap-2 text-sm">
-              {incidents.map((incident) => (
-                <li key={`${incident.fin}-${incident.check_libelle}`} className="flex items-center gap-2.5">
-                  <span className="w-28 shrink-0 tabular-nums text-texte-doux">
-                    {plageIncident(incident)}
-                  </span>
-                  <span className="flex-1 truncate">
-                    {incident.check_libelle}
-                    {incident.nombre > 1 && (
-                      <span className="ml-1.5 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-texte-doux">
-                        ×{incident.nombre}
-                      </span>
-                    )}
-                  </span>
-                  <span className="truncate text-xs text-depense" title={incident.erreur}>
-                    {incident.erreur}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Carte>
-
-        <Carte titre="Dernières dépenses">
-          {depenses.length === 0 ? (
-            <EtatVide>Aucune dépense pour ce site.</EtatVide>
-          ) : (
-            <ul className="flex flex-col gap-2 text-sm">
-              {depenses.map((d) => (
-                <li key={d.id} className="flex items-center gap-2.5">
-                  <span className="w-20 shrink-0 tabular-nums text-texte-doux">{dateFr(d.date)}</span>
-                  <span className="flex-1 truncate">
-                    {d.fournisseur_nom ?? d.libelle ?? d.categorie}
-                    {d.nb_sites > 1 && (
-                      <span className="text-texte-doux"> · partagée ({d.sites_noms})</span>
-                    )}
-                  </span>
-                  <span className="tabular-nums">
-                    {formatMontant(d.part_cents ?? d.montant_cents, d.devise)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Carte>
-      </div>
+          </div>
+        )}
+        </>
+        )}
+      </section>
     </div>
   );
 }

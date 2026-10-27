@@ -1,7 +1,8 @@
 {
   "id": "indexation-seo",
   "titre": "SEO Google + Bing",
-  "description": "Agent Claude quotidien : point Search Console et Bing Webmaster dans Chrome, demandes d'indexation jusqu'au quota, corrections SEO ciblées si l'agent y est autorisé (paramètre corriger).",
+  "titreBingParApi": "SEO Google",
+  "description": "Agent Claude quotidien : point Search Console et Bing Webmaster dans Chrome, demandes d'indexation jusqu'au quota, corrections SEO ciblées si l'agent y est autorisé (paramètre corriger). Si le site a la tâche « Bing : soumission et suivi », Bing passe par l'API et l'agent ne fait plus que Google (« SEO Google »).",
   "type": "claude",
   "consigne": "indexation-seo.md",
   "chrome": true,

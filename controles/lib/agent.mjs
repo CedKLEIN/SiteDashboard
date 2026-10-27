@@ -70,7 +70,34 @@ export function construireConsigne(controle, { modeles = DOSSIER_MODELES, agents
  * ceux des passages precedents. Fermer le dernier onglet fait disparaitre le groupe.
  */
 export const CONSIGNE_CHROME =
-  "Navigateur : utilise Chrome (outils mcp__claude-in-chrome__*), où mes connexions sont ouvertes. Travaille uniquement dans tes propres onglets (ton groupe d'onglets) ; ne touche pas aux miens. DERNIÈRE ÉTAPE OBLIGATOIRE, même en cas d'échec et après avoir écrit le rapport : appelle mcp__claude-in-chrome__tabs_context_mcp, puis ferme chacun de tes onglets avec mcp__claude-in-chrome__tabs_close_mcp jusqu'à ce que ton groupe ait disparu. Ne laisse aucun onglet ni groupe ouvert. Si Chrome n'est pas disponible, écris un rapport en échec qui le dit.";
+  "Navigateur : utilise Chrome (outils mcp__claude-in-chrome__*), où mes connexions sont ouvertes. Travaille uniquement dans tes propres onglets (ton groupe d'onglets) ; ne touche pas aux miens. Ferme chaque onglet dès que tu n'en as plus besoin (mcp__claude-in-chrome__tabs_close_mcp). DERNIÈRE ÉTAPE, même en cas d'échec et après avoir écrit le rapport : appelle mcp__claude-in-chrome__tabs_context_mcp, puis ferme les onglets qui te restent jusqu'à ce que ton groupe ait disparu. Ce rangement n'est que du ménage : si l'extension ne répond plus à ce moment-là ou qu'un onglet refuse de se fermer, arrête-toi simplement (SiteDashboard s'en occupe), ne réécris pas le rapport et n'en parle ni dans le rapport ni dans le journal. Si Chrome n'est pas disponible pour le travail lui-même, écris un rapport en échec qui le dit.";
+
+/**
+ * Un point du rapport qui ne parle que du rangement des onglets en fin de
+ * passage (« 1 onglet (Bing, groupe Claude) n'a pas pu être fermé ») : du
+ * menage, pas un resultat. Une extension qui decroche a ce moment-la ne dit
+ * rien du travail fait, et SiteDashboard referme Chrome de toute facon.
+ */
+export function pointRangementOnglets(texte) {
+  const t = String(texte ?? "").toLowerCase();
+  return /onglet|groupe claude|\btabs?\b/.test(t) && /ferm|clos|close/.test(t);
+}
+
+/**
+ * Le rapport sans ses points sur le rangement des onglets ; un statut
+ * « attention » qui ne tenait qu'a eux redevient « ok » (un echec reste un
+ * echec : le travail n'a pas ete fait). null si rien n'est a retirer.
+ */
+export function sansRangementOnglets(rapport) {
+  const points = Array.isArray(rapport?.points) ? rapport.points : [];
+  const gardes = points.filter((p) => !pointRangementOnglets(p?.texte));
+  const resumeRangement = pointRangementOnglets(rapport?.resume);
+  if (gardes.length === points.length && !resumeRangement) return null;
+  const alerte = gardes.some((p) => p?.niveau === "attention" || p?.niveau === "echec");
+  const statut = rapport.statut === "attention" && !alerte ? "ok" : rapport.statut;
+  const resume = resumeRangement ? (gardes.find((p) => p?.niveau !== "ok") ?? gardes[0])?.texte ?? "Passage terminé." : rapport.resume;
+  return { ...rapport, statut, resume, points: gardes };
+}
 
 /** Ce que SiteDashboard ajoute devant la consigne : le contexte d'un passage sans surveillance. */
 export function preambule(controle, maintenant = new Date()) {
@@ -256,7 +283,14 @@ export async function lancerAgent(controle, { essai = false } = {}) {
   const rapport = cheminRapport(controle.site, controle.id, debut);
   if (existsSync(rapport) && statSync(rapport).mtime >= debut) {
     try {
-      const { statut } = JSON.parse(readFileSync(rapport, "utf8"));
+      let contenu = JSON.parse(readFileSync(rapport, "utf8"));
+      const nettoye = sansRangementOnglets(contenu);
+      if (nettoye) {
+        writeFileSync(rapport, `${JSON.stringify(nettoye, null, 2)}\n`, "utf8");
+        appendFileSync(journal, "\n[SiteDashboard] points sur la fermeture des onglets retirés du rapport\n");
+        contenu = nettoye;
+      }
+      const { statut } = contenu;
       // Un agent Chrome en echec n'a pas fait son travail (deconnexion en cours de route) : nouvel essai
       return { id: controle.id, statut, rapport, claude: "session", code, ...(statut === "echec" && controle.chrome ? { reessai: true } : {}) };
     } catch {

@@ -28,15 +28,11 @@ body {
 }
 
 /*
- * Le texte se selectionne partout : statuts, messages d'erreur et rapports
- * doivent pouvoir se copier-coller. Seuls les controles et les titres restent
+ * Le texte se selectionne partout, titres compris : statuts, messages d'erreur
+ * et rapports doivent pouvoir se copier-coller. Seuls les controles restent
  * insensibles, pour qu'un clic sur un onglet ou un bouton ne surligne rien.
  */
 nav,
-button,
-h1,
-h2,
-h3,
-th {
+button {
   user-select: none;
 }

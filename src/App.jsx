@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
@@ -10,6 +10,7 @@ import Preferences, { INTERVALLE_DEFAUT_S } from "./pages/Preferences";
 import DetailSite from "./pages/DetailSite";
 import Agents from "./pages/Agents";
 import { lancerCycle } from "./lib/monitoring";
+import { vueParSite } from "./lib/vueAgents";
 import { nbAgentsEnRetard } from "./lib/tachesPlanifiees";
 import { useAgentsAttendus } from "./lib/useAgentsAttendus";
 import { useControles } from "./lib/useControles";
@@ -109,8 +110,21 @@ export default function App() {
 
   const site = sites.find((s) => s.id === siteOuvert);
 
+  // Statuts des agents, site par site : sur les cartes du tableau de bord et dans la fiche du site
+  const vuesAgents = useMemo(
+    () =>
+      vueParSite({
+        rapports: agents.rapports,
+        attendus: agents.attendus,
+        controles: controles.controles,
+        sites,
+        enCours: Object.values(controles.enCours).filter(Boolean),
+      }),
+    [agents.rapports, agents.attendus, controles.controles, controles.enCours, sites],
+  );
+
   const pages = {
-    dashboard: <Dashboard rafraichissement={revision} onOuvrirSite={setSiteOuvert} />,
+    dashboard: <Dashboard rafraichissement={revision} onOuvrirSite={setSiteOuvert} vuesAgents={vuesAgents} />,
     depenses: <Depenses onModification={signalerModification} />,
     revenus: <Revenus onModification={signalerModification} />,
     abonnements: <Abonnements onModification={signalerModification} />,
@@ -118,9 +132,9 @@ export default function App() {
     agents: (
       <Agents
         sites={sites}
-        rafraichissement={revision}
-        attendus={agents.attendus}
+        vues={vuesAgents}
         configTrouvee={agents.configTrouvee}
+        dossierRapports={agents.dossier}
         controles={controles}
       />
     ),
@@ -144,7 +158,8 @@ export default function App() {
       onChangerOnglet={changerOnglet}
       verificationEnCours={verificationEnCours}
       intervalleS={intervalleS}
-      alertes={{ agents: nbAgentsEnRetard(agents.attendus) }}
+      // Les statuts des agents vivent dans le tableau de bord (fiche de chaque site)
+      alertes={{ dashboard: nbAgentsEnRetard(agents.attendus) }}
       miseAJour={resumeMiseAJour(miseAJour.etat)}
     >
       {notifications.bloqueesParWindows && (
@@ -161,6 +176,10 @@ export default function App() {
           onVerifierMaintenant={verifier}
           verificationEnCours={verificationEnCours}
           rafraichissement={revision}
+          vueAgents={vuesAgents.find((v) => v.siteId === site.id) ?? null}
+          controles={controles}
+          erreurAgents={agents.erreur}
+          onModification={signalerModification}
         />
       ) : (
         pages[onglet]

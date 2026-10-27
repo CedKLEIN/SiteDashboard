@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ExternalLink, ImageIcon, RefreshCw, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { Bouton, Carte, Champ, EtatVide, Pastille } from "../components/ui";
+import { Bouton, Carte, Champ, EtatVide, Interrupteur, Pastille } from "../components/ui";
 import { choisirImageLocale } from "../lib/icones";
 import {
   creerSite,
@@ -169,17 +169,14 @@ export default function Sites({ onModification }) {
                 key={site.id}
                 className={`flex items-center gap-3 py-2.5 ${site.actif ? "" : "opacity-50"}`}
               >
-                <label
-                  className="flex items-center gap-1.5 text-[11px] text-texte-doux"
+                <Interrupteur
+                  actif={Boolean(site.actif)}
+                  onChanger={() => basculerActif(site)}
                   title="Un site non suivi n'est plus vérifié et sort du tableau de bord"
+                  className="text-[11px] text-texte-doux"
                 >
-                  <input
-                    type="checkbox"
-                    checked={Boolean(site.actif)}
-                    onChange={() => basculerActif(site)}
-                  />
                   Suivi
-                </label>
+                </Interrupteur>
                 {site.favicon ? (
                   <img src={site.favicon} alt="" className="size-5 rounded" aria-hidden="true" />
                 ) : (

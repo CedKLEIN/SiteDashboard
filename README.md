@@ -505,8 +505,16 @@ joué au démarrage par le plugin SQL. Pour le faire évoluer : ajouter un fichi
 
 ## Rapports des agents
 
-L'onglet **Agents** suit les tâches planifiées de Claude Code (indexation, santé de la prod,
-tri Sentry, audit hebdomadaire…). Chaque passage d'un agent dépose un fichier JSON :
+Les statuts des agents (indexation, santé de la prod, tri Sentry, audit hebdomadaire…) sont
+dans la **fiche de chaque site** : un clic sur un site du tableau de bord montre ce qu'il y a
+à faire, l'état du jour de chaque tâche et ses derniers passages (sa carte porte une petite
+icône d'état des agents). L'onglet **Agents** ne garde que les réglages, site par site :
+activation, horaire, lancement, retrait, ajout, et les tâches que les autres sites ont et
+pas celui-ci (un clic les ajoute). Ainsi, un site sans la tâche « Bing : soumission et
+suivi » a un agent « SEO Google + Bing » qui fait les deux consoles dans Chrome ; avec elle,
+Bing passe par l'API et l'agent s'appelle « SEO Google ».
+
+Chaque passage d'un agent dépose un fichier JSON :
 
     ~/.claude/rapports-agents/<site>/<AAAA-MM-JJ>/<agent>.json
 
@@ -577,8 +585,9 @@ Pour sauvegarder : copier ce fichier.
   module `db` est remplacé par un adaptateur vers `node:sqlite`, et les vraies fonctions de
   `queries.js` tournent sur le schéma produit par les **vraies migrations**, en mémoire. Une
   jointure cassée ou une colonne renommée fait donc échouer les tests ;
-- le **rendu de l'onglet Agents** ([`src/pages/Agents.test.jsx`](src/pages/Agents.test.jsx)),
-  avec Testing Library et une commande `lire_rapports_agents` simulée.
+- le **rendu des agents** avec Testing Library : statuts et rapports dans la fiche du site
+  ([`src/components/AgentsDuSite.test.jsx`](src/components/AgentsDuSite.test.jsx)), réglages
+  de l'onglet Agents ([`src/pages/Agents.test.jsx`](src/pages/Agents.test.jsx)).
 
 Côté Rust, `cargo test` couvre le parsing des attributs HTML, la résolution d'une cible de
 redirection, l'extraction d'une valeur (`json:` et `regex:`) et le calcul de jours entre deux

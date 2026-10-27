@@ -73,7 +73,7 @@ function Onglets({ valeur, options, onChanger }) {
   );
 }
 
-export default function Dashboard({ rafraichissement, onOuvrirSite }) {
+export default function Dashboard({ rafraichissement, onOuvrirSite, vuesAgents = [] }) {
   const [periode, setPeriode] = useState(PERIODE_DEFAUT);
   const [siteFiltre, setSiteFiltre] = useState(null);
   const [donnees, setDonnees] = useState(null);
@@ -231,7 +231,12 @@ export default function Dashboard({ rafraichissement, onOuvrirSite }) {
             style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
           >
             {etats.map((site) => (
-              <CarteSite key={site.id} site={site} onOuvrir={onOuvrirSite} />
+              <CarteSite
+                key={site.id}
+                site={site}
+                agents={vuesAgents.find((v) => v.siteId === site.id) ?? null}
+                onOuvrir={onOuvrirSite}
+              />
             ))}
           </div>
         </>
