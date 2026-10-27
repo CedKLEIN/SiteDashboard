@@ -3,8 +3,8 @@ import { Bot, CircleCheck, CircleX, Globe, Plus, TriangleAlert } from "lucide-re
 import { BarresDispo, Bouton, Carte, EtatVide, Monogramme } from "../components/ui";
 import { disponibiliteParTranche, listerSites } from "../lib/queries";
 import { formatTaux, tauxTranches, tranchesCompletes } from "../lib/tranches";
-import { couleurEtat, etatSite, libelleEtat } from "../lib/statut";
-import { STATUTS_SITE } from "../lib/vueAgents";
+import { couleurEtat, etatSite } from "../lib/statut";
+import { STATUTS_SITE, etatCombine } from "../lib/vueAgents";
 
 /** Tous les sites : suivis en cartes (etat, disponibilite 7 jours, agents), puis ceux qui ne le sont plus. */
 export default function ListeSites({ rafraichissement, etats = [], vuesAgents = [], onOuvrirSite, onNouveau }) {
@@ -45,9 +45,9 @@ export default function ListeSites({ rafraichissement, etats = [], vuesAgents = 
       ) : (
         <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))" }}>
           {etats.map((site) => {
-            const etat = etatSite(site);
             const tranches = tranchesCompletes(dispo.filter((d) => d.site_id === site.id), { n: 7, parJour: true });
             const vue = vuesAgents.find((v) => v.siteId === site.id);
+            const { etat, libelle } = etatCombine(etatSite(site), vue?.statut);
             const agents = vue ? STATUTS_SITE[vue.statut] : null;
             const IconeEtat = etat === "ok" ? CircleCheck : etat === "ko" ? CircleX : etat === "partiel" ? TriangleAlert : null;
             return (
@@ -63,7 +63,7 @@ export default function ListeSites({ rafraichissement, etats = [], vuesAgents = 
                     <p className="truncate text-[15px] font-semibold">{site.nom}</p>
                     <p className="truncate text-xs text-pale">{site.url?.replace(/^https?:\/\//, "") ?? "sans URL"}</p>
                   </div>
-                  {IconeEtat && <IconeEtat size={20} style={{ color: couleurEtat(etat) }} aria-label={libelleEtat(etat)} />}
+                  {IconeEtat && <IconeEtat size={20} style={{ color: couleurEtat(etat) }} aria-label={libelle} />}
                 </div>
                 <BarresDispo tranches={tranches} hauteur="h-8" titre={`Disponibilité de ${site.nom} sur 7 jours`} />
                 <div className="flex items-center gap-4 text-xs text-texte-doux">

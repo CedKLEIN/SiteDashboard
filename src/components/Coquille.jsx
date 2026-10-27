@@ -19,6 +19,7 @@ import {
 import { Monogramme } from "./ui";
 import ListeATraiter from "./ListeATraiter";
 import { couleurEtat, etatSite } from "../lib/statut";
+import { etatCombine } from "../lib/vueAgents";
 
 const NAV = [
   { cle: "accueil", libelle: "Vue d'ensemble", Icone: LayoutDashboard },
@@ -157,6 +158,7 @@ export default function Coquille({
   sites = [],
   aTraiter = 0,
   listeATraiter = [],
+  vuesAgents = [],
   onOuvrirCible,
   miseAJour = null,
   verificationEnCours = false,
@@ -210,12 +212,13 @@ export default function Coquille({
             <p className="mt-7 mb-2 px-2.5 text-[11px] font-medium tracking-wider text-pale uppercase">Mes sites</p>
             <div className="flex min-h-0 flex-col gap-0.5 overflow-y-auto">
               {sites.map((s) => {
-                const etat = etatSite(s);
+                const { etat, libelle } = etatCombine(etatSite(s), vuesAgents.find((v) => v.siteId === s.id)?.statut);
                 return (
                   <button
                     key={s.id}
                     type="button"
                     onClick={() => onOuvrirSite(s.id)}
+                    title={`${s.nom} — ${libelle}`}
                     className={`flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition ${
                       siteActif === s.id ? "bg-surface-3 text-texte" : "text-texte-doux hover:bg-surface-2 hover:text-texte"
                     }`}
@@ -225,7 +228,7 @@ export default function Coquille({
                     {etat === "ok" || etat === "aucun" || etat === "inconnu" ? (
                       <span className="size-1.5 shrink-0 rounded-full" style={{ background: couleurEtat(etat) }} />
                     ) : (
-                      <TriangleAlert size={13} className="shrink-0" style={{ color: couleurEtat(etat) }} aria-label="Problème" />
+                      <TriangleAlert size={13} className="shrink-0" style={{ color: couleurEtat(etat) }} aria-label={libelle} />
                     )}
                   </button>
                 );

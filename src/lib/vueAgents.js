@@ -220,18 +220,45 @@ export function vueParSite({ rapports = [], attendus = [], controles = [], sites
       // Les taches qui vont le plus mal en tete, puis par titre
       liste.sort((a, b) => RANG[etatVersRang(b.niveau)] - RANG[etatVersRang(a.niveau)] || a.titre.localeCompare(b.titre));
       const site = rattacherSite(nomSite, sites);
+      const aFaireDuSite = aFaire(liste);
       return {
         cle,
         siteId: site?.id ?? null,
         nom: site?.nom ?? nomSite,
         couleur: site?.couleur ?? null,
-        statut: statutSite(liste),
+        statut: statutAvecAFaire(statutSite(liste), aFaireDuSite),
         resume: resumeSite(liste),
-        aFaire: aFaire(liste),
+        aFaire: aFaireDuSite,
         taches: liste,
       };
     })
     .sort((a, b) => RANG[b.statut] - RANG[a.statut] || a.nom.localeCompare(b.nom));
+}
+
+/**
+ * Un rapport « OK » peut porter des points a regarder : le site ne doit pas
+ * s'afficher « Tout va bien » au-dessus d'une liste « A faire » non vide.
+ */
+function statutAvecAFaire(statut, points) {
+  if (points.some((p) => p.niveau === "echec")) return "action";
+  if (points.length > 0 && RANG[statut] < RANG.attention) return "attention";
+  return statut;
+}
+
+/**
+ * Etat d'un site vu de partout (barre laterale, cartes, fiche) : le pire de sa
+ * supervision (checks) et de ses agents. Avant, seuls les checks comptaient :
+ * un site aux agents « A regarder » restait vert partout ailleurs.
+ * `supervision` : etat de statut.js (ok, partiel, ko, inconnu, aucun) ;
+ * `statutAgents` : statut de la vue du site (action, attention, ok, aucun).
+ */
+export function etatCombine(supervision, statutAgents = null) {
+  if (supervision === "ko") return { etat: "ko", libelle: "Hors ligne", cause: "supervision" };
+  if (statutAgents === "action") return { etat: "ko", libelle: "Action requise", cause: "agents" };
+  if (supervision === "partiel") return { etat: "partiel", libelle: "Dégradé", cause: "supervision" };
+  if (statutAgents === "attention") return { etat: "partiel", libelle: "À regarder", cause: "agents" };
+  const libelles = { ok: "Opérationnel", inconnu: "Jamais vérifié", aucun: "Aucun check" };
+  return { etat: supervision, libelle: libelles[supervision] ?? "Opérationnel", cause: null };
 }
 
 function etatVersRang(niveau) {

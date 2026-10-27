@@ -386,6 +386,7 @@ export default function App() {
         <Accueil
           rafraichissement={revision}
           sites={etats}
+          vuesAgents={vuesAgents}
           aTraiter={aTraiter}
           onOuvrirCible={ouvrirCible}
           onOuvrirSite={ouvrirSite}
@@ -404,6 +405,7 @@ export default function App() {
         sites={etats}
         aTraiter={nbAlertes}
         listeATraiter={aTraiter}
+        vuesAgents={vuesAgents}
         onOuvrirCible={ouvrirCible}
         miseAJour={resumeMiseAJour(miseAJour.etat)}
         verificationEnCours={verificationEnCours}

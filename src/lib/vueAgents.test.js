@@ -263,3 +263,24 @@ describe("duree d'un passage", () => {
     expect(dureeRapport("2026-10-26T09:00:00+01:00", undefined)).toBeNull();
   });
 });
+
+describe("etat combine d'un site", () => {
+  it("prend le pire de la supervision et des agents", async () => {
+    const { etatCombine } = await import("./vueAgents");
+    expect(etatCombine("ok", "attention")).toEqual({ etat: "partiel", libelle: "À regarder", cause: "agents" });
+    expect(etatCombine("ok", "action")).toMatchObject({ etat: "ko", libelle: "Action requise" });
+    expect(etatCombine("ko", "attention")).toMatchObject({ etat: "ko", libelle: "Hors ligne", cause: "supervision" });
+    expect(etatCombine("partiel", "ok")).toMatchObject({ etat: "partiel", libelle: "Dégradé" });
+    expect(etatCombine("ok", "ok")).toEqual({ etat: "ok", libelle: "Opérationnel", cause: null });
+    expect(etatCombine("ok", null).etat).toBe("ok");
+  });
+});
+
+describe("statut d'un site et points a regarder", () => {
+  it("un rapport OK qui signale des points rend le site « a regarder »", () => {
+    const rapports = [rapport("histoire.fr", "2026-10-26", "seo", "ok", { points: [{ niveau: "attention", texte: "3 pages non indexées" }] })];
+    const [vue] = vueParSite({ rapports, aujourdhui: MAINTENANT });
+    expect(vue.statut).toBe("attention");
+    expect(vue.aFaire).toHaveLength(1);
+  });
+});

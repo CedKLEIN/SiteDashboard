@@ -7,19 +7,12 @@ import SanteSite from "../components/SanteSite";
 import AgentsDuSite, { PastilleStatut } from "../components/AgentsDuSite";
 import ControlesAutomatiques from "../components/ControlesAutomatiques";
 import Transactions from "./Transactions";
-import { STATUTS_SITE } from "../lib/vueAgents";
+import { STATUTS_SITE, etatCombine } from "../lib/vueAgents";
 import { groupesParSite } from "../lib/reglagesAgents";
 import { majFaviconSite, majSite, supprimerSite } from "../lib/queries";
 import { choisirImageLocale } from "../lib/icones";
 import { couleurEtat, etatSite, teinte } from "../lib/statut";
 
-const LIBELLES_ETAT = {
-  ok: "Opérationnel",
-  partiel: "Dégradé",
-  ko: "Hors ligne",
-  inconnu: "Jamais vérifié",
-  aucun: "Aucun check",
-};
 const ICONES_ETAT = { ok: CircleCheck, partiel: TriangleAlert, ko: CircleX };
 
 /** Onglet Reglages du site : identite, suivi, icone, suppression. */
@@ -163,7 +156,8 @@ export default function FicheSite({
   onModifierTransaction,
   onModification,
 }) {
-  const etat = etatSupervision ? etatSite(etatSupervision) : "aucun";
+  // Le pire des checks et des agents : un site aux agents « A regarder » n'est plus vert
+  const { etat, libelle, cause } = etatCombine(etatSupervision ? etatSite(etatSupervision) : "aucun", vueAgents?.statut);
   const IconeEtat = ICONES_ETAT[etat] ?? CircleDashed;
   const groupes = useMemo(
     () => groupesParSite(controles?.controles ?? [], sites).filter((g) => g.nom === site.nom),
@@ -187,13 +181,17 @@ export default function FicheSite({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="truncate text-[22px] font-semibold tracking-tight">{site.nom}</h1>
-            <span
+            <button
+              type="button"
+              onClick={() => onChangerOnglet(cause === "agents" ? "agents" : "sante")}
+              title={cause === "agents" ? "Selon les agents du site : voir l'onglet Agents" : cause === "supervision" ? "Selon les checks : voir l'onglet Santé" : undefined}
               className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium"
               style={{ color: couleurEtat(etat), background: teinte(couleurEtat(etat)) }}
             >
               <IconeEtat size={12} strokeWidth={2.5} />
-              {site.actif ? LIBELLES_ETAT[etat] : "Non suivi"}
-            </span>
+              {site.actif ? libelle : "Non suivi"}
+              {site.actif && cause === "agents" && <span className="font-normal opacity-80">· agents</span>}
+            </button>
           </div>
           {site.url && (
             <button type="button" onClick={() => openUrl(site.url)} className="mt-0.5 flex items-center gap-1 text-[13px] text-texte-doux hover:text-accent-2">

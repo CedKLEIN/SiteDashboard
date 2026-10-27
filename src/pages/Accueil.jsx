@@ -30,7 +30,8 @@ import { CLE_PERIODE, periodeValide } from "../lib/preferencesTableau";
 import { coutMensuelEquivalent } from "../lib/abonnements";
 import { formatTaux, tauxTranches, tranchesCompletes } from "../lib/tranches";
 import { quandEcheance } from "../lib/aTraiter";
-import { couleurEtat, etatSite, libelleEtat } from "../lib/statut";
+import { couleurEtat, etatSite } from "../lib/statut";
+import { etatCombine } from "../lib/vueAgents";
 import { formatAxe, formatInfobulle, STYLE_INFOBULLE } from "../lib/graphes";
 
 export const PERIODES_COURTES = [
@@ -54,15 +55,15 @@ function comparaison({ actuel, reference, hausseBonne }) {
   return { delta: texte, bon: (actuel >= reference) === hausseBonne };
 }
 
-function CarteSite({ site, tranches, onOuvrir }) {
-  const etat = etatSite(site);
+function CarteSite({ site, statutAgents, tranches, onOuvrir }) {
+  const { etat, libelle } = etatCombine(etatSite(site), statutAgents);
   const taux = tauxTranches(tranches);
   const probleme = etat === "partiel" || etat === "ko";
   return (
     <button
       type="button"
       onClick={() => onOuvrir(site.id)}
-      title={`${site.nom} — ${libelleEtat(etat)}`}
+      title={`${site.nom} — ${libelle}`}
       className={`rounded-2xl bg-surface p-4 text-left ring-1 transition hover:ring-accent ${probleme ? "ring-alerte/40" : "ring-bord"}`}
     >
       <div className="flex items-center gap-3">
@@ -72,11 +73,11 @@ function CarteSite({ site, tranches, onOuvrir }) {
           <p className="truncate text-[11px] text-pale">{site.url?.replace(/^https?:\/\//, "") ?? "sans URL"}</p>
         </div>
         {etat === "ok" ? (
-          <CircleCheck size={18} style={{ color: couleurEtat(etat) }} aria-label="OK" />
+          <CircleCheck size={18} style={{ color: couleurEtat(etat) }} aria-label={libelle} />
         ) : etat === "ko" ? (
-          <CircleX size={18} style={{ color: couleurEtat(etat) }} aria-label="Hors ligne" />
+          <CircleX size={18} style={{ color: couleurEtat(etat) }} aria-label={libelle} />
         ) : etat === "partiel" ? (
-          <TriangleAlert size={18} style={{ color: couleurEtat(etat) }} aria-label="Dégradé" />
+          <TriangleAlert size={18} style={{ color: couleurEtat(etat) }} aria-label={libelle} />
         ) : null}
       </div>
       <div className="mt-4">
@@ -92,7 +93,7 @@ function CarteSite({ site, tranches, onOuvrir }) {
   );
 }
 
-export default function Accueil({ rafraichissement, sites, aTraiter, onOuvrirCible, onOuvrirSite, onNaviguer }) {
+export default function Accueil({ rafraichissement, sites, vuesAgents = [], aTraiter, onOuvrirCible, onOuvrirSite, onNaviguer }) {
   const [periode, setPeriode] = useState(null);
   const [bilan, setBilan] = useState(null);
   const [dispo, setDispo] = useState([]);
@@ -150,6 +151,7 @@ export default function Accueil({ rafraichissement, sites, aTraiter, onOuvrirCib
             <CarteSite
               key={s.id}
               site={s}
+              statutAgents={vuesAgents.find((v) => v.siteId === s.id)?.statut}
               tranches={tranchesCompletes(dispo.filter((d) => d.site_id === s.id), { n: 24 })}
               onOuvrir={onOuvrirSite}
             />
