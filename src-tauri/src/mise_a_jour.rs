@@ -45,8 +45,13 @@ pub struct EtatMiseAJour {
     commit_installe: String,
     commit_depot: Option<String>,
     branche: Option<String>,
-    /// Commits du depot absents de la version installee, du plus recent au plus ancien.
+    /// Commits du depot ou de sa branche distante absents de la version
+    /// installee, du plus recent au plus ancien.
     nouveaux: Vec<String>,
+    /// Parmi eux, ceux qui ne sont que sur le distant (recuperes a la mise a jour).
+    a_recuperer: usize,
+    /// Distant injoignable (hors ligne...) : seuls les commits locaux sont comptes.
+    distant: Option<String>,
     /// Fichiers modifies non commites : ils seraient compiles eux aussi.
     modifications_locales: usize,
     erreur: Option<String>,
@@ -83,8 +88,23 @@ pub fn etat_mise_a_jour() -> EtatMiseAJour {
         etat.erreur = Some("version installee sans commit connu (compilee hors de git)".to_string());
         return etat;
     }
-    let plage = format!("{COMMIT_INSTALLE}..HEAD");
-    match git(&depot, &["log", "--format=%h %s", &plage]) {
+    // Les commits pousses d'ailleurs ne sont dans le depot local qu'apres un fetch :
+    // sans lui, la mise a jour en ignorait. Un echec (hors ligne) n'empeche rien.
+    if let Err(e) = git(&depot, &["fetch", "--quiet"]) {
+        etat.distant = Some(e);
+    }
+    let amont = git(&depot, &["rev-parse", "--abbrev-ref", "@{u}"]).ok();
+    let exclu = format!("^{COMMIT_INSTALLE}");
+    let mut refs = vec!["log", "--format=%h %s", "HEAD"];
+    if let Some(amont) = &amont {
+        refs.push(amont);
+        etat.a_recuperer = git(&depot, &["rev-list", "--count", &format!("HEAD..{amont}")])
+            .ok()
+            .and_then(|n| n.parse().ok())
+            .unwrap_or(0);
+    }
+    refs.push(&exclu);
+    match git(&depot, &refs) {
         Ok(liste) => etat.nouveaux = liste.lines().map(str::to_string).collect(),
         Err(e) => etat.erreur = Some(e),
     }

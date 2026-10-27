@@ -16,6 +16,8 @@ describe("resumeMiseAJour", () => {
       libelle: "1 nouveau commit",
     });
     expect(resumeMiseAJour({ nouveaux: ["a", "b", "c"] }).libelle).toBe("3 nouveaux commits");
+    // Pousses d'ailleurs : la mise a jour les recupere d'abord
+    expect(resumeMiseAJour({ nouveaux: ["a", "b", "c"], a_recuperer: 2 }).libelle).toBe("3 nouveaux commits (dont 2 à récupérer)");
   });
 
   it("dit pourquoi la verification n'a pas pu se faire", () => {

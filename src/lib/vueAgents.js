@@ -122,16 +122,6 @@ export function aFaire(taches) {
   return liste.sort((a, b) => (a.niveau === "echec" ? 0 : 1) - (b.niveau === "echec" ? 0 : 1));
 }
 
-/**
- * La tache a-t-elle sa pastille sur la carte du site ? Une tache sans horaire
- * (les correctifs, lances a la demande) tourne rarement : sans passage du jour,
- * un « Rien aujourd'hui » de plus n'apprend rien.
- */
-export function surLaCarte(tache) {
-  const aLaDemande = tache.controle && !tache.controle.cron;
-  return !aLaDemande || tache.enCours || tache.niveau !== "aucun";
-}
-
 /** Statut d'un site : le pire de ses taches du jour. */
 export function statutSite(taches) {
   let pire = "aucun";

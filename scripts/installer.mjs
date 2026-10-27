@@ -1,5 +1,6 @@
 /**
- * Compile la version release, l'installe et la relance : `npm.cmd run installer`.
+ * Recupere les derniers commits (git pull --ff-only), compile la version
+ * release, l'installe et la relance : `npm.cmd run installer`.
  *
  * Remplace la suite de gestes a la main (build, fermer l'appli, lancer
  * l'installeur, rouvrir). `--sans-build` reinstalle le dernier installeur
@@ -36,6 +37,11 @@ const installeur = path.join(
 const installe = path.join(process.env.LOCALAPPDATA ?? "", productName, EXE);
 
 if (!process.argv.includes("--sans-build")) {
+  // Les commits pousses d'ailleurs d'abord. --ff-only : jamais de fusion ;
+  // une branche qui a diverge arrete la mise a jour, a regler a la main.
+  etape("Récupération des derniers commits");
+  execFileSync("git", ["pull", "--ff-only"], { cwd: RACINE, stdio: "inherit" });
+
   etape("Compilation de la nouvelle version (quelques minutes)");
   // shell: un .cmd ne se lance pas sans shell depuis Node sous Windows
   execSync("npm.cmd run app:build", { cwd: RACINE, stdio: "inherit" });

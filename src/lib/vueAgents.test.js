@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RAPPORTS_MAX, aFaire, dureeRapport, frise, libelleNiveau, niveauTache, resumeSite, statutSite, surLaCarte, vueParSite } from "./vueAgents";
+import { RAPPORTS_MAX, aFaire, dureeRapport, frise, libelleNiveau, niveauTache, resumeSite, statutSite, vueParSite } from "./vueAgents";
 
 const MAINTENANT = new Date(2026, 9, 26, 12, 0);
 const rapport = (site, date, agent, statut, extra = {}) => ({
@@ -248,20 +248,6 @@ describe("vue par site", () => {
     expect(tache.rapportDuJour.debut).toBe("2026-10-26T09:31:36+01:00");
     // La frise va du plus ancien (gauche) au plus recent (droite)
     expect(tache.frise.filter(Boolean).map((p) => p.cle)).toEqual(["2026-10-26T08:00:00Z", "2026-10-26T09:14:31+01:00", "2026-10-26T09:31:36+01:00"]);
-  });
-});
-
-describe("pastilles de la carte du site", () => {
-  const correctifs = { controle: { id: "correctifs-d", cron: null }, niveau: "aucun", enCours: false };
-  it("une tache sans horaire n'y figure que si elle a tourne aujourd'hui ou tourne", () => {
-    expect(surLaCarte(correctifs)).toBe(false);
-    expect(surLaCarte({ ...correctifs, niveau: "ok" })).toBe(true);
-    expect(surLaCarte({ ...correctifs, enCours: true })).toBe(true);
-  });
-
-  it("une tache a l'horaire y figure toujours", () => {
-    expect(surLaCarte({ ...correctifs, controle: { cron: "0 9 * * *" } })).toBe(true);
-    expect(surLaCarte({ niveau: "aucun" })).toBe(true);
   });
 });
 
