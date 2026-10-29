@@ -4,7 +4,7 @@ import { archiverRapport, empreinte, isoLocal, jsonLd, liens, meta, pointsDuRapp
 import { extraireJson, validerAnalyse } from "./lib/claude.mjs";
 import { analyserCatalogue, analyserHistoire, clesObjet, hausses, souverainsCites } from "./lib/donnees.mjs";
 import { configSante, defautsSeo, locs, verifierApi } from "./sante-prod.mjs";
-import { aSoumettre, configBing, dateBing, ordonner, surveillance } from "./bing.mjs";
+import { aSoumettre, configBing, dateBing, ordonner, planResoumission, pointResoumission, surveillance } from "./bing.mjs";
 import { avecAnalyse } from "./lancer.mjs";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -330,6 +330,50 @@ describe("Bing : surveillance par l'API", () => {
       "Sitemap Bing en erreur (Failed) : https://d.fr/a.xml",
       "Bing n'a pas relu le sitemap https://d.fr/b.xml depuis 26 jours",
     ]);
+  });
+
+  it("signale les sitemaps non relus a resoumettre", () => {
+    const lu = (iso) => `/Date(${Date.parse(`${iso}T00:00:00Z`)})/`;
+    const r = surveillance(
+      {
+        feeds: [
+          { Url: "https://d.fr/sitemap.xml", Status: "Success", LastCrawled: lu("2026-10-11") },
+          { Url: "https://d.fr/s1.xml", Status: "Success", LastCrawled: lu("2026-10-21"), UrlCount: 10 },
+        ],
+      },
+      MAINTENANT,
+    );
+    expect(r.aRelire).toEqual([{ url: "https://d.fr/sitemap.xml", age: 16 }]);
+  });
+
+  it("resoumet un sitemap non relu, puis laisse a Bing le temps de le lire", () => {
+    const aRelire = [{ url: "https://d.fr/sitemap.xml", age: 16 }];
+    const [premier] = planResoumission(aRelire, {}, MAINTENANT);
+    expect(premier).toMatchObject({ action: "resoumettre", fois: 0 });
+    expect(pointResoumission(premier)).toEqual({ niveau: "ok", texte: "Bing n'a pas relu le sitemap https://d.fr/sitemap.xml depuis 16 jours : resoumis aujourd'hui" });
+    expect(pointResoumission(premier, { essai: true }).niveau).toBe("ok");
+    expect(pointResoumission(premier, { erreur: "Bing a répondu 400" })).toEqual({
+      niveau: "attention",
+      texte: "Bing n'a pas relu le sitemap https://d.fr/sitemap.xml depuis 16 jours ; resoumission en erreur : Bing a répondu 400",
+    });
+
+    // Resoumis il y a 3 jours : on attend, le point reste vert
+    const recent = { "https://d.fr/sitemap.xml": { derniere: "2026-10-24T09:00:00Z", fois: 1 } };
+    const [attente] = planResoumission(aRelire, recent, MAINTENANT);
+    expect(attente.action).toBe("attendre");
+    expect(pointResoumission(attente)).toEqual({
+      niveau: "ok",
+      texte: "Bing n'a pas relu le sitemap https://d.fr/sitemap.xml depuis 16 jours : resoumis le 24/10, en attente de lecture",
+    });
+
+    // Resoumis il y a 8 jours sans effet : on resoumet, et on le signale
+    const ancien = { "https://d.fr/sitemap.xml": { derniere: "2026-10-19T09:00:00Z", fois: 1 } };
+    const [encore] = planResoumission(aRelire, ancien, MAINTENANT);
+    expect(encore).toMatchObject({ action: "resoumettre", fois: 1 });
+    expect(pointResoumission(encore)).toEqual({
+      niveau: "attention",
+      texte: "Bing n'a pas relu le sitemap https://d.fr/sitemap.xml depuis 16 jours malgré 2 resoumissions",
+    });
   });
 
   it("une reponse manquante (appel en erreur) est sautee, une page malveillante est un echec", () => {

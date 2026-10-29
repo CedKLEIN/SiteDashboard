@@ -12,6 +12,11 @@
  * partie Google reste a l'agent Claude : Google ne propose aucune API de
  * demande d'indexation pour ces pages.
  *
+ * Un sitemap que Bing n'a pas relu depuis JOURS_SITEMAP_MAX jours lui est
+ * resoumis par l'API (SubmitFeed), au plus une fois tous les
+ * JOURS_ENTRE_RESOUMISSIONS jours : le point reste vert tant que la premiere
+ * resoumission est recente, et ne passe en attention que si Bing l'ignore.
+ *
  * Cle API : %USERPROFILE%\.sitedashboard\bing.json ({"cle": "..."}) ou la
  * variable BING_API_KEY. Elle ne figure jamais dans un rapport ni un message.
  */
@@ -79,6 +84,8 @@ export const PART_5XX_MAX = 0.02;
 export const JOURS_STATS_MAX = 7;
 /** Sitemap que Bing n'a pas relu depuis ce nombre de jours. */
 export const JOURS_SITEMAP_MAX = 14;
+/** Delai laisse a Bing pour relire un sitemap resoumis avant de le resoumettre. */
+export const JOURS_ENTRE_RESOUMISSIONS = 7;
 
 const JOUR_MS = 86_400_000;
 
@@ -114,8 +121,10 @@ function parDate(lignes) {
  */
 export function surveillance({ stats = null, feeds = null, trafic = null } = {}, maintenant = new Date()) {
   const points = [];
-  const ajouter = (niveau, texte) => points.push({ niveau, texte });
+  const ajouter = (niveau, texte, extra = {}) => points.push({ niveau, texte, ...extra });
   const resume = {};
+  // Sitemaps lus il y a trop longtemps : a resoumettre (voir planResoumission)
+  const aRelire = [];
 
   const jours = parDate(stats);
   const dernier = jours.at(-1);
@@ -175,7 +184,10 @@ export function surveillance({ stats = null, feeds = null, trafic = null } = {},
       const age = lu ? Math.floor((maintenant - lu) / JOUR_MS) : null;
       if (f.Status && f.Status !== "Success") ajouter("attention", `Sitemap Bing en erreur (${f.Status}) : ${f.Url}`);
       else if (age == null) ajouter("attention", `Bing n'a encore jamais lu le sitemap ${f.Url}`);
-      else if (age > JOURS_SITEMAP_MAX) ajouter("attention", `Bing n'a pas relu le sitemap ${f.Url} depuis ${age} jours`);
+      else if (age > JOURS_SITEMAP_MAX) {
+        ajouter("attention", `Bing n'a pas relu le sitemap ${f.Url} depuis ${age} jours`, { sitemap: f.Url });
+        aRelire.push({ url: f.Url, age });
+      }
       else ajouter("ok", `Sitemap Bing lu le ${jourCourt(lu)} : ${nombre(f.UrlCount)} URL`);
     }
   }
@@ -188,7 +200,35 @@ export function surveillance({ stats = null, feeds = null, trafic = null } = {},
     ajouter("ok", `Trafic Bing sur ${derniersJours.length} j : ${nombre(resume.clics)} clics, ${nombre(resume.impressions)} impressions`);
   }
 
-  return { points, resume };
+  return { points, resume, aRelire };
+}
+
+/**
+ * Que faire de chaque sitemap non relu (fonction pure) : `resoumis` est l'etat
+ * du passage precedent ({ [url]: { derniere: iso, fois } }). Resoumettre si
+ * jamais resoumis ou si la derniere resoumission date de JOURS_ENTRE_RESOUMISSIONS
+ * jours ou plus ; sinon attendre que Bing le lise.
+ */
+export function planResoumission(aRelire, resoumis = {}, maintenant = new Date()) {
+  return aRelire.map(({ url, age }) => {
+    const avant = resoumis?.[url];
+    const derniere = avant ? new Date(avant.derniere) : null;
+    const attendre = derniere && maintenant - derniere < JOURS_ENTRE_RESOUMISSIONS * JOUR_MS;
+    return { url, age, action: attendre ? "attendre" : "resoumettre", fois: avant?.fois ?? 0, derniere };
+  });
+}
+
+/** Point du rapport pour un sitemap du plan, une fois la resoumission tentee (`erreur` sinon null). */
+export function pointResoumission({ url, age, action, fois, derniere }, { erreur = null, essai = false } = {}) {
+  const nonLu = `Bing n'a pas relu le sitemap ${url} depuis ${age} jours`;
+  if (action === "attendre") {
+    return { niveau: "ok", texte: `${nonLu} : resoumis le ${jourCourt(derniere)}, en attente de lecture` };
+  }
+  if (essai) return { niveau: "ok", texte: `${nonLu} : à resoumettre (essai, rien envoyé)` };
+  if (erreur) return { niveau: "attention", texte: `${nonLu} ; resoumission en erreur : ${erreur}` };
+  // Deja resoumis sans effet : Bing l'ignore, ca merite un regard
+  if (fois >= 1) return { niveau: "attention", texte: `${nonLu} malgré ${fois + 1} resoumissions` };
+  return { niveau: "ok", texte: `${nonLu} : resoumis aujourd'hui` };
 }
 
 async function appel(methode, url, cle, corps) {
@@ -204,7 +244,7 @@ async function appel(methode, url, cle, corps) {
   return texte ? JSON.parse(texte) : null;
 }
 
-export async function executer(controle, { essai = false } = {}) {
+export async function executer(controle, { etat = {}, essai = false } = {}) {
   const c = configBing(controle);
   const points = [];
   const ajouter = (niveau, texte) => points.push({ niveau, texte });
@@ -219,7 +259,7 @@ export async function executer(controle, { essai = false } = {}) {
   }
   if (urls.length === 0) {
     ajouter("echec", "Sitemap vide ou illisible : rien à soumettre");
-    return { points, resume: "Sitemap illisible, aucune soumission.", sectionJournal: "", detail: "", nouvelEtat: {} };
+    return { points, resume: "Sitemap illisible, aucune soumission.", sectionJournal: "", detail: "", nouvelEtat: { sitemapsResoumis: etat.sitemapsResoumis ?? {} } };
   }
   const deja = existsSync(c.soumises) ? readFileSync(c.soumises, "utf8").split(/\r?\n/) : [];
   const restantes = aSoumettre(urls, deja, c.fiches);
@@ -238,7 +278,7 @@ export async function executer(controle, { essai = false } = {}) {
       resume: "Soumission Bing impossible : clé API absente.",
       sectionJournal: "",
       detail: `Sitemap : ${urls.length} URL, ${restantes.length} jamais soumises.`,
-      nouvelEtat: {},
+      nouvelEtat: { sitemapsResoumis: etat.sitemapsResoumis ?? {} },
     };
   }
 
@@ -281,6 +321,25 @@ export async function executer(controle, { essai = false } = {}) {
   );
   const suivi = surveillance(reponses);
 
+  // Sitemaps non relus : resoumis a Bing, leur point remplace celui de la surveillance
+  const maintenant = new Date();
+  // Sitemaps illisibles ce jour (GetFeeds en erreur) : on garde ce qu'on savait
+  const sitemapsResoumis = reponses.feeds ? {} : { ...etat.sitemapsResoumis };
+  for (const item of planResoumission(suivi.aRelire, etat.sitemapsResoumis, maintenant)) {
+    let erreur = null;
+    if (item.action === "resoumettre" && !essai) {
+      try {
+        await appel("POST", "SubmitFeed", cle, { siteUrl: c.site, feedUrl: item.url });
+        sitemapsResoumis[item.url] = { derniere: maintenant.toISOString(), fois: item.fois + 1 };
+      } catch (e) {
+        erreur = masquer(e.message, cle).slice(0, 120);
+      }
+    }
+    if (!sitemapsResoumis[item.url] && etat.sitemapsResoumis?.[item.url]) sitemapsResoumis[item.url] = etat.sitemapsResoumis[item.url];
+    const i = suivi.points.findIndex((p) => p.sitemap === item.url);
+    suivi.points[i] = pointResoumission(item, { erreur, essai });
+  }
+
   const total = deja.filter((u) => u.trim()).length + (essai ? 0 : soumises.length);
   if (soumises.length) ajouter("ok", `${nombre(soumises.length)} URL soumises à Bing${essai ? " (essai, rien envoyé)" : ""}, ${nombre(total)} au total`);
   else if (restantes.length === 0) ajouter("ok", "Toutes les URL du sitemap ont déjà été soumises");
@@ -301,6 +360,7 @@ export async function executer(controle, { essai = false } = {}) {
     resume: suivi.resume.index == null ? soumission : `${soumission} ${nombre(suivi.resume.index)} pages dans l'index Bing.`,
     sectionJournal: tableau(["Exemples d'URL soumises"], exemples),
     detail: `Sitemap ${urls.length} URL, ${restantes.length} jamais soumises, quota ${quota}, soumises ${soumises.length}.`,
-    nouvelEtat: { derniereSoumission: soumises.length, quota, bing: suivi.resume },
+    // En essai, l'etat n'est pas ecrit : rien a proteger
+    nouvelEtat: { derniereSoumission: soumises.length, quota, bing: suivi.resume, sitemapsResoumis },
   };
 }
