@@ -82,6 +82,8 @@ export async function installerApercu() {
 
   // Cles des connecteurs : en memoire seulement, le temps de la session d'apercu
   const secrets = new Map();
+  // Passages en cours de l'apercu : id -> arret
+  const annulations = new Map();
   mockIPC((commande, args = {}) => {
     switch (commande) {
       case "plugin:sql|load":
@@ -111,7 +113,24 @@ export async function installerApercu() {
         if (args.action !== "liste") throw new Error("apercu : le registre n'est pas modifiable");
         return agents?.registre ?? { controles: [], modeles: [] };
       case "lancer_controle":
-        return { code: 0, resume: { id: args.id, statut: "ok", claude: "non" }, erreurs: "" };
+        // Un passage de quelques secondes, annulable comme le vrai
+        return new Promise((fin) => {
+          const minuteur = setTimeout(() => {
+            annulations.delete(args.id);
+            fin({ code: 0, annule: false, resume: { id: args.id, statut: "ok", claude: "non" }, erreurs: "" });
+          }, 4000);
+          annulations.set(args.id, () => {
+            clearTimeout(minuteur);
+            fin({ code: null, annule: true, resume: null, erreurs: "" });
+          });
+        });
+      case "annuler_controle": {
+        const arreter = annulations.get(args.id);
+        if (!arreter) throw new Error("cette tâche ne tourne plus");
+        annulations.delete(args.id);
+        arreter();
+        return null;
+      }
       case "notifications_windows":
         return true;
       case "diagnostic_mise_a_jour":

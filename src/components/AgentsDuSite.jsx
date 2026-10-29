@@ -17,6 +17,7 @@ import {
 import { Bouton, BoutonCopier, EtatVide, LogoClaude } from "./ui";
 import { couleurEtat, iconeEtat, teinte } from "../lib/statut";
 import { file } from "../lib/controles";
+import { BoutonAnnuler } from "./ControlesAutomatiques";
 import { JOURS_HISTORIQUE, STATUTS_RAPPORT, USAGES_CLAUDE, heureRapport, texteRapport, usageClaude } from "../lib/rapportsAgents";
 import { COULEUR_EN_COURS, dureeRapport, etatNiveau, etatRapport, libelleNiveau } from "../lib/vueAgents";
 import { tracer } from "../lib/trace";
@@ -221,6 +222,7 @@ function DetailTache({ tache, controles, onEfface }) {
             {enCours ? "En cours..." : "Lancer maintenant"}
           </Bouton>
         )}
+        {enCours && controles.annuler && <BoutonAnnuler controle={controle} onAnnuler={controles.annuler} />}
         {tache.attendu?.message && !tache.attendu.rapport && <span>{tache.attendu.message}</span>}
         {!controle && !tache.enCours && tache.rapports.length > 0 && <EffacerHistorique tache={tache} onEfface={onEfface} />}
       </div>

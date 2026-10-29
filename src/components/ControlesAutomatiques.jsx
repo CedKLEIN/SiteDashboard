@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { Bot, Clock, Play, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Bot, Clock, Play, Plus, RefreshCw, Sparkles, Square, Trash2 } from "lucide-react";
 import { Bouton, Interrupteur } from "./ui";
 import { JOURS_PROPOSES, composerCron, decomposerCron, file, horaireLisible } from "../lib/controles";
 import { couleurEtat } from "../lib/statut";
 import { manquesParSite } from "../lib/reglagesAgents";
 
 const ETATS = { ok: "ok", attention: "partiel", echec: "ko" };
-const LIBELLES = { ok: "OK", attention: "à regarder", echec: "en échec" };
+const LIBELLES = { ok: "OK", attention: "à regarder", echec: "en échec", annule: "annulé" };
 const CLAUDE = {
   appele: "analysé par Claude",
   reprise: "analyse précédente reprise",
@@ -144,7 +144,47 @@ function AjouterTache({ modeles, onAjouter, onFermer }) {
   );
 }
 
-function LigneTache({ controle, dernier, resultat, enCours, onLancer, onHoraire, onActiver, onRetirer }) {
+/**
+ * Arrete le passage en cours : le script, et la session Claude qu'il a lancee.
+ * Un agent Claude peut tourner des heures : on demande confirmation.
+ */
+export function BoutonAnnuler({ controle, onAnnuler }) {
+  const [arret, setArret] = useState(false);
+  const [erreur, setErreur] = useState(null);
+  async function annuler() {
+    if (controle.type === "claude" && !window.confirm(`Arrêter « ${controle.titre} » ? La session Claude en cours sera interrompue.`)) return;
+    setArret(true);
+    setErreur(null);
+    try {
+      await onAnnuler(controle.id);
+    } catch (e) {
+      setErreur(String(e?.message ?? e));
+      setArret(false);
+    }
+  }
+  return (
+    <>
+      <Bouton
+        variante="danger"
+        className="flex shrink-0 items-center gap-1.5 px-2 py-1 text-xs"
+        disabled={arret}
+        onClick={annuler}
+        title="Arrêter le script et Claude s'il tourne"
+        aria-label={`Annuler ${controle.titre}`}
+      >
+        <Square size={12} fill="currentColor" />
+        {arret ? "Arrêt..." : "Annuler"}
+      </Bouton>
+      {erreur && (
+        <span className="text-[11px]" style={{ color: couleurEtat("ko") }}>
+          {erreur}
+        </span>
+      )}
+    </>
+  );
+}
+
+function LigneTache({ controle, dernier, resultat, enCours, onLancer, onAnnuler, onHoraire, onActiver, onRetirer }) {
   const [edition, setEdition] = useState(false);
   const [retrait, setRetrait] = useState(false);
   const actif = enCours[file(controle)] === controle.id;
@@ -234,6 +274,7 @@ function LigneTache({ controle, dernier, resultat, enCours, onLancer, onHoraire,
           {actif ? <RefreshCw size={13} className="animate-spin" /> : <Play size={13} />}
           {actif ? "En cours..." : "Lancer maintenant"}
         </Bouton>
+        {actif && onAnnuler && <BoutonAnnuler controle={controle} onAnnuler={onAnnuler} />}
         {retrait ? (
           <span className="flex shrink-0 items-center gap-1">
             <Bouton variante="danger" className="px-2 py-1 text-xs" onClick={() => onRetirer(controle.id)}>
@@ -333,6 +374,7 @@ function GroupeSite({ groupe, controles, manques }) {
             resultat={controles.resultats[c.id]}
             enCours={controles.enCours}
             onLancer={controles.lancer}
+            onAnnuler={controles.annuler}
             onHoraire={controles.modifierHoraire}
             onActiver={controles.activer}
             onRetirer={controles.retirer}

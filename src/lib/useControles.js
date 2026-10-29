@@ -103,16 +103,22 @@ export function useControles(rafraichissement, onTermine) {
       let resultat;
       try {
         const r = await invoke("lancer_controle", { id });
-        resultat = r.resume ?? { statut: "echec", erreur: r.erreurs || `code ${r.code}` };
-        if (r.code !== 0) tracer("controles", `${id} : code ${r.code} ${r.erreurs}`);
-        // Agents dont le travail n'a pas pu se faire (Chrome deconnecte) : reessayes toutes les 30 min
-        const reessais = planifierReessai(await lireJson(CLES.reessais, {}), id, r.resume);
-        await ecrirePreference(CLES.reessais, JSON.stringify(reessais));
-        attente.current = ajouterSuites(
-          attente.current,
-          r.resume?.suites,
-          appliquerReglages(taches.current, reglagesActuels.current),
-        );
+        if (r.annule) {
+          // Arretee a la main : ni nouvel essai, ni tache suivante
+          resultat = { statut: "annule" };
+          tracer("controles", `${id} : annulé`);
+        } else {
+          resultat = r.resume ?? { statut: "echec", erreur: r.erreurs || `code ${r.code}` };
+          if (r.code !== 0) tracer("controles", `${id} : code ${r.code} ${r.erreurs}`);
+          // Agents dont le travail n'a pas pu se faire (Chrome deconnecte) : reessayes toutes les 30 min
+          const reessais = planifierReessai(await lireJson(CLES.reessais, {}), id, r.resume);
+          await ecrirePreference(CLES.reessais, JSON.stringify(reessais));
+          attente.current = ajouterSuites(
+            attente.current,
+            r.resume?.suites,
+            appliquerReglages(taches.current, reglagesActuels.current),
+          );
+        }
       } catch (e) {
         resultat = { statut: "echec", erreur: String(e) };
         tracer("controles", `${id} : ${e}`);
@@ -175,6 +181,14 @@ export function useControles(rafraichissement, onTermine) {
     };
   }, [rafraichissement, lancer, registre]);
 
+  /**
+   * Arrete le passage en cours (le script et la session Claude qu'il a lancee).
+   * Le lancement est quand meme note : la tache repart a son prochain horaire.
+   */
+  const annuler = useCallback(async (id) => {
+    await invoke("annuler_controle", { id });
+  }, []);
+
   /** Nouvel horaire (cron) ; null revient a l'horaire par defaut. */
   const modifierHoraire = useCallback(async (id, cron) => {
     const horaires = { ...(await lireJson(CLES.horaires, {})) };
@@ -219,6 +233,7 @@ export function useControles(rafraichissement, onTermine) {
     enCours,
     resultats,
     lancer,
+    annuler,
     modifierHoraire,
     activer,
     ajouter,
